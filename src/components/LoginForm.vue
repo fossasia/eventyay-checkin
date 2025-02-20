@@ -23,6 +23,22 @@ const DEFAULT_SERVER_VALUE = 'Select a Server'
 // router
 const router = useRouter()
 
+if(processApi.apitoken) {
+	if(processApi.selectedRole === "Exhibitor") {
+		router.push({
+			name: 'leadscan'
+		})
+	} else if(processApi.selectedRole === "CheckIn") {
+		router.push({
+			name: 'eventyaycheckin'
+		})
+	} else if(processApi.selectedRole === "Badge Station") {
+		router.push({
+			name: 'eventyaysearchcheckin'
+		})
+	}
+}
+
 async function submitLogin() {
   if (server.value === '' || server.value === DEFAULT_SERVER_VALUE) {
     showServerError.value = true
