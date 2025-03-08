@@ -72,8 +72,6 @@ function handlePrintClose() {
 
 async function handlePrint() {
   stopTimer()
-  console.log('Printing badge...')
-  console.log('Badge URL:', badgeUrl.value)
   if (badgeUrl.value) {
     await processEventyayCheckInStore.printBadge(badgeUrl.value)
   }

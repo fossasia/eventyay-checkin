@@ -70,7 +70,6 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
 
       const response = await api.post(requestBody)
       console.log('here', response)
-
       if (response.success) {
         showSuccessMsg({
           message: 'Lead Scanned Successfully!',
@@ -126,6 +125,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
       'Booth Name',
       'Attendee Name',
       'Email',
+	  'Company',
       'Note',
       'Tags'
     ]
@@ -143,6 +143,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
       lead.booth_name,
       lead.attendee.name,
       lead.attendee.email || '',
+	  lead.attendee.company || '',
       lead.attendee.note || '',
       lead.attendee.tags.join('; ')
     ])

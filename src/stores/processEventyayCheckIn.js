@@ -163,11 +163,17 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         if (badgeDownload) {
           badgeUrl.value = badgeDownload.url
         }
-
-        showSuccessMsg({
-          message: 'Check-in successful!',
-          attendee: response.position.attendee_name
-        })
+		if(response.status==='ok'){
+        	showSuccessMsg({
+          		message: 'Check-in successful!',
+          		attendee: response.position.attendee_name
+          	})
+		}else{
+        	showSuccessMsg({
+          		message: 'Already Checked-in!',
+          		attendee: response.position.attendee_name
+          	})
+		}
       } else {
         showErrorMsg({
           message: 'Check-in failed!',
