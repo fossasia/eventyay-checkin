@@ -19,26 +19,38 @@ export const useCameraStore = defineStore('camera', () => {
   }
 
   function toggleCameraSide() {
-    // get length of devices
-    // if length is 1, then toggle is not possible
-    const qty = cameraDevices.value
-    if (qty === 1) {
-      return
-    }
+    if (cameraDevices.value.length < 2) return
 
-    let index = cameraDevices.value.findIndex((device) => {
-      return device.id === selectedCameraId.value.deviceId
-    })
+    let currentIndex = cameraDevices.value.findIndex(device => 
+      device.id === selectedCameraId.value.deviceId
+    )
 
-    // selected device is the next index
-    const nextIndex = index + 1
-    // if next index is the last index, then select the first index
-    if (nextIndex === cameraDevices.value.length) {
-      selectedCameraId.value.deviceId = cameraDevices.value[0].id
-      return
-    }
-    // else select the next index
+    // Select the next camera in the list (loop back if at the end)
+    const nextIndex = (currentIndex + 1) % cameraDevices.value.length
     selectedCameraId.value.deviceId = cameraDevices.value[nextIndex].id
+
+    // Stop the current camera stream before switching
+    stopCameraStream()
+
+    // Restart camera after a short delay
+    setTimeout(() => {
+      startCameraStream()
+    }, 500) // Ensures proper switching
+  }
+
+  function stopCameraStream() {
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        stream.getTracks().forEach(track => track.stop()) // Stop all video tracks
+      })
+      .catch(err => console.error("Error stopping camera:", err))
+  }
+
+  function startCameraStream() {
+    paused.value = true
+    setTimeout(() => {
+      paused.value = false
+    }, 300) // Ensures Vue updates the state properly
   }
 
   function paintOutline(detectedCodes, ctx) {
@@ -79,6 +91,8 @@ export const useCameraStore = defineStore('camera', () => {
     $reset,
     toggleCameraSide,
     selected,
-    logErrors
+    logErrors,
+    stopCameraStream,
+    startCameraStream
   }
 })

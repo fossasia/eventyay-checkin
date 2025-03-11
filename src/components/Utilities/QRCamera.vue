@@ -78,19 +78,12 @@ async function detectedQR([result]) {
 }
 
 function switchCamera() {
-  destroyed.value = true
-  console.log('switchCamera: having the following cameras:')
-  console.log(cameraStore.cameraDevices)
-  console.log('switchCamera: cameraDevices.value = ' + cameraStore.cameraDevices.value)
-  if (cameraStore.cameraDevices.length === 0) {
-    console.log("No cameras found in cameraStore, re-enumerating them")
-    updateAvailableCamera()
-  }
+  console.log('Switching camera...')
+  stopCameraStream()
   cameraStore.toggleCameraSide()
   nextTick(() => {
-    destroyed.value = false
+    startCameraStream()
   })
-  startInactivityTimer()
 }
 
 function toggleCamera() {
@@ -112,6 +105,25 @@ function clearInactivityTimer() {
     clearTimeout(inactivityTimer)
     inactivityTimer = null
   }
+}
+
+// Stop the current camera stream
+function stopCameraStream() {
+  console.log("Stopping Stream")
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(stream => {
+      stream.getTracks().forEach(track => track.stop())
+    })
+    .catch(err => console.error("Error stopping camera:", err))
+}
+
+// Restart the camera
+function startCameraStream() {
+  console.log("Restarting Stream")
+  isCameraOn.value = false
+  nextTick(() => {
+    isCameraOn.value = true
+  })
 }
 </script>
 
