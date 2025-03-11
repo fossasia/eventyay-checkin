@@ -34,10 +34,10 @@ onBeforeMount(() => {
             const id = device.deviceId
             let obj = {}
             obj.id = id
-            obj.facing = facingMode[0]
+            obj.facing = facingMode
             cameraStore.cameraDevices.push(obj)
 
-            if (facingMode[0] === 'environment') {
+            if (facingMode === 'environment') {
               environmentCameras.push(obj)
             }
           }
