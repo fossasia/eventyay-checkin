@@ -39,6 +39,8 @@ const categorizedEvents = computed(() => {
 
   // Filter for exhibitor events if role is Exhibitor
   if (selectedRole === 'Exhibitor') {
+    console.log('checking for exhibitor == events == ')
+    console.log(events)
     filteredEvents = events.filter((event) => event.plugins && event.plugins.includes('exhibitors'))
   }
 
