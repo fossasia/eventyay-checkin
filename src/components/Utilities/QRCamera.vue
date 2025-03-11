@@ -35,6 +35,7 @@ onBeforeMount(() => {
             let obj = {}
             obj.id = id
             obj.facing = facingMode
+	    console.log('found facingMode for camera: >' + facingMode + '<')
             cameraStore.cameraDevices.push(obj)
 
             if (facingMode === 'environment') {
