@@ -22,6 +22,7 @@ onUnmounted(() => {
 })
 
 // get list of camera devices of device and side
+// safari problems: always ask
 onBeforeMount(() => {
   if (navigator.mediaDevices.getUserMedia) {
     navigator.mediaDevices
@@ -30,19 +31,23 @@ onBeforeMount(() => {
         let environmentCameras = []
         devices.forEach((device) => {
           if (device.kind === 'videoinput') {
-            const facingMode = device.getCapabilities().facingMode
+	    let obj = {}
             const id = device.deviceId
-            let obj = {}
-            obj.id = id
-            obj.facing = facingMode
-            console.log('found facingMode for camera: >' + facingMode + '<')
+	    obj.id = id
+	    if (device.label && device.label.length > 0) {
+	      if (device.label.toLowerCase().indexOf('back') >= 0) {
+	        obj.facing = 'environment'
+		console.log('found back camera')
+	        environmentCameras.push(obj)
+	      }
+	    }
             cameraStore.cameraDevices.push(obj)
-
-            if (facingMode === 'environment') {
-              environmentCameras.push(obj)
-            }
           }
         })
+	console.log('found cameras:')
+	console.log(cameraStore.cameraDevices)
+	console.log('found bac cameras:')
+	console.log(environmentCameras
 
         // select last of environment cameras
         if (environmentCameras.length > 0) {
