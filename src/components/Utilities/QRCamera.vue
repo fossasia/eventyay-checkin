@@ -34,11 +34,11 @@ onBeforeMount(() => {
             const id = device.deviceId
             let obj = {}
             obj.id = id
-            obj.facing = facingMode
-	    console.log('found facingMode for camera: >' + facingMode + '<')
+            obj.facing = facingMode[0]
+            console.log('found facingMode for camera: >' + facingMode + '<')
             cameraStore.cameraDevices.push(obj)
 
-            if (facingMode === 'environment') {
+            if (facingMode[0] === 'environment') {
               environmentCameras.push(obj)
             }
           }
@@ -49,7 +49,7 @@ onBeforeMount(() => {
           cameraStore.selectedCameraId.deviceId =
             environmentCameras[environmentCameras.length - 1].id
         } else {
-	  console.log('found cameras: ' + cameraStore.cameraDevices)
+          console.log(cameraStore.cameraDevices)
           cameraStore.selectedCameraId.deviceId = cameraStore.cameraDevices[0].id
         }
       })
