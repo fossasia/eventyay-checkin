@@ -79,7 +79,7 @@ async function detectedQR([result]) {
 
 function switchCamera() {
   destroyed.value = true
-  if (cameraStore.cameraDevices.length < 0) {
+  if (cameraStore.cameraDevices.length == 0) {
     console.log("No cameras found in cameraStore, re-enumerationg them")
     updateAvailableCamera()
   }
