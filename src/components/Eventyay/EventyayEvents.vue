@@ -3,7 +3,8 @@ import { useLoadingStore } from '@/stores/loading'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useEventyayEventStore } from '@/stores/eventyayEvent'
 
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { storeToRefs } from 'pinia'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useRouter } from 'vue-router'
 
@@ -11,13 +12,16 @@ const loadingStore = useLoadingStore()
 const router = useRouter()
 
 const selectedEvent = ref(null)
-const eventyayEventStore = useEventyayEventStore()
-const { events, error } = eventyayEventStore
 const processApi = useEventyayApi()
 const { apitoken, url, organizer, selectedRole } = processApi
+const eventyayEventStore = useEventyayEventStore()
+onMounted(() => {
+  eventyayEventStore.fetchEvents(url, apitoken, organizer)
+})
+const { events, error } = storeToRefs(eventyayEventStore)
+
 
 loadingStore.contentLoaded()
-eventyayEventStore.fetchEvents(url, apitoken, organizer)
 
 // Format date with timezone indication
 const formatEventDate = (dateString) => {
@@ -31,7 +35,7 @@ const formatEventDate = (dateString) => {
 // Filter events based on selectedRole and date
 const categorizedEvents = computed(() => {
   const now = new Date()
-  let filteredEvents = events
+  let filteredEvents = events.value
 
   // Filter for exhibitor events if role is Exhibitor
   if (selectedRole === 'Exhibitor') {
