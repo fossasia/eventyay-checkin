@@ -23,7 +23,9 @@ onUnmounted(() => {
 
 // get list of camera devices of device and side
 // safari problems: always ask
-onBeforeMount(() => {
+onBeforeMount(() => { updateAvailableCamera() })
+
+function updateAvailableCamera() {
   if (navigator.mediaDevices.getUserMedia) {
     navigator.mediaDevices
       .enumerateDevices()
@@ -31,23 +33,23 @@ onBeforeMount(() => {
         let environmentCameras = []
         devices.forEach((device) => {
           if (device.kind === 'videoinput') {
-	    let obj = {}
+            let obj = {}
             const id = device.deviceId
-	    obj.id = id
-	    if (device.label && device.label.length > 0) {
-	      if (device.label.toLowerCase().indexOf('back') >= 0) {
-	        obj.facing = 'environment'
-		console.log('found back camera')
-	        environmentCameras.push(obj)
-	      }
-	    }
+            obj.id = id
+            if (device.label && device.label.length > 0) {
+              if (device.label.toLowerCase().indexOf('back') >= 0) {
+                obj.facing = 'environment'
+                console.log('found back camera')
+                environmentCameras.push(obj)
+              }
+            }
             cameraStore.cameraDevices.push(obj)
           }
         })
-	console.log('found cameras:')
-	console.log(cameraStore.cameraDevices)
-	console.log('found bac cameras:')
-	console.log(environmentCameras)
+        console.log('found cameras:')
+        console.log(cameraStore.cameraDevices)
+        console.log('found bac cameras:')
+        console.log(environmentCameras)
 
         // select last of environment cameras
         if (environmentCameras.length > 0) {
@@ -62,7 +64,7 @@ onBeforeMount(() => {
         console.log(err.name + ': ' + err.message)
       })
   }
-})
+}
 
 async function detectedQR([result]) {
   if (result) {
@@ -77,6 +79,10 @@ async function detectedQR([result]) {
 
 function switchCamera() {
   destroyed.value = true
+  if (cameraStore.cameraDevices.length < 0) {
+    console.log("No cameras found in cameraStore, re-enumerationg them")
+    updateAvailableCamera()
+  }
   cameraStore.toggleCameraSide()
   nextTick(() => {
     destroyed.value = false
