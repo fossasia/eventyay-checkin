@@ -59,7 +59,7 @@ const categorizedEvents = computed(() => {
 
 const submitForm = () => {
   if (selectedEvent.value) {
-    const selectedEventData = events.find((event) => event.slug === selectedEvent.value)
+    const selectedEventData = events.value.find((event) => event.slug === selectedEvent.value)
     if (selectedEventData) {
       console.log('Selected Event:', selectedEventData)
       console.log('Selected Role:', selectedRole)
