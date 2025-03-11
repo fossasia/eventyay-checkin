@@ -47,7 +47,7 @@ onBeforeMount(() => {
 	console.log('found cameras:')
 	console.log(cameraStore.cameraDevices)
 	console.log('found bac cameras:')
-	console.log(environmentCameras
+	console.log(environmentCameras)
 
         // select last of environment cameras
         if (environmentCameras.length > 0) {
