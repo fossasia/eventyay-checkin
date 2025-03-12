@@ -83,6 +83,10 @@ function switchCamera() {
   console.log(cameraStore.cameraDevices)
   console.log('switchCamera: cameraDevices.value = ' + cameraStore.cameraDevices.value)
   console.log('camerastore.cameradevices.length = ' + cameraStore.cameraDevices.length)
+  // when access is not granted, the cameraStore contains only one entry
+  // with an empty id, no more information is provided
+  // In this case, since we are here already and access is granted, reload the
+  // set of available cameras so that we can switch to the back facing one.
   if (cameraStore.cameraDevices.length === 1 && cameraStore.cameraDevices[0].id == "") {
     console.log("No cameras found in cameraStore, re-enumerating them")
     updateAvailableCamera()
