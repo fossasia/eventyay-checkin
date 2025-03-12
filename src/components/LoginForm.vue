@@ -118,7 +118,7 @@ onMounted(() => {
         <div>
           <StandardButton
             type="button"
-            text="I am a Exhibitor"
+            text="I am an Exhibitor"
             class="btn-primary mt-6 w-full justify-center"
             @click="handleRoleSelection('Exhibitor')"
           />

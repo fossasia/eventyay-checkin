@@ -82,7 +82,8 @@ function switchCamera() {
   console.log('switchCamera: having the following cameras:')
   console.log(cameraStore.cameraDevices)
   console.log('switchCamera: cameraDevices.value = ' + cameraStore.cameraDevices.value)
-  if (cameraStore.cameraDevices.length === 0) {
+  console.log('camerastore.cameradevices.length = ' + cameraStore.cameraDevices.length)
+  if (cameraStore.cameraDevices.length === 1 && cameraStore.cameraDevices[0].id == "") {
     console.log("No cameras found in cameraStore, re-enumerating them")
     updateAvailableCamera()
   }
