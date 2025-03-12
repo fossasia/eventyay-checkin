@@ -3,6 +3,7 @@ import { onBeforeMount, ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { QrcodeStream } from 'vue-qrcode-reader'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useCameraStore } from '@/stores/camera'
+import { useEventyayApi } from '@/stores/eventyayapi'
 import RefreshButton from '@/components/Utilities/RefreshButton.vue'
 import { ArrowsRightLeftIcon, VideoCameraIcon } from '@heroicons/vue/20/solid'
 
@@ -13,8 +14,11 @@ const destroyed = ref(false)
 const isCameraOn = ref(false)
 let inactivityTimer = null
 
+const processApi = useEventyayApi()
+const { selectedRole } = processApi
+
 onMounted(() => {
-  startInactivityTimer()
+  if (selectedRole!="Badge Station") {startInactivityTimer()}
 })
 
 onUnmounted(() => {
@@ -106,10 +110,12 @@ function toggleCamera() {
 
 function startInactivityTimer() {
   clearInactivityTimer()
-  inactivityTimer = setTimeout(() => {
-    isCameraOn.value = false
-    cameraStore.paused = true
-  }, 25000) // 25 seconds
+  if (selectedRole!="Badge Station") {
+    inactivityTimer = setTimeout(() => {
+      isCameraOn.value = false
+      cameraStore.paused = true
+    }, 25000) // 25 seconds
+  }
 }
 
 function clearInactivityTimer() {
