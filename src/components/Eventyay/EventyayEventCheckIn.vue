@@ -23,7 +23,7 @@ const timeoutInstance = ref(null)
 const notes = ref('')
 
 function startCountdown() {
-  countdown.value = 5
+  countdown.value = 10
   timerInstance.value = setInterval(() => {
     countdown.value--
     if (countdown.value <= 0) {
@@ -89,7 +89,7 @@ function showPopup() {
   startCountdown()
   timeoutInstance.value = setTimeout(() => {
     processEventyayCheckInStore.$reset()
-  }, 5000)
+  }, 10000)
 }
 
 // Cleanup timers when component is destroyed
