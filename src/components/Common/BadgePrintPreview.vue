@@ -40,12 +40,12 @@ const fetchPDF = async () => {
     pdfBlob.value = await response.blob()
     pdfUrl.value = URL.createObjectURL(pdfBlob.value)
     isLoading.value = false
-	if (selectedRole=="Badge Station") {
-	  handlePrint()
-	  setTimeout(() => {
-    	emit('close')
-  	  }, 5000)
-	}
+    if (selectedRole === "Badge Station") {
+      handlePrint()
+      setTimeout(() => {
+        emit('close')
+      }, 5000)
+    }
   } catch (error) {
     console.error('Error fetching PDF:', error)
     printError.value = true
