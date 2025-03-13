@@ -35,6 +35,7 @@ const formatEventDate = (dateString) => {
 // Filter events based on selectedRole and date
 const categorizedEvents = computed(() => {
   const now = new Date()
+  console.log(now)
   let filteredEvents = events.value
 
   // Filter for exhibitor events if role is Exhibitor
@@ -47,15 +48,15 @@ const categorizedEvents = computed(() => {
   // For CheckIn or Badge Station, only show upcoming events
   if (selectedRole === 'CheckIn' || selectedRole === 'Badge Station') {
     return {
-      upcoming: filteredEvents.filter((event) => new Date(event.date_from) >= now),
+      upcoming: filteredEvents.filter((event) => new Date(event.date_to) >= now),
       past: [] // Empty array as we don't want to show past events
     }
   }
 
   // For Exhibitor role, show both past and upcoming events
   return {
-    upcoming: filteredEvents.filter((event) => new Date(event.date_from) > now),
-    past: filteredEvents.filter((event) => new Date(event.date_from) <= now)
+    upcoming: filteredEvents.filter((event) => new Date(event.date_to) > now),
+    past: filteredEvents.filter((event) => new Date(event.date_to) <= now)
   }
 })
 
