@@ -16,7 +16,7 @@ const { message, showSuccess, showError, badgeUrl, isGeneratingBadge } = storeTo
   processEventyayCheckInStore
 )
 const processApi = useEventyayApi()
-const { apitoken, url, organizer, eventSlug, eventname } = processApi
+const { apitoken, url, organizer, eventSlug, eventname,selectedRole } = processApi
 const countdown = ref(5)
 const timerInstance = ref(null)
 const timeoutInstance = ref(null)
@@ -87,6 +87,7 @@ watch([showSuccess, showError], ([newSuccess, newError], [oldSuccess, oldError])
 function showPopup() {
   notes.value = ''
   startCountdown()
+  if (selectedRole=="Badge Station") {handlePrint()}
   timeoutInstance.value = setTimeout(() => {
     processEventyayCheckInStore.$reset()
   }, 10000)

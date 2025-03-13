@@ -4,7 +4,7 @@ import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 
 const processApi = useEventyayApi()
-const { apitoken, url, organizer, eventSlug, eventname } = processApi
+const { apitoken, url, organizer, eventSlug, eventname, selectedRole} = processApi
 const props = defineProps({
   url: {
     type: String,
@@ -40,6 +40,12 @@ const fetchPDF = async () => {
     pdfBlob.value = await response.blob()
     pdfUrl.value = URL.createObjectURL(pdfBlob.value)
     isLoading.value = false
+	if (selectedRole=="Badge Station") {
+	  handlePrint()
+	  setTimeout(() => {
+    	emit('close')
+  	  }, 5000)
+	}
   } catch (error) {
     console.error('Error fetching PDF:', error)
     printError.value = true
@@ -106,7 +112,6 @@ const handlePrint = () => {
   // Try silent print first
   printStrategies.silentPrint()
 }
-
 // Download handler
 const handleDownload = () => {
   if (!pdfBlob.value) return
