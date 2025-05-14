@@ -68,8 +68,10 @@ const submitForm = () => {
       console.log('Selected Role:', selectedRole)
       processApi.setEvent(selectedEventData.slug, selectedEventData.name.en)
       if (selectedRole === 'Exhibitor') router.push({ name: 'eventyayleedlogin' })
-      if (selectedRole === 'CheckIn' || selectedRole === 'Badge Station')
-        router.push({ name: 'eventyaycheckin' })
+      if (selectedRole === 'Badge Station') router.push({ name: 'eventyaycheckin' })
+	  if (selectedRole === 'CheckIn') router.push({name: 'eventyaysearchcheckin'})
+	} else {
+	  console.error('Event not found.')
     }
   } else {
     console.error('Please select an event.')
