@@ -61,22 +61,37 @@ const categorizedEvents = computed(() => {
 })
 
 const submitForm = () => {
-  if (selectedEvent.value) {
-    const selectedEventData = events.value.find((event) => event.slug === selectedEvent.value)
-    if (selectedEventData) {
-      console.log('Selected Event:', selectedEventData)
-      console.log('Selected Role:', selectedRole)
-      processApi.setEvent(selectedEventData.slug, selectedEventData.name.en)
-      if (selectedRole === 'Exhibitor') router.push({ name: 'eventyayleedlogin' })
-      if (selectedRole === 'Badge Station') router.push({ name: 'eventyaycheckin' })
-	  if (selectedRole === 'CheckIn') router.push({name: 'eventyaysearchcheckin'})
-	} else {
-	  console.error('Event not found.')
-    }
-  } else {
+  if (!selectedEvent.value) {
     console.error('Please select an event.')
+    return
+  }
+
+  const selectedEventData = events.value.find(event => event.slug === selectedEvent.value)
+
+  if (!selectedEventData) {
+    console.error('Event not found.')
+    return
+  }
+
+  console.log('Selected Event:', selectedEventData)
+  console.log('Selected Role:', selectedRole)
+
+  processApi.setEvent(selectedEventData.slug, selectedEventData.name.en)
+
+  const routeMap = {
+    'Exhibitor': 'eventyayleedlogin',
+    'Badge Station': 'eventyaycheckin',
+    'CheckIn': 'eventyaysearchcheckin'
+  }
+
+  const routeName = routeMap[selectedRole]
+  if (routeName) {
+    router.push({ name: routeName })
+  } else {
+    console.warn('Unhandled role:', selectedRole)
   }
 }
+
 </script>
 
 <template>
