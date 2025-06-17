@@ -4,7 +4,9 @@ import { useEventyayApi } from '@/stores/eventyayapi'
 import { mande } from 'mande'
 import QRCamera from '@/components/Common/QRCamera.vue'
 import { useLoadingStore } from '@/stores/loading'
+import { useNotificationStore } from '@/stores/notification'
 
+const notificationStore = useNotificationStore()
 const processApi = useEventyayApi()
 const { apitoken, url, organizer, eventSlug } = processApi
 
@@ -19,6 +21,22 @@ api.options.headers = {
 const searchQuery = ref('')
 const orders = ref([])
 const loading = ref(false)
+const baseUrl = `${url}/api/v1/organizers/${organizer}/events/${eventSlug}`
+const fetchAllOrders = async (url, accumulatedOrders = []) => {
+  console.log('Fetching orders from URL:', url)
+  const response = await api.get(url)
+  console.log('Fetched orders:', response)
+  const newOrders = accumulatedOrders.concat(response.results)
+
+  if (response.next) {
+	console.log('Next URL:', response.next)
+	const nextUrl = response.next.replace(`${baseUrl}`, '')  // Remove the current URL part to get the relative path
+	console.log('Next URL after removal of base prefix:', nextUrl)
+    return fetchAllOrders(nextUrl, newOrders)
+  } else {
+    return newOrders
+  }
+}
 
 const searchOrders = async () => {
   if (!searchQuery.value) {
@@ -27,11 +45,10 @@ const searchOrders = async () => {
   }
 
   loading.value = true
+  notificationStore.addNotification(['Fetching orders...'], 'success')
   try {
-    const response = await api.get('orderpositions/')
-
-    // Filter results based on search query
-    orders.value = response.results.filter(
+    const allOrders = await fetchAllOrders('orderpositions/')
+    orders.value = allOrders.filter(
       (order) =>
         order.attendee_name?.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
         order.attendee_email?.toLowerCase().includes(searchQuery.value.toLowerCase())
