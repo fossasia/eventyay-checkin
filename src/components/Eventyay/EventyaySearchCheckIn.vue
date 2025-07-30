@@ -67,11 +67,27 @@ const isCheckedIn = (order) => {
 
 const checkIn = async (order) => {
   try {
-    await api.post(`orderpositions/${order.id}/checkin/`, {})
+    const response = await api.post(`orderpositions/${order.id}/checkin/`, {})
+    
+    // Check response status and show appropriate notification
+    if (response && (response.status === 'ok' || response.status === 'redeemed')) {
+      const message = response.status === 'ok' ? 'Check-in successful!' : 'Already Checked-in!'
+      notificationStore.addNotification([message], 'success')
+    } else if (response && response.status === 'error') {
+      notificationStore.addNotification([response.message || 'Check-in failed!'], 'error')
+    }
+    
     // Refresh the orders to show updated checkin status
     searchOrders()
   } catch (error) {
     console.error('Error checking in:', error)
+    
+    // Check if error response contains detailed error information
+    if (error.response && error.response.data && error.response.data.status === 'error') {
+      notificationStore.addNotification([error.response.data.message || 'Check-in failed!'], 'error')
+    } else {
+      notificationStore.addNotification(['Check-in failed!'], 'error')
+    }
   }
 }
 
