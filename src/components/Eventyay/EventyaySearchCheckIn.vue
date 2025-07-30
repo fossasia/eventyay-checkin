@@ -65,29 +65,45 @@ const isCheckedIn = (order) => {
   return order.checkins && order.checkins.length > 0
 }
 
+// Helper function to handle check-in notifications
+const handleCheckInNotification = (responseData, isError = false) => {
+  if (isError) {
+    const message = responseData?.message || 'Check-in failed!'
+    notificationStore.addNotification([message], 'error')
+    return false
+  }
+  
+  const { status } = responseData
+  if (status === 'ok' || status === 'redeemed') {
+    const message = status === 'ok' ? 'Check-in successful!' : 'Already Checked-in!'
+    notificationStore.addNotification([message], 'success')
+    return true
+  } else if (status === 'error') {
+    notificationStore.addNotification([responseData.message || 'Check-in failed!'], 'error')
+    return false
+  }
+  
+  return false
+}
+
 const checkIn = async (order) => {
   try {
     const response = await api.post(`orderpositions/${order.id}/checkin/`, {})
+    const { data } = response
     
-    // Check response status and show appropriate notification
-    if (response && (response.status === 'ok' || response.status === 'redeemed')) {
-      const message = response.status === 'ok' ? 'Check-in successful!' : 'Already Checked-in!'
-      notificationStore.addNotification([message], 'success')
-    } else if (response && response.status === 'error') {
-      notificationStore.addNotification([response.message || 'Check-in failed!'], 'error')
+    // Handle notification and check if successful
+    const isSuccessful = handleCheckInNotification(data)
+    
+    // Only refresh orders on successful check-in
+    if (isSuccessful) {
+      searchOrders()
     }
-    
-    // Refresh the orders to show updated checkin status
-    searchOrders()
   } catch (error) {
     console.error('Error checking in:', error)
     
-    // Check if error response contains detailed error information
-    if (error.response && error.response.data && error.response.data.status === 'error') {
-      notificationStore.addNotification([error.response.data.message || 'Check-in failed!'], 'error')
-    } else {
-      notificationStore.addNotification(['Check-in failed!'], 'error')
-    }
+    // Handle error response notification
+    const errorData = error.response?.data
+    handleCheckInNotification(errorData, true)
   }
 }
 
