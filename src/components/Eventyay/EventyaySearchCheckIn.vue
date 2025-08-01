@@ -39,7 +39,7 @@ const fetchAllOrders = async (url, accumulatedOrders = []) => {
   console.log('Fetching orders from URL:', url)
   const response = await api.get(url)
   console.log('Fetched orders:', response)
-  const newOrders = accumulateds.concat(response.results)
+  const newOrders = accumulatedOrders.concat(response.results)
 
   if (response.next) {
 	console.log('Next URL:', response.next)
@@ -157,7 +157,7 @@ function stopTimer() {
 
 function handleNotesInput() {
   stopTimer()
-  countdown.value = '...'
+  countdown.value = 0
 }
 
 function handleCancel() {

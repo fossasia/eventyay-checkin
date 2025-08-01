@@ -1,5 +1,6 @@
 import { useCameraStore } from '@/stores/camera'
 import { useEventyayApi } from '@/stores/eventyayapi'
+import { processCheckInResponse } from '@/utils/badgeHelpers'
 
 import { mande } from 'mande'
 import { defineStore } from 'pinia'
@@ -14,7 +15,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   const isGeneratingBadge = ref(false)
   const isCheckoutMode = ref(false)
 
-  function $reset() {
+  const $reset = () => {
     message.value = ''
     showSuccess.value = false
     showError.value = false
@@ -22,11 +23,11 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     isGeneratingBadge.value = false
   }
 
-  function toggleMode() {
+  const toggleMode = () => {
     isCheckoutMode.value = !isCheckoutMode.value
   }
 
-  function showErrorMsg(msg, attendeeName) {
+  const showErrorMsg = (msg, attendeeName) => {
     message.value = {
       text: msg,
       attendee: attendeeName
@@ -35,7 +36,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showError.value = true
   }
 
-  function showSuccessMsg(msg, attendeeName) {
+  const showSuccessMsg = (msg, attendeeName) => {
     message.value = {
       text: msg,
       attendee: attendeeName
@@ -44,8 +45,14 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showError.value = false
   }
 
+  const resetMessages = () => {
+    showSuccess.value = false
+    showError.value = false
+    message.value = { text: '', attendee: '' }
+  }
+
   // Function to generate a random nonce
-  function generateNonce(length = 32) {
+  const generateNonce = (length = 32) => {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
     let result = ''
     for (let i = 0; i < length; i++) {
@@ -54,7 +61,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     return result
   }
 
-  async function getlist() {
+  const getlist = async () => {
     const processApi = useEventyayApi()
     const { apitoken, url, organizer, eventSlug } = processApi
     const api = mande(url, { headers: { Authorization: `Device ${apitoken}` } })
@@ -69,7 +76,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     return listIds
   }
 
-  async function getBadgeStatus(badgeUrl) {
+  const getBadgeStatus = async (badgeUrl) => {
     const processApi = useEventyayApi()
     const { apitoken, url } = processApi
 
@@ -90,7 +97,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function printBadge(badgeUrl) {
+  const printBadge = async (badgeUrl) => {
     isGeneratingBadge.value = true
 
     try {
@@ -123,7 +130,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function checkIn() {
+  const checkIn = async () => {
     console.log('Check-in')
     const processApi = useEventyayApi()
     const { apitoken, url, organizer, servername, eventSlug } = processApi
@@ -164,40 +171,17 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       const response = await api.post(requestBody)
       console.log('Response:', response)
 
-      if (response) {
-        // Extract attendee name from response
-        const attendeeName = response.position?.attendee_name || 'Unknown Attendee'
-        
-        if (response.status === 'ok') {
-          const badgeDownload = response.position.downloads?.find(
-            (download) => download.output === 'badge'
-          )
-          if (badgeDownload) {
-            badgeUrl.value = badgeDownload.url
-          }
-          const successMessage = isCheckoutMode.value ? 'Check-out successful!' : 'Check-in successful!'
-          showSuccessMsg(successMessage, attendeeName)
-        } else if (response.status === 'redeemed') {
-          const badgeDownload = response.position.downloads?.find(
-            (download) => download.output === 'badge'
-          )
-          if (badgeDownload) {
-            badgeUrl.value = badgeDownload.url
-          }
-          const alreadyMessage = isCheckoutMode.value ? 'Already Checked-out!' : 'Already Checked-in!'
-          showSuccessMsg(alreadyMessage, attendeeName)
-        } else if (response.status === 'cancelled') {
-          showErrorMsg('Ticket has been cancelled!', attendeeName)
-        } else if (response.status === 'already_redeemed') {
-          showErrorMsg('Ticket already redeemed!', attendeeName)
-        } else {
-          // Handle any other status codes
-          const operation = isCheckoutMode.value ? 'Check-out' : 'Check-in'
-          showErrorMsg(`${operation} failed! Status: ${response.status || 'Unknown'}`, attendeeName)
-        }
+      // Use shared helper to process response
+      const result = processCheckInResponse(response, isCheckoutMode.value)
+      
+      if (result.badgeUrl) {
+        badgeUrl.value = result.badgeUrl
+      }
+      
+      if (result.success) {
+        showSuccessMsg(result.message, result.attendeeName)
       } else {
-        const operation = isCheckoutMode.value ? 'Check-out' : 'Check-in'
-        showErrorMsg(`${operation} failed! No response received.`, 'Unknown Attendee')
+        showErrorMsg(result.message, result.attendeeName)
       }
     } catch (error) {
       console.error('Fetch error:', error)
@@ -206,7 +190,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function eventCheckout() {
+  const eventCheckout = async () => {
     const processApi = useEventyayApi()
     const { apitoken, url, organizer, eventSlug } = processApi
 
@@ -245,6 +229,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     checkIn,
     printBadge,
     toggleMode,
+    resetMessages,
     eventCheckout,
     $reset
   }
