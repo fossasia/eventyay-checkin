@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, onUnmounted } from 'vue'
+import { ref, watch } from 'vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { mande } from 'mande'
 import QRCamera from '@/components/Common/QRCamera.vue'
@@ -8,6 +8,7 @@ import BadgePrintPreview from '@/components/Common/BadgePrintPreview.vue'
 import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
+import { useCheckInModal } from '@/composables/useCheckInModal'
 import { storeToRefs } from 'pinia'
 
 const notificationStore = useNotificationStore()
@@ -15,6 +16,17 @@ const processEventyayCheckInStore = useProcessEventyayCheckInStore()
 const { message, showSuccess, showError, badgeUrl, isGeneratingBadge, isCheckoutMode } = storeToRefs(processEventyayCheckInStore)
 const processApi = useEventyayApi()
 const { apitoken, url, organizer, eventSlug, eventname, selectedRole } = processApi
+
+// Use check-in modal composable for modal countdown and state management
+const {
+  showModal,
+  countdown,
+  notes,
+  startTimer,
+  stopTimer,
+  handleNotesInput,
+  closeModal: handleCancel
+} = useCheckInModal()
 
 const loadingStore = useLoadingStore()
 loadingStore.contentLoaded()
@@ -28,12 +40,8 @@ const searchQuery = ref('')
 const orders = ref([])
 const loading = ref(false)
 
-// Popup related variables
+// Print preview related
 const showPrintPreview = ref(false)
-const countdown = ref(5)
-const timerInstance = ref(null)
-const timeoutInstance = ref(null)
-const notes = ref('')
 const baseUrl = `${url}/api/v1/organizers/${organizer}/events/${eventSlug}`
 const fetchAllOrders = async (url, accumulatedOrders = []) => {
   console.log('Fetching orders from URL:', url)
@@ -177,36 +185,7 @@ function handleEventCheckout() {
   }
 }
 
-// Popup related functions
-function startCountdown() {
-  countdown.value = 10
-  timerInstance.value = setInterval(() => {
-    countdown.value--
-    if (countdown.value <= 0) {
-      clearInterval(timerInstance.value)
-      processEventyayCheckInStore.$reset()
-    }
-  }, 1000)
-}
-
-function stopTimer() {
-  if (timerInstance.value) {
-    clearInterval(timerInstance.value)
-  }
-  if (timeoutInstance.value) {
-    clearTimeout(timeoutInstance.value)
-  }
-}
-
-function handleNotesInput() {
-  stopTimer()
-  countdown.value = 0
-}
-
-function handleCancel() {
-  processEventyayCheckInStore.$reset()
-  stopTimer()
-}
+// Modal and print related functions
 
 function handlePrintBadge() {
   console.log('Printing badge...')
@@ -217,7 +196,7 @@ function handlePrintBadge() {
 
 function handlePrintClose() {
   showPrintPreview.value = false
-  startCountdown()
+  startTimer()
 }
 
 async function handlePrint() {
@@ -229,12 +208,9 @@ async function handlePrint() {
 }
 
 function showPopup() {
-  notes.value = ''
-  startCountdown()
+  showModal.value = true
+  startTimer()
   if (selectedRole === "Badge Station") { handlePrint() }
-  timeoutInstance.value = setTimeout(() => {
-    processEventyayCheckInStore.$reset()
-  }, 10000)
 }
 
 const generateBadge = async (order) => {
@@ -290,11 +266,6 @@ watch([showSuccess, showError], ([newSuccess, newError], [oldSuccess, oldError])
   if ((!oldSuccess && newSuccess) || (!oldError && newError)) {
     showPopup()
   }
-})
-
-// Cleanup timers when component is destroyed
-onUnmounted(() => {
-  stopTimer()
 })
 </script>
 <template>
@@ -416,7 +387,7 @@ onUnmounted(() => {
     
     <!-- Attendee Info Popup Modal -->
     <div
-      v-if="(showSuccess || showError) && message?.attendee"
+      v-if="showModal && (showSuccess || showError) && message?.attendee"
       class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4"
     >
       <div class="relative w-full max-w-sm lg:max-w-md rounded bg-white p-4 lg:p-5 shadow-lg mx-4">
