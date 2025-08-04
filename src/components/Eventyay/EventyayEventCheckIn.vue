@@ -124,7 +124,7 @@ onUnmounted(() => {
         </div>
 
         <h2 :class="showError ? 'text-red-600 mb-2 text-xl' : 'text-green-600 mb-2 text-xl'">
-          {{ message.message }}
+          {{ message.text }}
         </h2>
         <div>
           <p><b>Name:</b> {{ message.attendee }}</p>
