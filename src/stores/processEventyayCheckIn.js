@@ -200,19 +200,99 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         Accept: 'application/json',
         'Content-Type': 'application/json'
       }
-      const api = mande(`${url}/api/v1/organizers/${organizer}/events/${eventSlug}/checkout/`, {
+      
+      // First, fetch all order positions to find checked-in attendees
+      const ordersApi = mande(`${url}/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/`, {
         headers: headers
       })
-      const response = await api.post({})
       
-      if (response && (response.status === 'success' || response.status === 'partial_success')) {
-        showSuccessMsg(`Event checkout completed! ${response.checkout_count} attendees checked out.`, 'Event Checkout')
-        if (response.errors && response.errors.length > 0) {
-          console.warn('Some checkout errors occurred:', response.errors)
+      let allOrders = []
+      let nextUrl = '?include_checkins=true'
+      
+      // Fetch all pages of orders
+      while (nextUrl) {
+        const response = await ordersApi.get(nextUrl)
+        allOrders = allOrders.concat(response.results)
+        nextUrl = response.next ? response.next.replace(`${url}/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/`, '') : null
+      }
+      
+      // Filter for checked-in attendees (those with entry checkins)
+      const checkedInOrders = allOrders.filter(order => {
+        if (!order.checkins || order.checkins.length === 0) return false
+        
+        // Sort checkins by datetime to get the most recent
+        const sortedCheckins = [...order.checkins].sort((a, b) => new Date(b.datetime) - new Date(a.datetime))
+        const mostRecentCheckin = sortedCheckins[0]
+        
+        // Return true if most recent checkin is entry type
+        return mostRecentCheckin.type === 'entry'
+      })
+      
+      if (checkedInOrders.length === 0) {
+        showErrorMsg('No checked-in attendees found to checkout.', 'Event Checkout')
+        return
+      }
+      
+      // Checkout each attendee individually
+      const redeemApi = mande(`${url}/api/v1/organizers/${organizer}/checkin/redeem/`, {
+        headers: headers
+      })
+      
+      let successCount = 0
+      let errorCount = 0
+      const errors = []
+      
+      // Get check-in lists (required for redeem API)
+      const checkInList = await getlist()
+      console.log('Check-in lists:', checkInList)
+      
+      for (const order of checkedInOrders) {
+        try {
+          console.log(`Attempting checkout for: ${order.attendee_name || 'Unknown'} (${order.secret})`)
+          
+          const requestBody = {
+            secret: order.secret,
+            source_type: 'barcode',
+            lists: checkInList,
+            force: false,
+            ignore_unpaid: false,
+            nonce: generateNonce(),
+            datetime: null,
+            questions_supported: false,
+            type: 'exit'
+          }
+          
+          console.log('Request body:', requestBody)
+          const response = await redeemApi.post(requestBody)
+          console.log('Checkout response:', response)
+          successCount++
+        } catch (error) {
+          errorCount++
+          console.error(`Error checking out ${order.attendee_name}:`, error)
+          console.error('Error details:', {
+            message: error.message,
+            status: error.status,
+            body: error.body,
+            response: error.response
+          })
+          errors.push(`${order.attendee_name || 'Unknown'}: ${error.message || 'Unknown error'}`)
+        }
+      }
+      
+      // Show results
+      if (successCount > 0) {
+        const message = errorCount > 0 
+          ? `Event checkout partially completed! ${successCount} attendees checked out, ${errorCount} failed.`
+          : `Event checkout completed! ${successCount} attendees checked out.`
+        showSuccessMsg(message, 'Event Checkout')
+        
+        if (errors.length > 0) {
+          console.warn('Checkout errors:', errors)
         }
       } else {
-        showErrorMsg('Event checkout failed!', 'Event Checkout')
+        showErrorMsg(`Event checkout failed! All ${errorCount} checkout attempts failed.`, 'Event Checkout')
       }
+      
     } catch (error) {
       console.error('Event checkout error:', error)
       showErrorMsg(`Event checkout failed! ${error.message || 'Unknown error'}`, 'Event Checkout')
