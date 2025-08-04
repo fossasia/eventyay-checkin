@@ -44,7 +44,7 @@ function stopTimer() {
 
 function handleNotesInput() {
   stopTimer()
-  countdown.value = '...'
+  countdown.value = 0
 }
 
 function handleSave() {
