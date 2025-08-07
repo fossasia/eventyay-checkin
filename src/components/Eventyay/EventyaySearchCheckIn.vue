@@ -351,7 +351,7 @@ watch([showSuccess, showError], ([newSuccess, newError], [oldSuccess, oldError])
               </div>
               <div class="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 lg:space-x-2">
                 <button
-                  @click="checkIn(order)"
+                  @click="(isCheckoutMode && !isCheckedIn(order)) ? null : checkIn(order)"
                   :class="{
                     'rounded px-3 py-2 lg:px-4 lg:py-2 text-white transition-colors font-medium text-sm lg:text-base w-full sm:w-auto': true,
                     'bg-green-600 hover:bg-green-700': !isCheckedIn(order),
