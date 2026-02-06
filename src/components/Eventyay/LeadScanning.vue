@@ -109,8 +109,8 @@ function showPopup() {
     <QRCamera qr-type="eventyaylead" scan-type="Lead-Scan" />
     <StandardButton
       text="Download Leads"
-      @click="leadScanStore.exportLeads"
       class="btn-secondary mt-6 w-1/4 justify-center"
+      @click="leadScanStore.exportLeads"
     />
     <!-- Attendee Info Popup Modal -->
     <div
@@ -146,14 +146,14 @@ function showPopup() {
             <StandardButton
               type="submit"
               text="Save"
-              @click="handleSave"
               class="btn-primary mt-6 w-1/4 justify-center"
+              @click="handleSave"
             />
             <StandardButton
               type="submit"
               text="Cancel"
-              @click="handleCancel"
               class="btn-secondary mt-6 w-1/4 justify-center"
+              @click="handleCancel"
             />
           </div>
         </div>

@@ -68,8 +68,8 @@ function removeTag(index) {
       <button
         v-for="tag in availableTags.filter((t) => !currentTags.includes(t))"
         :key="tag"
-        @click="addExistingTag(tag)"
         class="rounded-full border px-2 py-1 text-sm text-black hover:bg-secondary hover:text-white"
+        @click="addExistingTag(tag)"
       >
         + {{ tag }}
       </button>

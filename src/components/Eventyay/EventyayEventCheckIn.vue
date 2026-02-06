@@ -134,14 +134,14 @@ onUnmounted(() => {
               type="button"
               :text="isGeneratingBadge ? 'Generating Badge...' : 'Generate Badge'"
               :disabled="isGeneratingBadge"
-              @click="handlePrint"
               class="btn-primary w-full justify-center"
+              @click="handlePrint"
             />
             <StandardButton
               type="submit"
               text="Done"
-              @click="handleCancel"
               class="btn-info mt-6 w-1/4 justify-center"
+              @click="handleCancel"
             />
           </div>
         </div>
