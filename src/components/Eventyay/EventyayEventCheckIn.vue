@@ -22,6 +22,10 @@ const timerInstance = ref(null)
 const timeoutInstance = ref(null)
 const notes = ref('')
 
+function joinUrl(base, path) {
+  return `${base.replace(/\/+$/, '')}/${String(path).replace(/^\/+/, '')}`
+}
+
 function startCountdown() {
   countdown.value = 10
   timerInstance.value = setInterval(() => {
@@ -145,7 +149,7 @@ onUnmounted(() => {
     </div>
     <BadgePrintPreview
       v-if="showPrintPreview"
-      :url="`${url}${badgeUrl}`"
+      :url="joinUrl(url, badgeUrl)"
       @close="handlePrintClose"
     />
   </div>
