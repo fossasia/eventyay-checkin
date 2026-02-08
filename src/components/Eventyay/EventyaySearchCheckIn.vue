@@ -13,7 +13,7 @@ const { apitoken, url, organizer, eventSlug } = processApi
 const loadingStore = useLoadingStore()
 loadingStore.contentLoaded()
 // Initialize Mande API instance
-const api = mande(`${url}/api/v1/organizers/${organizer}/events/${eventSlug}`)
+const api = mande(url)
 api.options.headers = {
   Authorization: `Device ${apitoken}`
 }
@@ -47,7 +47,7 @@ const searchOrders = async () => {
   loading.value = true
   notificationStore.addNotification(['Fetching orders...'], 'success')
   try {
-    const allOrders = await fetchAllOrders('orderpositions/')
+    const allOrders = await fetchAllOrders(`api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/`)
     orders.value = allOrders.filter(
       (order) =>
         order.attendee_name?.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
@@ -67,7 +67,7 @@ const isCheckedIn = (order) => {
 
 const checkIn = async (order) => {
   try {
-    await api.post(`orderpositions/${order.id}/checkin/`, {})
+    await api.post(`api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${order.id}/checkin/`, {})
     // Refresh the orders to show updated checkin status
     searchOrders()
   } catch (error) {

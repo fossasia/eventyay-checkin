@@ -63,13 +63,13 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     const { apitoken, url } = processApi
 
     try {
-      const api = mande(`${url}${badgeUrl}`, {
+      const api = mande(`${url}`, {
         headers: {
           Authorization: `Device ${apitoken}`,
         }
       })
 
-      const response = await api.get()
+      const response = await api.get(badgeUrl)
       return response
     } catch (error) {
       if (error.response?.status === 406) {
@@ -149,10 +149,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         Authorization: `Device ${apitoken}`,
         Accept: 'application/json'
       }
-      const api = mande(`${url}/api/v1/organizers/${organizer}/checkin/redeem/`, {
-        headers: headers
-      })
-      const response = await api.post(requestBody)
+      const api = mande(url, { headers })
+      const response = await api.post(`/api/v1/organizers/${organizer}/checkin/redeem/`, requestBody)
       console.log('Response:', response)
 
       if (response && (response.status === 'ok' || response.status === 'redeemed')) {

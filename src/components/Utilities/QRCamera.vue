@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeMount, ref, nextTick, onMounted, onUnmounted } from 'vue'
+import { onBeforeMount, ref, nextTick, onMounted, onUnmounted, computed } from 'vue'
 import { QrcodeStream } from 'vue-qrcode-reader'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useCameraStore } from '@/stores/camera'
@@ -12,13 +12,16 @@ const cameraStore = useCameraStore()
 const emit = defineEmits(['scanned'])
 const destroyed = ref(false)
 const isCameraOn = ref(false)
+const cameraStreamNonce = ref(0)
 let inactivityTimer = null
 
 const processApi = useEventyayApi()
 const { selectedRole } = processApi
 
 onMounted(() => {
-  if (selectedRole!="Badge Station") {startInactivityTimer()}
+  if (selectedRole !== 'Badge Station') {
+    startInactivityTimer()
+  }
 })
 
 onUnmounted(() => {
@@ -29,44 +32,88 @@ onUnmounted(() => {
 // safari problems: always ask
 onBeforeMount(() => { updateAvailableCamera() })
 
-function updateAvailableCamera() {
-  if (navigator.mediaDevices.getUserMedia) {
-    navigator.mediaDevices
-      .enumerateDevices()
-      .then((devices) => {
-        let environmentCameras = []
-        devices.forEach((device) => {
-          if (device.kind === 'videoinput') {
-            let obj = {}
-            const id = device.deviceId
-            obj.id = id
-            if (device.label && device.label.length > 0) {
-              if (device.label.toLowerCase().indexOf('back') >= 0) {
-                obj.facing = 'environment'
-                console.log('found back camera')
-                environmentCameras.push(obj)
-              }
-            }
-            cameraStore.cameraDevices.push(obj)
-          }
-        })
-        console.log('found cameras:')
-        console.log(cameraStore.cameraDevices)
-        console.log('found bac cameras:')
-        console.log(environmentCameras)
+const cameraConstraints = computed(() => {
+  const currentDeviceId = cameraStore.selectedCameraId?.deviceId
+  if (!currentDeviceId || currentDeviceId === 'environment') {
+    return {
+      facingMode: 'environment'
+    }
+  }
+  if (currentDeviceId === 'user') {
+    return {
+      facingMode: 'user'
+    }
+  }
+  return {
+    deviceId: {
+      exact: currentDeviceId
+    }
+  }
+})
 
-        // select last of environment cameras
-        if (environmentCameras.length > 0) {
-          cameraStore.selectedCameraId.deviceId =
-            environmentCameras[environmentCameras.length - 1].id
-        } else {
-          console.log(cameraStore.cameraDevices)
-          cameraStore.selectedCameraId.deviceId = cameraStore.cameraDevices[0].id
-        }
-      })
-      .catch(function (err) {
-        console.log(err.name + ': ' + err.message)
-      })
+const cameraStreamKey = computed(() => {
+  return `${cameraStreamNonce.value}-${cameraConstraints.value.deviceId}`
+})
+
+async function updateAvailableCamera() {
+  if (!navigator.mediaDevices?.enumerateDevices) {
+    return
+  }
+
+  try {
+    const currentSelectedId = cameraStore.selectedCameraId?.deviceId
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    const environmentCameras = []
+    const videoDevices = []
+
+    devices.forEach((device) => {
+      if (device.kind !== 'videoinput') {
+        return
+      }
+
+      const camera = {
+        id: device.deviceId
+      }
+      const normalizedLabel = device.label ? device.label.toLowerCase() : ''
+      if (
+        normalizedLabel.includes('back') ||
+        normalizedLabel.includes('rear') ||
+        normalizedLabel.includes('environment')
+      ) {
+        camera.facing = 'environment'
+        environmentCameras.push(camera)
+      }
+      videoDevices.push(camera)
+    })
+
+    cameraStore.cameraDevices = videoDevices
+
+    if (videoDevices.length === 0) {
+      cameraStore.selectedCameraId = {
+        deviceId: 'environment'
+      }
+      return
+    }
+
+    const hasCurrentDevice = videoDevices.some((camera) => camera.id === currentSelectedId)
+    if (hasCurrentDevice) {
+      cameraStore.selectedCameraId = {
+        deviceId: currentSelectedId
+      }
+      return
+    }
+
+    // select last environment camera when available, else fallback to the first camera
+    const preferredCamera =
+      environmentCameras.length > 0
+        ? environmentCameras[environmentCameras.length - 1]
+        : videoDevices[0]
+
+    cameraStore.selectedCameraId = {
+      deviceId: preferredCamera.id || 'environment'
+    }
+  } catch (err) {
+    console.log(err.name + ': ' + err.message)
   }
 }
 
@@ -81,24 +128,19 @@ async function detectedQR([result]) {
   }
 }
 
-function switchCamera() {
-  destroyed.value = true
-  console.log('switchCamera: having the following cameras:')
-  console.log(cameraStore.cameraDevices)
-  console.log('switchCamera: cameraDevices.value = ' + cameraStore.cameraDevices.value)
-  console.log('camerastore.cameradevices.length = ' + cameraStore.cameraDevices.length)
-  // when access is not granted, the cameraStore contains only one entry
-  // with an empty id, no more information is provided
-  // In this case, since we are here already and access is granted, reload the
-  // set of available cameras so that we can switch to the back facing one.
-  if (cameraStore.cameraDevices.length === 1 && cameraStore.cameraDevices[0].id === "") {
-    console.log("No cameras found in cameraStore, re-enumerating them")
-    updateAvailableCamera()
+async function switchCamera() {
+  await updateAvailableCamera()
+
+  const hasSwitchedCamera = cameraStore.toggleCameraSide()
+  if (!isCameraOn.value || !hasSwitchedCamera) {
+    startInactivityTimer()
+    return
   }
-  cameraStore.toggleCameraSide()
-  nextTick(() => {
-    destroyed.value = false
-  })
+
+  destroyed.value = true
+  await nextTick()
+  cameraStreamNonce.value += 1
+  destroyed.value = false
   startInactivityTimer()
 }
 
@@ -110,7 +152,7 @@ function toggleCamera() {
 
 function startInactivityTimer() {
   clearInactivityTimer()
-  if (selectedRole!="Badge Station") {
+  if (selectedRole !== 'Badge Station') {
     inactivityTimer = setTimeout(() => {
       isCameraOn.value = false
       cameraStore.paused = true
@@ -129,10 +171,11 @@ function clearInactivityTimer() {
 <template>
   <qrcode-stream
     v-if="!destroyed && isCameraOn"
+    :key="cameraStreamKey"
     class="!aspect-square !h-auto max-w-sm"
     :paused="cameraStore.paused"
     :track="cameraStore.selected.value"
-    :constraints="cameraStore.selectedCameraId"
+    :constraints="cameraConstraints"
     @error="cameraStore.logErrors"
     @detect="detectedQR"
   />

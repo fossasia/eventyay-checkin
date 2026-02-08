@@ -21,24 +21,22 @@ export const useCameraStore = defineStore('camera', () => {
   function toggleCameraSide() {
     // get length of devices
     // if length is 1, then toggle is not possible
-    const qty = cameraDevices.value
-    if (qty === 1) {
-      return
+    const qty = cameraDevices.value.length
+    if (qty <= 1) {
+      return false
     }
 
-    let index = cameraDevices.value.findIndex((device) => {
+    const index = cameraDevices.value.findIndex((device) => {
       return device.id === selectedCameraId.value.deviceId
     })
 
-    // selected device is the next index
-    const nextIndex = index + 1
-    // if next index is the last index, then select the first index
-    if (nextIndex === cameraDevices.value.length) {
-      selectedCameraId.value.deviceId = cameraDevices.value[0].id
-      return
+    // selected device is the next index, wrapping to the first camera
+    const currentIndex = index >= 0 ? index : 0
+    const nextIndex = (currentIndex + 1) % qty
+    selectedCameraId.value = {
+      deviceId: cameraDevices.value[nextIndex].id
     }
-    // else select the next index
-    selectedCameraId.value.deviceId = cameraDevices.value[nextIndex].id
+    return true
   }
 
   function paintOutline(detectedCodes, ctx) {

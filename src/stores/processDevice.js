@@ -66,10 +66,6 @@ export const useProcessDeviceStore = defineStore('processDevice', () => {
         software_version: 'x.x'
       }
       let url = qrData.url
-      const port = import.meta.env.VITE_LOCAL_PORT || 8000
-      if (url.includes('localhost')) {
-        url = `${url}:${port}` // Add your desired port number here
-      }
       const api = mande(url, { headers: { 'Content-Type': 'application/json' } })
       const response = await api.post('/api/v1/device/initialize', payload)
       if (response) {
