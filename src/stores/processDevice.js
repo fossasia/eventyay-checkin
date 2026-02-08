@@ -66,7 +66,6 @@ export const useProcessDeviceStore = defineStore('processDevice', () => {
         software_version: 'x.x'
       }
       let url = qrData.url
-	  console.log('QR Data URL:', url)
       const api = mande(url, { headers: { 'Content-Type': 'application/json' } })
       const response = await api.post('/api/v1/device/initialize', payload)
       if (response) {
