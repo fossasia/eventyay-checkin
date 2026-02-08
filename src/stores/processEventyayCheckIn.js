@@ -63,7 +63,6 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     const { apitoken, url } = processApi
 
     try {
-	  console.log('Fetching badge from:', badgeUrl)
       const api = mande(`${url}`, {
         headers: {
           Authorization: `Device ${apitoken}`,
