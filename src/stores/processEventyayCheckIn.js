@@ -95,7 +95,6 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       if (badgeResponse) {
         const blob = new Blob([badgeResponse], { type: 'application/pdf' })
         const blobUrl = URL.createObjectURL(blob)
-		console.log('Opening badge for printing:', blobUrl)
 
         const printWindow = window.open(blobUrl, '_blank')
         if (printWindow) {
