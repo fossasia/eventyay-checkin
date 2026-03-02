@@ -169,18 +169,18 @@ onBeforeUnmount(() => {
         <StandardButton
           type="button"
           text="Print"
-          @click="handlePrint"
           class="btn-primary"
           :disabled="isLoading || !pdfUrl"
+          @click="handlePrint"
         />
         <StandardButton
           type="button"
           text="Download"
-          @click="handleDownload"
           class="btn-secondary"
           :disabled="isLoading || !pdfBlob"
+          @click="handleDownload"
         />
-        <StandardButton type="button" text="Close" @click="emit('close')" class="btn-white" />
+        <StandardButton type="button" text="Close" class="btn-white" @click="emit('close')" />
       </div>
 
       <!-- PDF Preview -->

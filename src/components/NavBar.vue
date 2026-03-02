@@ -41,8 +41,8 @@ watch(
         </div>
         <div v-if="showLogout">
           <button
-            @click="logout"
             class="rounded px-4 py-2 text-danger transition-colors hover:bg-danger hover:text-white"
+            @click="logout"
           >
             Logout
           </button>

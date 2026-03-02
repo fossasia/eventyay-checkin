@@ -1,5 +1,5 @@
 <script setup>
-import { ref } from 'vue'
+import { onBeforeUnmount, ref, watch } from 'vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { mande } from 'mande'
 import QRCamera from '@/components/Common/QRCamera.vue'
@@ -21,45 +21,96 @@ api.options.headers = {
 const searchQuery = ref('')
 const orders = ref([])
 const loading = ref(false)
-const baseUrl = `${url}/api/v1/organizers/${organizer}/events/${eventSlug}`
-const fetchAllOrders = async (url, accumulatedOrders = []) => {
-  console.log('Fetching orders from URL:', url)
-  const response = await api.get(url)
-  console.log('Fetched orders:', response)
-  const newOrders = accumulatedOrders.concat(response.results)
+const searchCache = new Map()
+const SEARCH_DEBOUNCE_MS = 300
+const MIN_SEARCH_LENGTH = 2
+const SEARCH_RESULTS_LIMIT = 50
+let debounceTimer = null
+let activeRequestId = 0
 
-  if (response.next) {
-	console.log('Next URL:', response.next)
-	const nextUrl = response.next.replace(`${baseUrl}`, '')  // Remove the current URL part to get the relative path
-	console.log('Next URL after removal of base prefix:', nextUrl)
-    return fetchAllOrders(nextUrl, newOrders)
-  } else {
-    return newOrders
-  }
+const getNormalizedSearchQuery = (query) => query.trim().toLowerCase()
+const sortOrdersByAttendeeName = (resultList) =>
+  [...resultList].sort((left, right) =>
+    (left.attendee_name || '').localeCompare(right.attendee_name || '', undefined, {
+      sensitivity: 'base'
+    })
+  )
+
+const buildSearchPath = (query) => {
+  const params = new URLSearchParams({
+    search: query,
+    page_size: String(SEARCH_RESULTS_LIMIT)
+  })
+  return `api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/?${params.toString()}`
 }
 
-const searchOrders = async () => {
-  if (!searchQuery.value) {
+const searchOrders = async (query, { force = false, requestId = ++activeRequestId } = {}) => {
+  const normalizedQuery = getNormalizedSearchQuery(query)
+
+  if (requestId !== activeRequestId) {
+    return
+  }
+
+  if (!normalizedQuery || normalizedQuery.length < MIN_SEARCH_LENGTH) {
     orders.value = []
+    loading.value = false
+    return
+  }
+
+  if (!force && searchCache.has(normalizedQuery)) {
+    orders.value = searchCache.get(normalizedQuery)
+    loading.value = false
     return
   }
 
   loading.value = true
-  notificationStore.addNotification(['Fetching orders...'], 'success')
   try {
-    const allOrders = await fetchAllOrders(`api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/`)
-    orders.value = allOrders.filter(
-      (order) =>
-        order.attendee_name?.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
-        order.attendee_email?.toLowerCase().includes(searchQuery.value.toLowerCase())
-    )
+    const response = await api.get(buildSearchPath(normalizedQuery))
+    if (requestId !== activeRequestId) {
+      return
+    }
+    const results = sortOrdersByAttendeeName(response.results || [])
+    searchCache.set(normalizedQuery, results)
+    orders.value = results
   } catch (error) {
+    if (requestId !== activeRequestId) {
+      return
+    }
     console.error('Error fetching orders:', error)
+    notificationStore.addNotification(['Error', 'Unable to fetch orders'], 'error')
     orders.value = []
   } finally {
-    loading.value = false
+    if (requestId === activeRequestId) {
+      loading.value = false
+    }
   }
 }
+
+watch(searchQuery, (value) => {
+  activeRequestId += 1
+  const requestId = activeRequestId
+
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+  }
+
+  const normalizedQuery = getNormalizedSearchQuery(value)
+  if (!normalizedQuery || normalizedQuery.length < MIN_SEARCH_LENGTH) {
+    orders.value = []
+    loading.value = false
+    return
+  }
+
+  debounceTimer = setTimeout(() => {
+    searchOrders(value, { requestId })
+  }, SEARCH_DEBOUNCE_MS)
+})
+
+onBeforeUnmount(() => {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer)
+  }
+})
 
 const isCheckedIn = (order) => {
   return order.checkins && order.checkins.length > 0
@@ -68,10 +119,10 @@ const isCheckedIn = (order) => {
 const checkIn = async (order) => {
   try {
     await api.post(`api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${order.id}/checkin/`, {})
-    // Refresh the orders to show updated checkin status
-    searchOrders()
+    order.checkins = [...(order.checkins || []), { datetime: new Date().toISOString() }]
   } catch (error) {
     console.error('Error checking in:', error)
+    notificationStore.addNotification(['Error', 'Unable to check in attendee'], 'error')
   }
 }
 
@@ -95,7 +146,6 @@ const generateBadge = (order) => {
           type="text"
           placeholder="Search orders by name or email..."
           class="w-full rounded border p-2"
-          @input="searchOrders"
         />
       </div>
 
@@ -116,15 +166,15 @@ const generateBadge = (order) => {
               </div>
               <div class="space-x-2">
                 <button
-                  @click="checkIn(order)"
                   class="rounded bg-success px-4 py-2 text-white hover:bg-primary"
                   :disabled="isCheckedIn(order)"
+                  @click="checkIn(order)"
                 >
                   {{ isCheckedIn(order) ? 'Checked In' : 'Check In' }}
                 </button>
                 <button
-                  @click="generateBadge(order)"
                   class="rounded bg-primary px-4 py-2 text-white hover:bg-primary-dark"
+                  @click="generateBadge(order)"
                 >
                   Generate Badge
                 </button>

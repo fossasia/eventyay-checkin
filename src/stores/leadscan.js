@@ -64,7 +64,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         Exhibitor: exikey
       }
 
-      const api = mande(`${url}/api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/create`, {
+      const api = mande(`${url}api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/create`, {
         headers: headers
       })
 
