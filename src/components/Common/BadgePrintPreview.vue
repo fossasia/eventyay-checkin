@@ -32,7 +32,6 @@ const fetchPDF = async () => {
       },
       credentials: 'include'
     })
-    console.log('Response:', response)
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }

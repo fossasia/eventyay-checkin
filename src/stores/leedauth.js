@@ -17,7 +17,6 @@ export const useleedauth = defineStore('leedauth', () => {
         `/api/v1/event/${organizer}/${eventSlug}/exhibitors/auth`,
         payload
       )
-      console.log(response)
       if (response.success) {
         processApi.setExhibitor(
           payload.key,
@@ -29,7 +28,7 @@ export const useleedauth = defineStore('leedauth', () => {
 
       return response
     } catch (error) {
-      console.log('error')
+      console.log(error)
     }
   }
 

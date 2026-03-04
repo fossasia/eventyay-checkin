@@ -52,7 +52,7 @@ function handleNotesInput() {
 async function handleSave() {
   const { url, organizer, eventSlug, apitoken, exikey } = processApi
   const api = mande(
-    `${url}/api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/${currentLeadId.value}/update`,
+    `${url}api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/${currentLeadId.value}/update`,
     {
       headers: {
         Authorization: `Device ${apitoken}`,

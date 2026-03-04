@@ -55,7 +55,7 @@ const categorizedEvents = computed(() => {
 
   // Filter for exhibitor events if role is Exhibitor
   if (selectedRole === 'Exhibitor') {
-    filteredEvents = events.value.filter((event) => event.plugins && event.plugins.includes('exhibitors'))
+    filteredEvents = events.value.filter((event) => event.plugins && event.plugins.includes('exhibition'))
   }
 
   // For CheckIn or Badge Station, only show upcoming events
