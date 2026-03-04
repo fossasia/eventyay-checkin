@@ -23,7 +23,6 @@ async function submitLogin() {
     key: password.value
   }
   const response = await leedauth.leedlogin(payload)
-  console.log(response)
   if (response.success) {
     router.push({ name: 'leadscan' })
   } else {

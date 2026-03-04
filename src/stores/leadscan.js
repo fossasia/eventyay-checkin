@@ -69,7 +69,6 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
       })
 
       const response = await api.post(requestBody)
-      console.log('here', response)
       if (response.success) {
         showSuccessMsg({
           message: 'Lead Scanned Successfully!',
@@ -96,7 +95,6 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
   }
 
   function downloadCSV(leads) {
-    console.log('Downloading CSV')
     const csvData = convertToCSV(leads)
     const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' })
     const url = URL.createObjectURL(blob)
@@ -110,7 +108,6 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
   }
 
   function convertToCSV(leads) {
-    console.log('Converting to CSV')
     const formatDate = (date) => new Date(date).toISOString().split('T')[0]
     const formatTime = (date) => new Date(date).toISOString().split('T')[1].split('.')[0]
     const headers = [
@@ -167,7 +164,6 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
   }
 
   async function exportLeads() {
-    console.log('Exporting leads')
     const processApi = useEventyayApi()
     const { apitoken, url, organizer, eventSlug, exikey } = processApi
 
@@ -177,7 +173,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         Accept: 'application/json',
         Exhibitor: exikey
       }
-      const api = mande(`${url}/api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/retrieve`, {
+      const api = mande(`${url}api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/retrieve`, {
         headers: headers
       })
       const response = await api.get()

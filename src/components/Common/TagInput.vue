@@ -18,7 +18,7 @@ const { availableTags, currentTags, inputValue } = storeToRefs(tagStore)
 onMounted(() => {
   tagStore.fetchTags()
 })
-console.log(availableTags)
+
 function handleInput(e) {
   tagStore.handleCommaInput(e.target.value)
   emit('update:modelValue', currentTags.value)

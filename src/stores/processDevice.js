@@ -316,7 +316,6 @@ export const useProcessDeviceStore = defineStore('processDevice', () => {
         apiStore.newSession(true)
         const data = response
         showSuccessMsg()
-        console.log(data)
         processApi.setApiCred(data.api_token, url, data.organizer)
         router.push({ name: 'eventyayevents' })
       } else {
