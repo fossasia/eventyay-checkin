@@ -9,6 +9,7 @@ import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { storeToRefs } from 'pinia'
+import { PencilSquareIcon } from '@heroicons/vue/20/solid'
 
 const notificationStore = useNotificationStore()
 const processApi = useEventyayApi()
@@ -29,6 +30,21 @@ const orders = ref([])
 const loading = ref(false)
 const showPrintPreview = ref(false)
 const countdown = ref(10)
+const isEditDialogOpen = ref(false)
+const isSavingAttendee = ref(false)
+const editError = ref('')
+const editableAttendee = ref({
+  attendee_name: '',
+  attendee_email: '',
+  company: '',
+  job_title: ''
+})
+const originalAttendee = ref({
+  attendee_name: '',
+  attendee_email: '',
+  company: '',
+  job_title: ''
+})
 const searchCache = new Map()
 const SEARCH_DEBOUNCE_MS = 300
 const MIN_SEARCH_LENGTH = 2
@@ -72,6 +88,7 @@ const showPopup = () => {
 }
 
 const closePopup = () => {
+  isEditDialogOpen.value = false
   processEventyayCheckInStore.$reset()
   clearPopupTimers()
 }
@@ -87,6 +104,178 @@ const openBadgePreview = () => {
 const handlePrintClose = () => {
   showPrintPreview.value = false
   startPopupCountdown()
+}
+
+const formatAttendeeForEdit = (attendeeMessage = {}) => ({
+  attendee_name: attendeeMessage.attendee_name || attendeeMessage.attendee || '',
+  attendee_email: attendeeMessage.attendee_email || '',
+  company: attendeeMessage.company || '',
+  job_title: attendeeMessage.job_title || ''
+})
+
+const openEditDialog = () => {
+  editableAttendee.value = formatAttendeeForEdit(message.value)
+  originalAttendee.value = { ...editableAttendee.value }
+  editError.value = ''
+  isEditDialogOpen.value = true
+  clearPopupTimers()
+  countdown.value = '...'
+}
+
+const closeEditDialog = () => {
+  isEditDialogOpen.value = false
+  editError.value = ''
+  if (showSuccess.value || showError.value) {
+    startPopupCountdown()
+  }
+}
+
+const getModifiedAttendeeFields = () => {
+  const payload = {}
+  const trackedFields = ['attendee_name', 'attendee_email', 'company', 'job_title']
+
+  trackedFields.forEach((field) => {
+    if (editableAttendee.value[field] !== originalAttendee.value[field]) {
+      payload[field] = editableAttendee.value[field]
+    }
+  })
+
+  return payload
+}
+
+const updateOrderInSearchResults = (updatedOrderPosition) => {
+  if (!updatedOrderPosition?.id) {
+    return
+  }
+
+  const matchedOrder = orders.value.find((order) => String(order.id) === String(updatedOrderPosition.id))
+  if (!matchedOrder) {
+    return
+  }
+
+  matchedOrder.attendee_name = updatedOrderPosition.attendee_name || matchedOrder.attendee_name
+  matchedOrder.attendee_email = updatedOrderPosition.attendee_email || matchedOrder.attendee_email
+  matchedOrder.company = updatedOrderPosition.company || ''
+  matchedOrder.job_title = updatedOrderPosition.job_title || ''
+}
+
+const updatePopupAttendee = (updatedOrderPosition) => {
+  if (!updatedOrderPosition) {
+    return
+  }
+
+  message.value = {
+    ...message.value,
+    attendee: updatedOrderPosition.attendee_name || message.value?.attendee || '',
+    attendee_name: updatedOrderPosition.attendee_name || '',
+    attendee_email: updatedOrderPosition.attendee_email || '',
+    company: updatedOrderPosition.company || '',
+    job_title: updatedOrderPosition.job_title || '',
+    orderPositionId: updatedOrderPosition.id || message.value?.orderPositionId || null
+  }
+}
+
+const patchAttendeeDetails = async (orderPositionId, payload) => {
+  const endpoint = `${String(url).replace(/\/+$/, '')}/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${orderPositionId}/`
+  const response = await fetch(endpoint, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Device ${apitoken}`,
+      Accept: 'application/json, text/javascript',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+
+  if (!response.ok) {
+    let errorMessage = `Unable to update attendee details (status ${response.status})`
+    try {
+      const errorBody = await response.json()
+      if (errorBody?.detail || errorBody?.message) {
+        errorMessage = errorBody.detail || errorBody.message
+      }
+    } catch (error) {
+      // Keep the default message when error body is not JSON
+    }
+    throw new Error(errorMessage)
+  }
+
+  return response.json()
+}
+
+const resolveOrderPositionId = async (knownOrderPositionId, attendeeSecret) => {
+  if (knownOrderPositionId) {
+    return knownOrderPositionId
+  }
+
+  const normalizedSecret = String(attendeeSecret || '').trim()
+  if (!normalizedSecret) {
+    return null
+  }
+
+  const params = new URLSearchParams({
+    search: normalizedSecret,
+    page_size: '50'
+  })
+  const response = await api.get(
+    `api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/?${params.toString()}`
+  )
+  const exactMatch = (response.results || []).find(
+    (orderPosition) => String(orderPosition.secret || '').trim() === normalizedSecret
+  )
+
+  return exactMatch?.id || null
+}
+
+const saveAttendeeAndCheckIn = async () => {
+  if (isSavingAttendee.value) {
+    return
+  }
+
+  const attendeeSecret = message.value?.secret
+  if (!attendeeSecret) {
+    editError.value = 'Attendee details are missing for this scan.'
+    return
+  }
+
+  isSavingAttendee.value = true
+  editError.value = ''
+
+  try {
+    const orderPositionId = await resolveOrderPositionId(
+      message.value?.orderPositionId,
+      attendeeSecret
+    )
+
+    const patchPayload = getModifiedAttendeeFields()
+    if (Object.keys(patchPayload).length > 0) {
+      if (!orderPositionId) {
+        throw new Error('Unable to determine attendee record for update.')
+      }
+      const updatedOrderPosition = await patchAttendeeDetails(orderPositionId, patchPayload)
+      if (
+        updatedOrderPosition?.id &&
+        String(updatedOrderPosition.id) !== String(orderPositionId)
+      ) {
+        throw new Error('Received invalid attendee update response.')
+      }
+      updatePopupAttendee(updatedOrderPosition)
+      updateOrderInSearchResults(updatedOrderPosition)
+    }
+
+    const checkInResponse = await processEventyayCheckInStore.checkInBySecret(attendeeSecret)
+    if (!checkInResponse || (checkInResponse.status !== 'ok' && checkInResponse.status !== 'redeemed')) {
+      throw new Error('Attendee updated, but check-in failed.')
+    }
+
+    isEditDialogOpen.value = false
+    startPopupCountdown()
+  } catch (error) {
+    console.error('Error saving attendee details:', error)
+    editError.value = error?.message || 'Unable to save attendee details.'
+  } finally {
+    isSavingAttendee.value = false
+  }
 }
 
 const getNormalizedSearchQuery = (query) => query.trim().toLowerCase()
@@ -195,6 +384,10 @@ const checkIn = async (order) => {
   if (response.position?.downloads) {
     order.downloads = response.position.downloads
   }
+  order.attendee_name = response.position?.attendee_name || order.attendee_name
+  order.attendee_email = response.position?.attendee_email || order.attendee_email
+  order.company = response.position?.company || order.company || ''
+  order.job_title = response.position?.job_title || order.job_title || ''
 }
 
 </script>
@@ -258,7 +451,10 @@ const checkIn = async (order) => {
           {{ message.message }}
         </h2>
         <div>
-          <p><b>Name:</b> {{ message.attendee }}</p>
+          <p><b>Name:</b> {{ message.attendee_name || message.attendee }}</p>
+          <p><b>Email:</b> {{ message.attendee_email || 'Not provided' }}</p>
+          <p v-if="message.company"><b>Company:</b> {{ message.company }}</p>
+          <p v-if="message.job_title"><b>Job Title:</b> {{ message.job_title }}</p>
           <div class="mt-4 flex flex-col space-y-3">
             <StandardButton
               v-if="badgeUrl && showSuccess"
@@ -267,13 +463,68 @@ const checkIn = async (order) => {
               class="btn-primary w-full justify-center"
               @click="openBadgePreview"
             />
-            <StandardButton
-              type="button"
-              text="Done"
-              class="btn-info mt-6 w-1/4 justify-center"
-              @click="closePopup"
-            />
+            <div class="mt-6 flex items-center gap-2">
+              <button
+                v-if="message?.secret || message?.orderPositionId"
+                type="button"
+                class="inline-flex items-center rounded bg-success px-3 py-2 text-white hover:opacity-90"
+                aria-label="Edit attendee details"
+                @click="openEditDialog"
+              >
+                <PencilSquareIcon class="h-5 w-5" />
+              </button>
+              <StandardButton
+                type="button"
+                text="Done"
+                class="btn-info justify-center"
+                @click="closePopup"
+              />
+            </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="isEditDialogOpen"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black bg-opacity-60"
+    >
+      <div class="w-full max-w-md rounded bg-white p-5 shadow-lg">
+        <h3 class="mb-4 text-lg font-semibold">Edit Attendee</h3>
+        <div class="space-y-3">
+          <div>
+            <label class="mb-1 block text-sm font-medium">Attendee Name</label>
+            <input v-model="editableAttendee.attendee_name" type="text" class="w-full rounded border p-2" />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium">Attendee Email</label>
+            <input v-model="editableAttendee.attendee_email" type="email" class="w-full rounded border p-2" />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium">Company</label>
+            <input v-model="editableAttendee.company" type="text" class="w-full rounded border p-2" />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium">Job Title</label>
+            <input v-model="editableAttendee.job_title" type="text" class="w-full rounded border p-2" />
+          </div>
+        </div>
+        <p v-if="editError" class="mt-3 text-sm text-danger">{{ editError }}</p>
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <StandardButton
+            type="button"
+            text="Cancel"
+            class="btn-white"
+            :disabled="isSavingAttendee"
+            @click="closeEditDialog"
+          />
+          <StandardButton
+            type="button"
+            :text="isSavingAttendee ? 'Saving...' : 'Save and Checkin'"
+            class="btn-primary"
+            :disabled="isSavingAttendee"
+            @click="saveAttendeeAndCheckIn"
+          />
         </div>
       </div>
     </div>

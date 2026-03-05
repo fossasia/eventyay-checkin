@@ -33,6 +33,19 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showError.value = false
   }
 
+  function buildAttendeeMessage(messageText, position, secret = '') {
+    return {
+      message: messageText,
+      attendee: position?.attendee_name || 'Unknown Attendee',
+      attendee_name: position?.attendee_name || '',
+      attendee_email: position?.attendee_email || '',
+      company: position?.company || '',
+      job_title: position?.job_title || '',
+      orderPositionId: position?.id || null,
+      secret
+    }
+  }
+
   // Function to generate a random nonce
   function generateNonce(length = 32) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
@@ -143,10 +156,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   async function checkInBySecret(secret) {
     const normalizedSecret = String(secret || '').trim()
     if (!normalizedSecret) {
-      showErrorMsg({
-        message: 'Check-in failed!',
-        attendee: 'Unknown Attendee'
-      })
+      showErrorMsg(buildAttendeeMessage('Check-in failed!', null, normalizedSecret))
       return null
     }
 
@@ -184,30 +194,22 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
         badgeUrl.value = badgeDownload?.url || ''
         if (response.status === 'ok') {
-          showSuccessMsg({
-            message: 'Check-in successful!',
-            attendee: response.position?.attendee_name || 'Unknown Attendee'
-          })
+          showSuccessMsg(
+            buildAttendeeMessage('Check-in successful!', response.position, normalizedSecret)
+          )
         } else {
-          showSuccessMsg({
-            message: 'Already Checked-in!',
-            attendee: response.position?.attendee_name || 'Unknown Attendee'
-          })
+          showSuccessMsg(
+            buildAttendeeMessage('Already Checked-in!', response.position, normalizedSecret)
+          )
         }
       } else {
-        showErrorMsg({
-          message: 'Check-in failed!',
-          attendee: response?.position?.attendee_name || 'Unknown Attendee'
-        })
+        showErrorMsg(buildAttendeeMessage('Check-in failed!', response?.position, normalizedSecret))
       }
 
       return response
     } catch (error) {
       console.error('Fetch error:', error)
-      showErrorMsg({
-        message: 'Check-in Failed!',
-        attendee: 'Unknown Attendee'
-      })
+      showErrorMsg(buildAttendeeMessage('Check-in Failed!', null, normalizedSecret))
       return null
     }
   }
@@ -222,10 +224,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       return await checkInBySecret(secret)
     } catch (error) {
       console.error('Invalid QR payload:', error)
-      showErrorMsg({
-        message: 'Check-in Failed!',
-        attendee: 'Unknown Attendee'
-      })
+      showErrorMsg(buildAttendeeMessage('Check-in Failed!', null))
       return null
     }
   }
