@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, ref, watch } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { mande } from 'mande'
 import QRCamera from '@/components/Common/QRCamera.vue'
@@ -8,6 +8,7 @@ import BadgePrintPreview from '@/components/Common/BadgePrintPreview.vue'
 import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
+import { useLiveRegistrationStore } from '@/stores/liveRegistration'
 import { storeToRefs } from 'pinia'
 import { PencilSquareIcon } from '@heroicons/vue/20/solid'
 
@@ -16,6 +17,8 @@ const processApi = useEventyayApi()
 const { apitoken, url, organizer, eventSlug } = processApi
 const processEventyayCheckInStore = useProcessEventyayCheckInStore()
 const { message, showSuccess, showError, badgeUrl } = storeToRefs(processEventyayCheckInStore)
+const liveRegistrationStore = useLiveRegistrationStore()
+const { products, isLoadingProducts, isRegistering } = storeToRefs(liveRegistrationStore)
 
 const loadingStore = useLoadingStore()
 loadingStore.contentLoaded()
@@ -44,6 +47,15 @@ const originalAttendee = ref({
   attendee_email: '',
   company: '',
   job_title: ''
+})
+const isLiveRegistrationDialogOpen = ref(false)
+const liveRegistrationError = ref('')
+const liveRegistrationForm = ref({
+  attendee_name: '',
+  attendee_email: '',
+  company: '',
+  job_title: '',
+  product_id: ''
 })
 const searchCache = new Map()
 const SEARCH_DEBOUNCE_MS = 300
@@ -104,6 +116,96 @@ const openBadgePreview = () => {
 const handlePrintClose = () => {
   showPrintPreview.value = false
   startPopupCountdown()
+}
+
+const getProductEnglishName = (product) => {
+  if (!product?.name) {
+    return `Product ${product?.id || ''}`.trim()
+  }
+
+  if (typeof product.name === 'string') {
+    return product.name
+  }
+
+  if (typeof product.name === 'object') {
+    return product.name.en || Object.values(product.name)[0] || `Product ${product.id}`
+  }
+
+  return `Product ${product.id}`
+}
+
+const getProductDisplayLabel = (product) =>
+  `${getProductEnglishName(product)} (${product.default_price || '0.00'})`
+
+const resetLiveRegistrationForm = () => {
+  liveRegistrationForm.value = {
+    attendee_name: '',
+    attendee_email: '',
+    company: '',
+    job_title: '',
+    product_id: products.value.length ? String(products.value[0].id) : ''
+  }
+}
+
+const openLiveRegistrationDialog = async () => {
+  liveRegistrationError.value = ''
+
+  if (!products.value.length) {
+    try {
+      await liveRegistrationStore.fetchProducts({ force: true })
+    } catch (error) {
+      console.error('Error fetching products for live registration:', error)
+      liveRegistrationError.value = 'Unable to load products for registration.'
+    }
+  }
+
+  resetLiveRegistrationForm()
+  isLiveRegistrationDialogOpen.value = true
+}
+
+const closeLiveRegistrationDialog = () => {
+  isLiveRegistrationDialogOpen.value = false
+  liveRegistrationError.value = ''
+}
+
+const submitLiveRegistration = async () => {
+  if (isRegistering.value) {
+    return
+  }
+
+  const attendeeName = String(liveRegistrationForm.value.attendee_name || '').trim()
+  const attendeeEmail = String(liveRegistrationForm.value.attendee_email || '').trim()
+  const selectedProductId = String(liveRegistrationForm.value.product_id || '').trim()
+
+  if (!attendeeName || !attendeeEmail || !selectedProductId) {
+    liveRegistrationError.value = 'Attendee name, attendee email, and product are required.'
+    return
+  }
+
+  liveRegistrationError.value = ''
+
+  try {
+    const registrationResult = await liveRegistrationStore.registerAndMarkPaid(
+      {
+        attendee_name: attendeeName,
+        attendee_email: attendeeEmail,
+        company: String(liveRegistrationForm.value.company || '').trim(),
+        job_title: String(liveRegistrationForm.value.job_title || '').trim()
+      },
+      Number(selectedProductId)
+    )
+
+    const checkInResponse = await processEventyayCheckInStore.checkInBySecret(registrationResult.secret)
+    if (!checkInResponse || (checkInResponse.status !== 'ok' && checkInResponse.status !== 'redeemed')) {
+      throw new Error('Registration completed but automatic check-in failed.')
+    }
+
+    closeLiveRegistrationDialog()
+    notificationStore.addNotification(['Success', 'Attendee registered and marked paid'], 'success')
+  } catch (error) {
+    console.error('Live registration failed:', error)
+    liveRegistrationError.value = error?.body?.detail || error?.message || 'Live registration failed.'
+  }
 }
 
 const formatAttendeeForEdit = (attendeeMessage = {}) => ({
@@ -336,6 +438,16 @@ const searchOrders = async (query, { force = false, requestId = ++activeRequestI
   }
 }
 
+onMounted(async () => {
+  try {
+    await liveRegistrationStore.fetchProducts()
+    resetLiveRegistrationForm()
+  } catch (error) {
+    console.error('Error loading products:', error)
+    notificationStore.addNotification(['Error', 'Unable to load products for live registration'], 'error')
+  }
+})
+
 watch(searchQuery, (value) => {
   activeRequestId += 1
   const requestId = activeRequestId
@@ -393,8 +505,18 @@ const checkIn = async (order) => {
 </script>
 <template>
   <div class="flex h-screen justify-center">
-    <div class="flex w-1/2 items-center">
+    <div class="flex w-1/2 flex-col items-center justify-center gap-4">
       <QRCamera qr-type="eventyaycheckin" scan-type="Check-In" />
+      <button
+        type="button"
+        class="rounded bg-success px-4 py-2 font-medium text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+        :disabled="isLoadingProducts || !products.length"
+        @click="openLiveRegistrationDialog"
+      >
+        Live Registration
+      </button>
+      <p v-if="isLoadingProducts" class="text-sm text-gray-500">Loading products...</p>
+      <p v-else-if="!products.length" class="text-sm text-danger">No products available</p>
     </div>
 
     <div class="w-1/2 justify-center p-4">
@@ -433,6 +555,80 @@ const checkIn = async (order) => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="isLiveRegistrationDialogOpen"
+      class="fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-60"
+    >
+      <div class="w-full max-w-md rounded bg-white p-5 shadow-lg">
+        <h3 class="mb-4 text-lg font-semibold">Register Attendee</h3>
+
+        <div class="space-y-3">
+          <div>
+            <label class="mb-1 block text-sm font-medium">Attendee Name</label>
+            <input
+              v-model="liveRegistrationForm.attendee_name"
+              type="text"
+              class="w-full rounded border p-2"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium">Attendee Email</label>
+            <input
+              v-model="liveRegistrationForm.attendee_email"
+              type="email"
+              class="w-full rounded border p-2"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium">Company</label>
+            <input
+              v-model="liveRegistrationForm.company"
+              type="text"
+              class="w-full rounded border p-2"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium">Job_Title</label>
+            <input
+              v-model="liveRegistrationForm.job_title"
+              type="text"
+              class="w-full rounded border p-2"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm font-medium">Product</label>
+            <select v-model="liveRegistrationForm.product_id" class="w-full rounded border p-2">
+              <option disabled value="">Select Product</option>
+              <option v-for="product in products" :key="product.id" :value="String(product.id)">
+                {{ getProductDisplayLabel(product) }}
+              </option>
+            </select>
+          </div>
+        </div>
+
+        <p v-if="liveRegistrationError" class="mt-3 text-sm text-danger">
+          {{ liveRegistrationError }}
+        </p>
+
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <StandardButton
+            type="button"
+            text="Cancel"
+            class="btn-white"
+            :disabled="isRegistering"
+            @click="closeLiveRegistrationDialog"
+          />
+          <StandardButton
+            type="button"
+            :text="isRegistering ? 'Registering...' : 'Register and Mark Paid'"
+            class="btn-primary"
+            :disabled="isRegistering"
+            @click="submitLiveRegistration"
+          />
         </div>
       </div>
     </div>
