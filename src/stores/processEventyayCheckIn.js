@@ -39,6 +39,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       attendee: position?.attendee_name || 'Unknown Attendee',
       attendee_name: position?.attendee_name || '',
       attendee_email: position?.attendee_email || '',
+      product_id: position?.product || null,
       company: position?.company || '',
       job_title: position?.job_title || '',
       orderPositionId: position?.id || null,

@@ -137,6 +137,21 @@ const getProductEnglishName = (product) => {
 const getProductDisplayLabel = (product) =>
   `${getProductEnglishName(product)} (${product.default_price || '0.00'})`
 
+const getCheckedInProductName = (productId) => {
+  if (!productId) {
+    return ''
+  }
+
+  const selectedProduct = products.value.find(
+    (product) => String(product.id) === String(productId)
+  )
+  if (selectedProduct) {
+    return getProductEnglishName(selectedProduct)
+  }
+
+  return `Product ID ${productId}`
+}
+
 const resetLiveRegistrationForm = () => {
   liveRegistrationForm.value = {
     attendee_name: '',
@@ -271,6 +286,7 @@ const updatePopupAttendee = (updatedOrderPosition) => {
     attendee: updatedOrderPosition.attendee_name || message.value?.attendee || '',
     attendee_name: updatedOrderPosition.attendee_name || '',
     attendee_email: updatedOrderPosition.attendee_email || '',
+    product_id: updatedOrderPosition.product || message.value?.product_id || null,
     company: updatedOrderPosition.company || '',
     job_title: updatedOrderPosition.job_title || '',
     orderPositionId: updatedOrderPosition.id || message.value?.orderPositionId || null
@@ -649,6 +665,7 @@ const checkIn = async (order) => {
         <div>
           <p><b>Name:</b> {{ message.attendee_name || message.attendee }}</p>
           <p><b>Email:</b> {{ message.attendee_email || 'Not provided' }}</p>
+          <p v-if="message.product_id"><b>Product:</b> {{ getCheckedInProductName(message.product_id) }}</p>
           <p v-if="message.company"><b>Company:</b> {{ message.company }}</p>
           <p v-if="message.job_title"><b>Job Title:</b> {{ message.job_title }}</p>
           <div class="mt-4 flex flex-col space-y-3">
