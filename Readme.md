@@ -70,6 +70,34 @@ npm build
 
 Deployed in a production environment at [checkin.eventyay.com](https://checkin.eventyay.com) it consumes the API exposed by master branch deployment of open event server, hosted at [api.eventyay.com](https://api.eventyay.com).
 
+## Kiosk Mode Setup (Silent Badge Printing)
+
+This setup runs **Google Chrome in kiosk mode** for automated check-in and **silent badge printing**.
+
+### 1. Launch Chrome in Kiosk Mode
+
+Run the following command:
+
+```sh
+open -a "Google Chrome" --args --kiosk --kiosk-printing --app=https://access.eventyay.com
+```
+
+### 2. Register the Device
+
+Once Chrome opens:
+
+1. Select the **Server**.
+2. Choose **Badge Printing Station**.
+3. Continue with **Device Registration**.
+
+After registration, the kiosk will be ready for **automated attendee check-in and badge printing**.
+> Ensure the **printer is installed and set as the default printer** on the system.
+
+
+---
+
+If you want, I can also add a **“Auto-start kiosk on boot” section** (very useful for event check-in machines).
+
 #### Development branch
 
 Only deployed locally with `npm run dev` or Netlify when you make a pull request it consumes the API exposed by development branch of open event server, hosted at [test-api.eventyay.com](https://test-api.eventyay.com).
