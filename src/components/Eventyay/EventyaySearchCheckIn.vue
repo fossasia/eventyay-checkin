@@ -608,7 +608,7 @@ const checkIn = async (order) => {
             />
           </div>
           <div>
-            <label class="mb-1 block text-sm font-medium">Job_Title</label>
+            <label class="mb-1 block text-sm font-medium">Job Title</label>
             <input
               v-model="liveRegistrationForm.job_title"
               type="text"
