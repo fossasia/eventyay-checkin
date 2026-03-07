@@ -12,6 +12,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   const showError = ref(false)
   const badgeUrl = ref('')
   const isGeneratingBadge = ref(false)
+  let cachedCheckInLists = null
 
   function $reset() {
     message.value = ''
@@ -58,18 +59,20 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   }
 
   async function getCheckInLists() {
+    if (cachedCheckInLists) {
+      return cachedCheckInLists
+    }
+
     const processApi = useEventyayApi()
     const { apitoken, url, organizer, eventSlug } = processApi
     const api = mande(url, { headers: { Authorization: `Device ${apitoken}` } })
 
-    // Fetch the check-in lists
     const response = await api.get(
       `/api/v1/organizers/${organizer}/events/${eventSlug}/checkinlists/`
     )
 
-    // Extract all IDs from the results
-    const listIds = response.results.map((list) => list.id.toString())
-    return listIds
+    cachedCheckInLists = response.results.map((list) => list.id.toString())
+    return cachedCheckInLists
   }
 
   async function getBadgeStatus(badgeUrl) {
@@ -94,7 +97,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   }
 
   async function printBadge(badgeUrl) {
-    if (!badgeUrl) {
+    if (!badgeUrl || isGeneratingBadge.value) {
       return false
     }
 

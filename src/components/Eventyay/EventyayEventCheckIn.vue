@@ -89,10 +89,10 @@ watch([showSuccess, showError], ([newSuccess, newError], [oldSuccess, oldError])
   }
 })
 
-function showPopup() {
+async function showPopup() {
   notes.value = ''
   startCountdown()
-  if (selectedRole === "Badge Station") { handlePrint() }
+  if (selectedRole === "Badge Station") { await handlePrint() }
   timeoutInstance.value = setTimeout(() => {
     processEventyayCheckInStore.$reset()
   }, AUTO_CLOSE_SECONDS * 1000)
