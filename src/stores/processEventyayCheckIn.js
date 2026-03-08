@@ -83,12 +83,22 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         }
       })
 
-      const response = await api.get(badgeUrl)
-      return response
-    } catch (error) {
-      if (error.response?.status === 406) {
+	  const response = await api.get(badgeUrl)
+      const blob = new Blob([response], { type: 'application/pdf' })
+
+      if (blob.size > 0) {
+        return response
+      }
+
+      return null
+    } 
+	catch (error) {
+      const status = error?.response?.status || error?.status
+
+      if (status === 406 || status === 409 || status === 202) {
         return null
       }
+
       throw error
     }
   }
@@ -102,11 +112,13 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
     try {
       let badgeResponse = await getBadgeStatus(badgeUrl)
-      if (!badgeResponse) {
+      let blob = new Blob([badgeResponse], { type: 'application/pdf' })
+      if (blob.size == 0) {
         for (let i = 0; i < 5; i++) {
           await new Promise((resolve) => setTimeout(resolve, 1000))
           badgeResponse = await getBadgeStatus(badgeUrl)
-          if (badgeResponse) break
+          blob = new Blob([badgeResponse], { type: 'application/pdf' })
+          if (blob.size > 0) break
         }
       }
 
@@ -114,7 +126,6 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         return false
       }
 
-      const blob = new Blob([badgeResponse], { type: 'application/pdf' })
       const blobUrl = URL.createObjectURL(blob)
       console.log('Opening badge for printing:', blobUrl)
 
