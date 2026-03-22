@@ -16,7 +16,7 @@ const notificationStore = useNotificationStore()
 const processApi = useEventyayApi()
 const { apitoken, url, organizer, eventSlug } = processApi
 const processEventyayCheckInStore = useProcessEventyayCheckInStore()
-const { message, showSuccess, showError, badgeUrl } = storeToRefs(processEventyayCheckInStore)
+const { message, showSuccess, showError, badgeUrl, isGeneratingBadge } = storeToRefs(processEventyayCheckInStore)
 const liveRegistrationStore = useLiveRegistrationStore()
 const { products, isLoadingProducts, isRegistering } = storeToRefs(liveRegistrationStore)
 
@@ -93,6 +93,9 @@ const clearPopupTimers = () => {
 
 const showPopup = () => {
   startPopupCountdown()
+  if (processApi.selectedRole === "Badge Station") {
+    handlePrint()
+  }
   popupTimeout = setTimeout(() => {
     processEventyayCheckInStore.$reset()
     clearPopupTimers()
@@ -109,8 +112,15 @@ const openBadgePreview = () => {
   if (!badgeUrl.value) {
     return
   }
-  clearPopupTimers()
   showPrintPreview.value = true
+}
+
+const handlePrint = async () => {
+  clearPopupTimers()
+  if (badgeUrl.value) {
+    await processEventyayCheckInStore.printBadge(badgeUrl.value)
+  }
+  openBadgePreview()
 }
 
 const handlePrintClose = () => {
@@ -210,7 +220,7 @@ const submitLiveRegistration = async () => {
       Number(selectedProductId)
     )
 
-    const checkInResponse = await processEventyayCheckInStore.checkInBySecret(registrationResult.secret)
+    const checkInResponse = await processEventyayCheckInStore.checkIn(registrationResult.secret)
     if (!checkInResponse || (checkInResponse.status !== 'ok' && checkInResponse.status !== 'redeemed')) {
       throw new Error('Registration completed but automatic check-in failed.')
     }
@@ -381,7 +391,7 @@ const saveAttendeeAndCheckIn = async () => {
       updateOrderInSearchResults(updatedOrderPosition)
     }
 
-    const checkInResponse = await processEventyayCheckInStore.checkInBySecret(attendeeSecret)
+    const checkInResponse = await processEventyayCheckInStore.checkIn(attendeeSecret)
     if (!checkInResponse || (checkInResponse.status !== 'ok' && checkInResponse.status !== 'redeemed')) {
       throw new Error('Attendee updated, but check-in failed.')
     }
@@ -502,7 +512,7 @@ const isCheckedIn = (order) => {
 }
 
 const checkIn = async (order) => {
-  const response = await processEventyayCheckInStore.checkInBySecret(order.secret)
+  const response = await processEventyayCheckInStore.checkIn(order.secret)
   if (!response || (response.status !== 'ok' && response.status !== 'redeemed')) {
     notificationStore.addNotification(['Error', 'Unable to check in attendee'], 'error')
     return
@@ -672,9 +682,10 @@ const checkIn = async (order) => {
             <StandardButton
               v-if="badgeUrl && showSuccess"
               type="button"
-              text="Generate Badge"
+              :text="isGeneratingBadge ? 'Generating Badge...' : 'Generate Badge'"
+              :disabled="isGeneratingBadge"
               class="btn-primary w-full justify-center"
-              @click="openBadgePreview"
+              @click="handlePrint"
             />
             <div class="mt-6 flex items-center gap-2">
               <button

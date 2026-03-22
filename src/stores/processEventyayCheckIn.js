@@ -226,16 +226,16 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function checkIn() {
+  async function checkIn(secretValue = null) {
     console.log('Check-in')
     const processApi = useEventyayApi()
     const { servername } = processApi
 
     try {
-      const secret = extractTicketFromQrCode(cameraStore.qrCodeValue, servername)
+      const secret = secretValue || extractTicketFromQrCode(cameraStore.qrCodeValue, servername)
       return await checkInBySecret(secret)
     } catch (error) {
-      console.error('Invalid QR payload:', error)
+      console.error('Invalid payload or secret:', error)
       showErrorMsg(buildAttendeeMessage('Check-in Failed!', null))
       return null
     }
