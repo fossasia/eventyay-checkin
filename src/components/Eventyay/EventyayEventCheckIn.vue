@@ -17,6 +17,7 @@ const { message, showSuccess, showError, badgeUrl, isGeneratingBadge } = storeTo
 )
 const processApi = useEventyayApi()
 const { apitoken, url, organizer, eventSlug, eventname, selectedRole } = processApi
+const AUTO_CLOSE_SECONDS = 20
 const countdown = ref(5)
 const timerInstance = ref(null)
 const timeoutInstance = ref(null)
@@ -27,7 +28,7 @@ function joinUrl(base, path) {
 }
 
 function startCountdown() {
-  countdown.value = 10
+  countdown.value = AUTO_CLOSE_SECONDS
   timerInstance.value = setInterval(() => {
     countdown.value--
     if (countdown.value <= 0) {
@@ -94,7 +95,7 @@ function showPopup() {
   if (selectedRole === "Badge Station") { handlePrint() }
   timeoutInstance.value = setTimeout(() => {
     processEventyayCheckInStore.$reset()
-  }, 10000)
+  }, AUTO_CLOSE_SECONDS * 1000)
 }
 
 // Cleanup timers when component is destroyed

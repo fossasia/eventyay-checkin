@@ -33,6 +33,20 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showError.value = false
   }
 
+  function buildAttendeeMessage(messageText, position, secret = '') {
+    return {
+      message: messageText,
+      attendee: position?.attendee_name || 'Unknown Attendee',
+      attendee_name: position?.attendee_name || '',
+      attendee_email: position?.attendee_email || '',
+      product_id: position?.product || null,
+      company: position?.company || '',
+      job_title: position?.job_title || '',
+      orderPositionId: position?.id || null,
+      secret
+    }
+  }
+
   // Function to generate a random nonce
   function generateNonce(length = 32) {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
@@ -43,7 +57,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     return result
   }
 
-  async function getlist() {
+  async function getCheckInLists() {
     const processApi = useEventyayApi()
     const { apitoken, url, organizer, eventSlug } = processApi
     const api = mande(url, { headers: { Authorization: `Device ${apitoken}` } })
@@ -69,122 +83,161 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         }
       })
 
-      const response = await api.get(badgeUrl)
-      return response
-    } catch (error) {
-      if (error.response?.status === 406) {
+	  const response = await api.get(badgeUrl)
+      const blob = new Blob([response], { type: 'application/pdf' })
+
+      if (blob.size > 0) {
+        return response
+      }
+
+      return null
+    } 
+	catch (error) {
+      const status = error?.response?.status || error?.status
+
+      if (status === 406 || status === 409 || status === 202) {
         return null
       }
+
       throw error
     }
   }
 
   async function printBadge(badgeUrl) {
+    if (!badgeUrl) {
+      return false
+    }
+
     isGeneratingBadge.value = true
 
     try {
       let badgeResponse = await getBadgeStatus(badgeUrl)
-      if (!badgeResponse) {
+      let blob = new Blob([badgeResponse], { type: 'application/pdf' })
+      if (blob.size == 0) {
         for (let i = 0; i < 5; i++) {
           await new Promise((resolve) => setTimeout(resolve, 1000))
           badgeResponse = await getBadgeStatus(badgeUrl)
-          if (badgeResponse) break
+          blob = new Blob([badgeResponse], { type: 'application/pdf' })
+          if (blob.size > 0) break
         }
       }
 
-      if (badgeResponse) {
-        const blob = new Blob([badgeResponse], { type: 'application/pdf' })
-        const blobUrl = URL.createObjectURL(blob)
-		console.log('Opening badge for printing:', blobUrl)
-
-        const printWindow = window.open(blobUrl, '_blank')
-        if (printWindow) {
-          printWindow.onload = function() {
-            printWindow.print()
-            URL.revokeObjectURL(blobUrl)
-          }
-        }
+      if (!badgeResponse) {
+        return false
       }
+
+      const blobUrl = URL.createObjectURL(blob)
+      console.log('Opening badge for printing:', blobUrl)
+
+      const printWindow = window.open(blobUrl, '_blank')
+      if (printWindow) {
+        printWindow.onload = function () {
+          printWindow.print()
+          URL.revokeObjectURL(blobUrl)
+        }
+      } else {
+        URL.revokeObjectURL(blobUrl)
+      }
+
+      return true
     } catch (error) {
       console.error('Error printing badge:', error)
       showErrorMsg({
         message: 'Failed to print badge!',
         attendee: message.value?.attendee || 'Unknown Attendee'
       })
+      return false
     } finally {
       isGeneratingBadge.value = false
+    }
+  }
+
+  function extractTicketFromQrCode(rawValue, servername) {
+    if (!rawValue) {
+      return ''
+    }
+
+    if (servername === 'Open-Event') {
+      return rawValue
+    }
+
+    const parsedValue = JSON.parse(rawValue)
+    return parsedValue?.ticket || ''
+  }
+
+  async function checkInBySecret(secret) {
+    const normalizedSecret = String(secret || '').trim()
+    if (!normalizedSecret) {
+      showErrorMsg(buildAttendeeMessage('Check-in failed!', null, normalizedSecret))
+      return null
+    }
+
+    const processApi = useEventyayApi()
+    const { apitoken, url, organizer } = processApi
+
+    try {
+      const checkInLists = await getCheckInLists()
+      const nonce = generateNonce()
+
+      const requestBody = {
+        secret: normalizedSecret,
+        source_type: 'barcode',
+        lists: checkInLists,
+        force: false,
+        ignore_unpaid: false,
+        nonce,
+        datetime: null,
+        questions_supported: false
+      }
+
+      const headers = {
+        Authorization: `Device ${apitoken}`,
+        Accept: 'application/json'
+      }
+
+      const api = mande(url, { headers })
+      const response = await api.post(`/api/v1/organizers/${organizer}/checkin/redeem/`, requestBody)
+      console.log('Response:', response)
+
+      if (response && (response.status === 'ok' || response.status === 'redeemed')) {
+        const badgeDownload = response.position?.downloads?.find(
+          (download) => download.output === 'badge'
+        )
+
+        badgeUrl.value = badgeDownload?.url || ''
+        if (response.status === 'ok') {
+          showSuccessMsg(
+            buildAttendeeMessage('Check-in successful!', response.position, normalizedSecret)
+          )
+        } else {
+          showSuccessMsg(
+            buildAttendeeMessage('Already Checked-in!', response.position, normalizedSecret)
+          )
+        }
+      } else {
+        showErrorMsg(buildAttendeeMessage('Check-in failed!', response?.position, normalizedSecret))
+      }
+
+      return response
+    } catch (error) {
+      console.error('Fetch error:', error)
+      showErrorMsg(buildAttendeeMessage('Check-in Failed!', null, normalizedSecret))
+      return null
     }
   }
 
   async function checkIn() {
     console.log('Check-in')
     const processApi = useEventyayApi()
-    const { apitoken, url, organizer, servername, eventSlug } = processApi
-
-	let qrData = {} 
-    if (servername === 'Open-Event') {
-      qrData = {
-				ticket: cameraStore.qrCodeValue
-			}
-    } else {
-      qrData = JSON.parse(cameraStore.qrCodeValue)
-    }
-
-    const checkInList = await getlist()
-    const nonce = generateNonce()
-
-	
-    const requestBody = {
-      secret: qrData.ticket,
-      source_type: 'barcode',
-      lists: checkInList,
-      force: false,
-      ignore_unpaid: false,
-      nonce: nonce,
-      datetime: null,
-      questions_supported: false
-    }
+    const { servername } = processApi
 
     try {
-      const headers = {
-        Authorization: `Device ${apitoken}`,
-        Accept: 'application/json'
-      }
-      const api = mande(url, { headers })
-      const response = await api.post(`/api/v1/organizers/${organizer}/checkin/redeem/`, requestBody)
-      console.log('Response:', response)
-
-      if (response && (response.status === 'ok' || response.status === 'redeemed')) {
-        const badgeDownload = response.position.downloads.find(
-          (download) => download.output === 'badge'
-        )
-
-        if (badgeDownload) {
-          badgeUrl.value = badgeDownload.url
-        }
-		if(response.status==='ok'){
-        	showSuccessMsg({
-          		message: 'Check-in successful!',
-          		attendee: response.position.attendee_name
-          	})
-		}else{
-        	showSuccessMsg({
-          		message: 'Already Checked-in!',
-          		attendee: response.position.attendee_name
-          	})
-		}
-      } else {
-        showErrorMsg({
-          message: 'Check-in failed!',
-          attendee: response.position?.attendee_name || 'Unknown Attendee'
-        })
-      }
+      const secret = extractTicketFromQrCode(cameraStore.qrCodeValue, servername)
+      return await checkInBySecret(secret)
     } catch (error) {
-      console.error('Fetch error:', error)
-      showErrorMsg({
-        message: 'Check-in Failed!',
-        attendee: 'Unknown Attendee'
-      })
+      console.error('Invalid QR payload:', error)
+      showErrorMsg(buildAttendeeMessage('Check-in Failed!', null))
+      return null
     }
   }
 
@@ -195,6 +248,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     badgeUrl,
     isGeneratingBadge,
     checkIn,
+    checkInBySecret,
     printBadge,
     $reset
   }
