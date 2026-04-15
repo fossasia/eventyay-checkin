@@ -1,6 +1,6 @@
 # Exhibitor Workflow
 
-**Step 1:** In the Login page Select Server and role `I am a Exhibitor`
+**Step 1:** In the Login page, select a Server and click `I am an Exhibitor`
 <img src="./images/login.png" alt="Login Page">
 
 **Step 2:** Turn on the camera and scan the QR to authenticate the device, the QR can be obtained from the eventyay organiser dashboard
