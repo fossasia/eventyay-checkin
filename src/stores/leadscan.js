@@ -32,29 +32,15 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
 
   async function scanLead() {
     const processApi = useEventyayApi()
-    const { apitoken, url, organizer, eventSlug, exikey, exhiname, boothid, boothname, servername } = processApi
-    let qrData = {}
-	let requestBody = {}
-    if (servername === 'Open-Event') {
-      qrData = {
-          lead: cameraStore.qrCodeValue
-      }
-      requestBody = {
-    	lead: qrData.lead,
-      	scanned: 'null',
-      	scan_type: 'lead',
-      	device_name: 'Test',
-		open_event: true
-      }
-    } else {
-      qrData = JSON.parse(cameraStore.qrCodeValue)
-      requestBody = {
-    	lead: qrData.lead,
-      	scanned: 'null',
-      	scan_type: 'lead',
-      	device_name: 'Test',
-		open_event: false
-      }
+    const { apitoken, url, organizer, eventSlug, exikey, exhiname, boothid, boothname } = processApi
+    
+    let qrData = JSON.parse(cameraStore.qrCodeValue)
+    let requestBody = {
+      lead: qrData.lead,
+      scanned: 'null',
+      scan_type: 'lead',
+      device_name: 'Test',
+      open_event: false
     }
 
     try {

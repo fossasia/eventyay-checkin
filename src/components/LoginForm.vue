@@ -15,7 +15,7 @@ const processApi = useEventyayApi()
 
 const email = ref('')
 const password = ref('')
-const server = ref('')
+const server = ref('Eventyay.com')
 const showError = ref(false)
 const showServerError = ref(false)
 const errmessage = ref('')
@@ -44,8 +44,8 @@ async function submitLogin() {
     showServerError.value = true
     return
   }
-  if (server.value === 'Eventyay') {
-    errmessage.value = 'Please Register a Device for Eventyay'
+  if (server.value === 'Eventyay.com') {
+    errmessage.value = 'Please Register a Device for Eventyay.com'
     showServerError.value = true
     return
   }
@@ -110,8 +110,7 @@ onMounted(() => {
         <div>
           <label for="select">Select a Server</label>
           <select id="select" v-model="server" class="mt-2 block w-full">
-            <option>Open-Event</option>
-            <option>Eventyay</option>
+            <option>Eventyay.com</option>
             <option>Testing</option>
           </select>
         </div>
