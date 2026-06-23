@@ -69,7 +69,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
     // Extract all IDs from the results
     const listIds = response.results.map((list) => list.id.toString())
-    return listIds
+    return listIds.length > 0 ? [listIds[0]] : []
   }
 
   async function getBadgeStatus(badgeUrl) {
