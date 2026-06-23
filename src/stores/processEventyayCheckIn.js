@@ -152,13 +152,9 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  function extractTicketFromQrCode(rawValue, servername) {
+  function extractTicketFromQrCode(rawValue) {
     if (!rawValue) {
       return ''
-    }
-
-    if (servername === 'Open-Event') {
-      return rawValue
     }
 
     const parsedValue = JSON.parse(rawValue)
@@ -229,10 +225,9 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   async function checkIn() {
     console.log('Check-in')
     const processApi = useEventyayApi()
-    const { servername } = processApi
 
     try {
-      const secret = extractTicketFromQrCode(cameraStore.qrCodeValue, servername)
+      const secret = extractTicketFromQrCode(cameraStore.qrCodeValue)
       return await checkInBySecret(secret)
     } catch (error) {
       console.error('Invalid QR payload:', error)
