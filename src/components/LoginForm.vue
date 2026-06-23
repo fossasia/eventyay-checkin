@@ -45,7 +45,7 @@ async function submitLogin() {
     return
   }
   if (server.value === 'Eventyay.com') {
-    errmessage.value = 'Please Register a Device for Eventyay.com'
+    errmessage.value = 'Please Register a Device for eventyay.com'
     showServerError.value = true
     return
   }
