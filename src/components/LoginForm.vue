@@ -110,7 +110,7 @@ onMounted(() => {
         <div>
           <label for="select">Select a Server</label>
           <select id="select" v-model="server" class="mt-2 block w-full">
-            <option>Eventyay.com</option>
+            <option>eventyay.com</option>
             <option>Testing</option>
           </select>
         </div>
