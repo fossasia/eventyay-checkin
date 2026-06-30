@@ -1,148 +1,247 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useLoadingStore } from '@/stores/loading'
-import { useAuthStore } from '@/stores/auth'
-import { useUserStore } from '@/stores/user'
-import { useEventyayApi } from '@/stores/eventyayapi'
+import QRCamera from '@/components/Utilities/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
+import { useCameraStore } from '@/stores/camera'
+import { useEventyayApi } from '@/stores/eventyayapi'
+import { useLoadingStore } from '@/stores/loading'
+import { getEventyayLogoProps, getRoleRouteName, STATION_TYPE_DEFINITIONS } from '@/utils/session'
+import { UserGroupIcon, PrinterIcon, BuildingStorefrontIcon } from '@heroicons/vue/24/outline'
 
-// stores
 const loadingStore = useLoadingStore()
-const authStore = useAuthStore()
-const userStore = useUserStore()
 const processApi = useEventyayApi()
-
-const email = ref('')
-const password = ref('')
-const server = ref('')
-const showError = ref(false)
-const showServerError = ref(false)
-const errmessage = ref('')
-const DEFAULT_SERVER_VALUE = 'Select a Server'
-// router
+const cameraStore = useCameraStore()
 const router = useRouter()
 
-if(processApi.apitoken) {
-	if(processApi.selectedRole === "Exhibitor") {
-		router.push({
-			name: 'leadscan'
-		})
-	} else if(processApi.selectedRole === "CheckIn") {
-		router.push({
-			name: 'eventyaycheckin'
-		})
-	} else if(processApi.selectedRole === "Badge Station") {
-		router.push({
-			name: 'eventyaysearchcheckin'
-		})
-	}
+const errmessage = ref('')
+const showError = ref(false)
+const showScanner = ref(false)
+const pendingRole = ref('')
+
+const ROLE_ICONS = {
+  CheckIn: UserGroupIcon,
+  'Badge Station': PrinterIcon,
+  Exhibitor: BuildingStorefrontIcon
 }
 
-async function submitLogin() {
-  if (server.value === '' || server.value === DEFAULT_SERVER_VALUE) {
-    showServerError.value = true
+const roles = STATION_TYPE_DEFINITIONS.map((station) => ({
+  ...station,
+  icon: ROLE_ICONS[station.id]
+}))
+
+function redirectForRole(role) {
+  const routeName = getRoleRouteName(role)
+  if (!routeName) {
     return
   }
-  if (server.value === 'Eventyay') {
-    errmessage.value = 'Please Register a Device for Eventyay'
-    showServerError.value = true
-    return
+
+  if (processApi.eventSlug) {
+    router.push({ name: routeName })
+  } else {
+    router.push({ name: 'eventyayevents' })
   }
-  showServerError.value = false
-  loadingStore.contentLoading()
-  showError.value = false
-
-  const payload = {
-    email: email.value,
-    password: password.value
-  }
-
-  await authStore
-    .login(payload)
-    .then(async () => {
-      await userStore.getUserDetails()
-      router.push({
-        name: 'selectStation'
-      })
-    })
-    .catch((err) => {
-      showError.value = true
-    })
-
-  loadingStore.contentLoaded()
-}
-
-function registerDevice() {
-  if (server.value === '' || server.value === 'Select a Server') {
-    errmessage.value = 'Please select a server first'
-    showServerError.value = true
-    return
-  }
-  processApi.setServer(server.value)
-  showServerError.value = false
-  router.push({
-    name: 'device'
-  })
 }
 
 function handleRoleSelection(role) {
+  pendingRole.value = role
   processApi.setRole(role)
-  registerDevice() // Store the selected role in the store
-}
+  showError.value = false
 
-onMounted(() => {
-  if (authStore.isAuthenticated) {
-    router.push({
-      name: 'selectStation'
-    })
+  if (!processApi.apitoken) {
+    showScanner.value = true
+    return
   }
 
-  loadingStore.contentLoaded()
-})
+  redirectForRole(role)
+}
+
+async function handleQrScanned() {
+  showError.value = false
+  loadingStore.contentLoading()
+
+  try {
+    const result = await processApi.registerDeviceByQr(cameraStore.qrCodeValue)
+    if (result.success) {
+      showScanner.value = false
+      redirectForRole(pendingRole.value || processApi.selectedRole)
+    } else if (result.error === 'unsupported_handshake') {
+      errmessage.value = 'This QR code requires a newer version of the check-in app.'
+      showError.value = true
+    } else if (result.message) {
+      errmessage.value = result.message
+      showError.value = true
+    } else {
+      errmessage.value = 'Invalid device QR code. Please scan the registration QR from your organizer dashboard.'
+      showError.value = true
+    }
+  } catch (error) {
+    console.error('Scan registration error:', error)
+    errmessage.value = 'Failed to register this device.'
+    showError.value = true
+  } finally {
+    cameraStore.clearLastScan()
+    loadingStore.contentLoaded()
+  }
+}
+
+const showManualInput = ref(false)
+const manualUrl = ref('')
+const manualToken = ref('')
+const serverUrlPlaceholder = 'https://eventyay.com'
+
+async function handleManualRegister() {
+  const urlVal = manualUrl.value.trim()
+  const tokenVal = manualToken.value.trim()
+
+  if (!urlVal || !tokenVal) {
+    errmessage.value = 'Please provide both the Server URL and Setup Token.'
+    showError.value = true
+    return
+  }
+
+  showError.value = false
+  loadingStore.contentLoading()
+
+  try {
+    const result = await processApi.registerDeviceManually(urlVal, tokenVal)
+    if (result.success) {
+      showScanner.value = false
+      showManualInput.value = false
+      redirectForRole(pendingRole.value || processApi.selectedRole)
+    } else if (result.error === 'invalid_url') {
+      errmessage.value = 'Invalid Server URL. Please enter a valid URL.'
+      showError.value = true
+    } else if (result.message) {
+      errmessage.value = result.message
+      showError.value = true
+    } else {
+      errmessage.value = 'Registration failed. Please check the Server URL and Setup Token.'
+      showError.value = true
+    }
+  } catch (error) {
+    console.error('Manual registration error:', error)
+    errmessage.value = 'Failed to register this device.'
+    showError.value = true
+  } finally {
+    loadingStore.contentLoaded()
+  }
+}
+
+loadingStore.contentLoaded()
 </script>
 
 <template>
-  <div class="-mt-16 flex h-screen flex-col justify-center">
-    <div class="my-auto sm:mx-auto sm:w-full sm:max-w-sm">
-      <h2 class="text-center">Select Server and Purpose</h2>
-      <div class="mt-10 space-y-3">
-        <div>
-          <label for="select">Select a Server</label>
-          <select id="select" v-model="server" class="mt-2 block w-full">
-            <option>Open-Event</option>
-            <option>Eventyay</option>
-            <option>Testing</option>
-          </select>
+  <div class="page-shell flex min-h-screen items-center justify-center py-10">
+    <div class="card w-full max-w-lg p-6 sm:p-8">
+      <div class="mb-8 text-center">
+        <img v-bind="getEventyayLogoProps('full', 'mx-auto mb-4 h-10 w-auto max-w-[220px]')" />
+        <h1>Check-in</h1>
+        <p class="mt-2 text-sm text-body-muted">Choose a station type to get started.</p>
+      </div>
+
+      <Transition name="fade" mode="out-in">
+        <div v-if="showScanner" key="scanner" class="space-y-4">
+          <div v-if="!showManualInput" class="space-y-4">
+            <div class="rounded-xl border border-surface-border bg-surface-muted p-4 text-center">
+              <p class="text-sm font-medium text-body">Scan device registration QR</p>
+              <p class="mt-1 text-xs text-body-muted">
+                The QR code includes your server URL and setup token from the Eventyay organizer dashboard.
+              </p>
+            </div>
+            <QRCamera keep-active @scanned="handleQrScanned" />
+            <div class="text-center py-1">
+              <button
+                type="button"
+                class="text-sm font-semibold text-primary hover:underline focus:outline-none"
+                @click="showManualInput = true"
+              >
+                Or enter URL and Token manually
+              </button>
+            </div>
+            <StandardButton
+              type="button"
+              text="Back"
+              variant="white"
+              block
+              @click="showScanner = false"
+            />
+          </div>
+
+          <div v-else class="space-y-4">
+            <div class="rounded-xl border border-surface-border bg-surface-muted p-4 text-center">
+              <p class="text-sm font-medium text-body">Manual Device Registration</p>
+              <p class="mt-1 text-xs text-body-muted">
+                Use the same URL as shown in the organizer device setup page (System URL), not the check-in app address.
+              </p>
+            </div>
+            <div class="space-y-3 text-left">
+              <div>
+                <label for="manual-url" class="block text-xs font-semibold text-body-muted uppercase">Server URL</label>
+                <input
+                  id="manual-url"
+                  v-model="manualUrl"
+                  type="text"
+                  :placeholder="serverUrlPlaceholder"
+                  class="mt-1 block w-full rounded-xl border border-surface-border bg-surface-muted px-3 py-2 text-sm text-body focus:border-primary focus:outline-none"
+                />
+              </div>
+              <div>
+                <label for="manual-token" class="block text-xs font-semibold text-body-muted uppercase">Setup Token</label>
+                <input
+                  id="manual-token"
+                  v-model="manualToken"
+                  type="password"
+                  placeholder="Enter your registration token"
+                  class="mt-1 block w-full rounded-xl border border-surface-border bg-surface-muted px-3 py-2 text-sm text-body focus:border-primary focus:outline-none"
+                />
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <StandardButton
+                type="button"
+                text="Scan QR"
+                variant="white"
+                block
+                @click="showManualInput = false"
+              />
+              <StandardButton
+                type="button"
+                text="Register"
+                variant="primary"
+                block
+                @click="handleManualRegister"
+              />
+            </div>
+          </div>
         </div>
-        <div>
-          <StandardButton
+
+        <div v-else key="roles" class="space-y-3">
+          <p class="section-title">Station type</p>
+          <button
+            v-for="role in roles"
+            :key="role.id"
             type="button"
-            text="I am an Exhibitor"
-            class="btn-primary mt-6 w-full justify-center"
-            @click="handleRoleSelection('Exhibitor')"
-          />
+            class="btn-role"
+            @click="handleRoleSelection(role.id)"
+          >
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+              <component :is="role.icon" class="h-5 w-5" width="20" height="20" style="width: 20px; height: 20px;" />
+            </div>
+            <div>
+              <p class="font-semibold text-body">{{ role.title }}</p>
+              <p class="mt-0.5 text-sm text-body-muted">{{ role.description }}</p>
+            </div>
+          </button>
         </div>
-        <div>
-          <StandardButton
-            type="button"
-            text="I am a Checkin Staff"
-            class="btn-primary mt-6 w-full justify-center"
-            @click="handleRoleSelection('CheckIn')"
-          />
-        </div>
-        <div>
-          <StandardButton
-            type="button"
-            text="Badge Printing Station"
-            class="btn-primary mt-6 w-full justify-center"
-            @click="handleRoleSelection('Badge Station')"
-          />
-        </div>
+      </Transition>
+
+      <div
+        v-if="showError"
+        class="mt-5 rounded-xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger"
+      >
+        {{ errmessage }}
       </div>
     </div>
-  </div>
-  <div v-if="showServerError" class="mt-5">
-    <p class="text-center text-sm text-danger">{{ errmessage }}</p>
   </div>
 </template>
