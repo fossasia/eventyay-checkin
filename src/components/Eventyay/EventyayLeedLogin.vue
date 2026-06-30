@@ -1,68 +1,59 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useLoadingStore } from '@/stores/loading'
-import { useAuthStore } from '@/stores/auth'
-import { useUserStore } from '@/stores/user'
-import { useleedauth } from '@/stores/leedauth'
 import StandardButton from '@/components/Common/StandardButton.vue'
+import { useLoadingStore } from '@/stores/loading'
+import { useleedauth } from '@/stores/leedauth'
 
 const loadingStore = useLoadingStore()
-const authStore = useAuthStore()
-const userStore = useUserStore()
 const leedauth = useleedauth()
-const showError = ref(false)
-const userId = ref('')
-const password = ref('')
-const server = ref('')
-// router
 const router = useRouter()
 
+const password = ref('')
+const showError = ref(false)
+
 async function submitLogin() {
-  const payload = {
-    key: password.value
-  }
-  const response = await leedauth.leedlogin(payload)
+  const response = await leedauth.leedlogin({ key: password.value })
   if (response.success) {
     router.push({ name: 'leadscan' })
   } else {
     showError.value = true
   }
 }
+
 loadingStore.contentLoaded()
 </script>
 
 <template>
-  <div class="-mt-16 flex h-screen flex-col justify-center">
-    <div class="my-auto sm:mx-auto sm:w-full sm:max-w-sm">
-      <h2 class="text-center">Sign in with your Exhibitor credentials</h2>
-      <form class="mt-10 space-y-3" @submit.prevent="submitLogin">
-        <div>
-          <label for="password">Exhibitor Key</label>
-          <div class="mt-2">
-            <input
-              id="password"
-              v-model="password"
-              name="password"
-              type="password"
-              autocomplete="current-password"
-              required="true"
-              class="block w-full"
-            />
-          </div>
-        </div>
+  <div class="page-shell flex min-h-[calc(100vh-2.75rem)] items-center justify-center py-10">
+    <div class="card w-full max-w-md p-6 sm:p-8">
+      <div class="mb-6 text-center">
+        <h1>Exhibitor sign-in</h1>
+        <p class="mt-2 text-sm text-body-muted">Enter your exhibitor key to continue.</p>
+      </div>
 
+      <form class="space-y-4" @submit.prevent="submitLogin">
         <div>
-          <StandardButton
-            type="submit"
-            text="Authenticate"
-            class="btn-primary mt-6 w-full justify-center"
+          <label for="exhibitor-key">Exhibitor key</label>
+          <input
+            id="exhibitor-key"
+            v-model="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            class="mt-1"
           />
         </div>
 
-        <div v-if="showError">
-          <p class="text-sm text-danger">Wrong credentials or Exhibitor does not exist</p>
-        </div>
+        <StandardButton
+          type="submit"
+          text="Continue"
+          class="btn-primary w-full justify-center py-2.5"
+        />
+
+        <p v-if="showError" class="text-sm text-danger">
+          Invalid exhibitor key or exhibitor not found.
+        </p>
       </form>
     </div>
   </div>

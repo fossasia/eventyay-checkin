@@ -1,7 +1,8 @@
 import { useCameraStore } from '@/stores/camera'
 import { useEventyayApi } from '@/stores/eventyayapi'
-
-import { mande } from 'mande'
+import { resolveLeadIdentifier } from '@/utils/leadCode'
+import { createAuthorizedExhibitorApi, exhibitorApiPath } from '@/utils/serverUrl'
+import { getDeviceErrorMessage, handleDeviceApiError } from '@/utils/deviceErrors'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
@@ -30,81 +31,94 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
     showError.value = false
   }
 
-  async function scanLead() {
+  async function scanLeadByCode(code) {
     const processApi = useEventyayApi()
-    const { apitoken, url, organizer, eventSlug, exikey, exhiname, boothid, boothname, servername } = processApi
-    let qrData = {}
-	let requestBody = {}
-    if (servername === 'Open-Event') {
-      qrData = {
-          lead: cameraStore.qrCodeValue
-      }
-      requestBody = {
-    	lead: qrData.lead,
-      	scanned: 'null',
-      	scan_type: 'lead',
-      	device_name: 'Test',
-		open_event: true
-      }
-    } else {
-      qrData = JSON.parse(cameraStore.qrCodeValue)
-      requestBody = {
-    	lead: qrData.lead,
-      	scanned: 'null',
-      	scan_type: 'lead',
-      	device_name: 'Test',
-		open_event: false
-      }
+    processApi.refreshServerUrl()
+
+    const url = processApi.url
+    const apitoken = processApi.apitoken
+    const organizer = processApi.organizer
+    const eventSlug = processApi.eventSlug
+    const exikey = processApi.exikey
+
+    if (!url || !apitoken || !organizer || !eventSlug || !exikey) {
+      showErrorMsg({
+        message: 'Device or exhibitor session is not configured.',
+        attendee: null
+      })
+      return
+    }
+
+    const leadValue = await resolveLeadIdentifier(code, processApi)
+    if (!leadValue) {
+      showErrorMsg({
+        message: 'No lead code found. Scan a badge QR or enter a lead code.',
+        attendee: null
+      })
+      return
+    }
+
+    const requestBody = {
+      lead: leadValue,
+      scanned: 'null',
+      scan_type: 'lead',
+      device_name: 'Test',
+      open_event: false
     }
 
     try {
-      const headers = {
-        Authorization: `Device ${apitoken}`,
-        Accept: 'application/json',
-        Exhibitor: exikey
-      }
-
-      const api = mande(`${url}api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/create`, {
-        headers: headers
-      })
-
-      const response = await api.post(requestBody)
+      const api = createAuthorizedExhibitorApi(url, apitoken, exikey)
+      const response = await api.post(exhibitorApiPath(organizer, eventSlug, 'lead/create'), requestBody)
       if (response.success) {
         showSuccessMsg({
           message: 'Lead Scanned Successfully!',
           attendee: response.attendee
         })
-        currentLeadId.value = qrData.lead
+        currentLeadId.value = leadValue
       }
     } catch (err) {
-      console.log('Error details:', err.body)
+      if (
+        handleDeviceApiError(err, processApi, {
+          onProfileDenied: (msg) =>
+            showErrorMsg({
+              message: msg,
+              attendee: null
+            })
+        })
+      ) {
+        return
+      }
 
       if (err.response && err.response.status === 409) {
         showErrorMsg({
-          message: err.body.error || 'Lead Already Scanned!',
-          attendee: err.body.attendee
+          message: err.body?.error || 'Lead Already Scanned!',
+          attendee: err.body?.attendee
         })
-        currentLeadId.value = qrData.lead
+        currentLeadId.value = leadValue
       } else {
         showErrorMsg({
-          message: 'Check-in failed: ' + (err.body?.error || err.message || 'Unknown error'),
+          message: getDeviceErrorMessage(err, 'Lead scan failed.'),
           attendee: null
         })
       }
     }
   }
 
+  async function scanLead() {
+    await scanLeadByCode(cameraStore.qrCodeValue)
+  }
+
   function downloadCSV(leads) {
     const csvData = convertToCSV(leads)
     const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
+    const blobUrl = URL.createObjectURL(blob)
     const link = document.createElement('a')
-    link.setAttribute('href', url)
+    link.setAttribute('href', blobUrl)
     link.setAttribute('download', `leads-${new Date().toISOString().split('T')[0]}.csv`)
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
-    URL.revokeObjectURL(url) // Clean up the URL object
+    URL.revokeObjectURL(blobUrl)
   }
 
   function convertToCSV(leads) {
@@ -122,12 +136,11 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
       'Booth Name',
       'Attendee Name',
       'Email',
-	  'Company',
+      'Company',
       'Note',
       'Tags'
     ]
 
-    // Convert leads to rows
     const rows = leads.map((lead) => [
       lead.id,
       lead.exhibitor_name,
@@ -140,18 +153,16 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
       lead.booth_name,
       lead.attendee.name,
       lead.attendee.email || '',
-	  lead.attendee.company || '',
+      lead.attendee.company || '',
       lead.attendee.note || '',
       lead.attendee.tags.join('; ')
     ])
 
-    // Combine headers and rows
     const csvContent = [
       headers.join(','),
       ...rows.map((row) =>
         row
           .map((cell) => {
-            // Escape commas and quotes in cell content
             const cellContent = String(cell).replace(/"/g, '""')
             return cellContent.includes(',') ? `"${cellContent}"` : cellContent
           })
@@ -159,29 +170,38 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
       )
     ].join('\n')
 
-    // Add BOM for Excel UTF-8 compatibility
     return '\uFEFF' + csvContent
   }
 
   async function exportLeads() {
     const processApi = useEventyayApi()
-    const { apitoken, url, organizer, eventSlug, exikey } = processApi
+    processApi.refreshServerUrl()
+
+    const url = processApi.url
+    const apitoken = processApi.apitoken
+    const organizer = processApi.organizer
+    const eventSlug = processApi.eventSlug
+    const exikey = processApi.exikey
+
+    if (!url || !apitoken || !organizer || !eventSlug || !exikey) {
+      return
+    }
 
     try {
-      const headers = {
-        Authorization: `Device ${apitoken}`,
-        Accept: 'application/json',
-        Exhibitor: exikey
-      }
-      const api = mande(`${url}api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/retrieve`, {
-        headers: headers
-      })
-      const response = await api.get()
+      const api = createAuthorizedExhibitorApi(url, apitoken, exikey)
+      const response = await api.get(exhibitorApiPath(organizer, eventSlug, 'lead/retrieve'))
       if (response.success) {
         downloadCSV(response.leads)
       }
     } catch (error) {
-      console.error('Failed to fetch tags:', error)
+      console.error('Failed to export leads:', error)
+      handleDeviceApiError(error, processApi, {
+        onProfileDenied: (msg) =>
+          showErrorMsg({
+            message: msg,
+            attendee: null
+          })
+      })
     }
   }
 
@@ -191,6 +211,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
     showError,
     currentLeadId,
     scanLead,
+    scanLeadByCode,
     exportLeads,
     $reset
   }
