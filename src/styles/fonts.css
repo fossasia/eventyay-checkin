@@ -1,0 +1,19 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Noto+Sans+Arabic:wght@400;700&family=Noto+Sans+Devanagari:wght@400;700&family=Noto+Sans+Hebrew:wght@400;700&family=Noto+Sans+JP:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Sans+SC:wght@400;700&family=Noto+Sans+Thai:wght@400;700&display=swap');
+
+:root {
+  --font-sans:
+    'Noto Sans', 'Noto Sans Arabic', 'Noto Sans Devanagari', 'Noto Sans Hebrew', 'Noto Sans Thai',
+    'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', ui-sans-serif, system-ui, -apple-system,
+    'Segoe UI', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji';
+}
+
+@media print {
+  html,
+  body,
+  button,
+  input,
+  select,
+  textarea {
+    font-family: var(--font-sans) !important;
+  }
+}
