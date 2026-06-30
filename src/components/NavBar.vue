@@ -33,7 +33,7 @@ watch(
 </script>
 
 <template>
-  <Disclosure v-slot="{ open }" as="header" class="sticky top-0 z-10 bg-white shadow">
+  <Disclosure v-slot="{}" as="header" class="sticky top-0 z-10 bg-white shadow">
     <div class="mx-auto max-w-7xl px-2 sm:px-4 lg:divide-y lg:divide-secondary-light lg:px-8">
       <div class="flex h-16 items-center justify-between space-x-5">
         <div>

@@ -1,4 +1,5 @@
 <script setup>
+defineOptions({ name: 'RegistrationDevice' })
 import QRCamera from '@/components/Common/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useLoadingStore } from '@/stores/loading'

@@ -4,7 +4,7 @@ import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 
 const processApi = useEventyayApi()
-const { apitoken, url, organizer, eventSlug, eventname, selectedRole} = processApi
+const { apitoken, url: serverUrl, organizer, eventSlug, eventname, selectedRole} = processApi
 const props = defineProps({
   url: {
     type: String,
