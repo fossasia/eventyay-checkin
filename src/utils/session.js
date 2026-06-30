@@ -32,7 +32,7 @@ export const STATION_TYPE_DEFINITIONS = [
   {
     id: 'Badge Station',
     title: 'Badge Station',
-    description: 'Kiosk mode for fast check-in and badge printing with optional auto-print.'
+    description: 'Kiosk fast check-in and badge printing station. Set up kiosk mode before registering.'
   }
 ]
 

@@ -98,9 +98,17 @@ const emit = defineEmits(['print', 'preview', 'edit', 'close', 'timeout', 'inter
 
 const effectiveDuration = computed(() => props.duration)
 
-const showCountdown = computed(() => !countdownHidden.value && !props.paused && props.duration > 0)
+const showCountdown = computed(
+  () => !countdownHidden.value && !props.paused && props.duration > 0 && countdown.value > 0
+)
 
-const countdownLabel = computed(() => `Auto-close in ${countdown.value}`)
+const countdownLabel = computed(() => {
+  const seconds = Number(countdown.value)
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return ''
+  }
+  return `Closing in ${seconds}`
+})
 
 const showEcoReminder = computed(
   () => props.badgeStation && props.showSuccess && Boolean(props.message?.alreadyCheckedIn)
@@ -111,6 +119,9 @@ const paperSavingMessage = computed(
 )
 
 const resultLabel = computed(() => {
+  if (props.message?.alreadyCheckedIn) {
+    return 'Already checked in'
+  }
   if (props.showError) {
     if (props.message?.checkoutRequired) {
       return 'Check-out required'
@@ -123,12 +134,83 @@ const resultLabel = computed(() => {
   if (props.message?.checkedOut) {
     return 'Checked out'
   }
+  if (props.showSuccess) {
+    const detail = String(props.message?.message || '').trim()
+    if (detail) {
+      return detail
+    }
+    return props.badgeStation ? 'Badge ready' : 'Check-in successful!'
+  }
   return props.badgeStation ? 'Badge station' : 'Check-in result'
 })
 
+function detailRepeatsLabel(label, detail) {
+  const normalize = (value) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[.!?]+$/g, '')
+      .replace(/-/g, ' ')
+
+  const normalizedLabel = normalize(label)
+  const normalizedDetail = normalize(detail)
+
+  if (!normalizedDetail) {
+    return true
+  }
+  if (normalizedDetail === normalizedLabel) {
+    return true
+  }
+  if (normalizedDetail.includes(normalizedLabel) || normalizedLabel.includes(normalizedDetail)) {
+    return true
+  }
+  return false
+}
+
+const modalHelperText = computed(() => {
+  const label = resultLabel.value
+  const detail = String(props.message?.message || '').trim()
+
+  if (!detail || detailRepeatsLabel(label, detail)) {
+    return ''
+  }
+
+  return detail
+})
+
+const isAlreadyCheckedIn = computed(() => Boolean(props.message?.alreadyCheckedIn))
+
 const isCheckedOutResult = computed(() => Boolean(props.message?.checkedOut))
 
+const canCheckOut = computed(
+  () =>
+    (props.showSuccess || isAlreadyCheckedIn.value) &&
+    !props.message?.checkedOut &&
+    !props.message?.checkoutRequired &&
+    !props.message?.offerCheckInAtGate
+)
+
+const canShowBadgeActions = computed(
+  () =>
+    Boolean(props.badgeUrl) &&
+    (props.showSuccess || isAlreadyCheckedIn.value) &&
+    !props.message?.checkedOut
+)
+
+const canEditAttendee = computed(
+  () =>
+    (props.showSuccess || isAlreadyCheckedIn.value) &&
+    !props.showError &&
+    !props.message?.checkedOut &&
+    !props.message?.checkoutRequired &&
+    !props.message?.offerCheckInAtGate &&
+    Boolean(props.message?.secret || props.message?.orderPositionId)
+)
+
 const resultToneClass = computed(() => {
+  if (isAlreadyCheckedIn.value && !props.message?.checkoutRequired) {
+    return 'text-success'
+  }
   if (props.showError || isCheckedOutResult.value) {
     return 'text-danger'
   }
@@ -210,11 +292,11 @@ watch(
 )
 
 watch(
-  () => [props.showSuccess, props.showError, props.message, props.duration, props.autoDismiss],
+  () => [props.showSuccess, props.showError, props.message, props.duration, props.paused],
   () => {
     if (props.showSuccess || props.showError) {
       countdownHidden.value = false
-      if (props.autoDismiss) {
+      if (!props.paused && props.duration > 0) {
         startTimer()
       } else {
         stopTimer()
@@ -255,17 +337,24 @@ onBeforeUnmount(() => {
           </button>
         </div>
 
-        <p
-          class="mb-1 text-xs font-semibold uppercase tracking-wide"
-          :class="resultToneClass"
-        >
+        <h2 class="mb-1 text-xl" :class="resultToneClass">
           {{ resultLabel }}
-        </p>
-        <h2 class="mb-4 text-xl" :class="resultToneClass">
-          {{ message.message }}
         </h2>
+        <p v-if="modalHelperText" class="mb-4 text-sm text-body-muted">
+          {{ modalHelperText }}
+        </p>
+        <div v-else class="mb-4" />
 
-        <dl v-if="showSuccess || message?.checkoutRequired || message?.offerCheckInAtGate || message?.checkedOut" class="space-y-2 border-t border-surface-border pt-4 text-sm">
+        <dl
+          v-if="
+            showSuccess ||
+            message?.checkoutRequired ||
+            message?.offerCheckInAtGate ||
+            message?.checkedOut ||
+            isAlreadyCheckedIn
+          "
+          class="space-y-2 border-t border-surface-border pt-4 text-sm"
+        >
           <div class="flex justify-between gap-4">
             <dt class="text-body-muted">Name</dt>
             <dd class="text-right font-medium text-body">
@@ -325,7 +414,7 @@ onBeforeUnmount(() => {
 
         <div class="mt-6 space-y-2">
           <StandardButton
-            v-if="showSuccess && !message?.checkedOut && !message?.offerCheckInAtGate"
+            v-if="canCheckOut"
             type="button"
             text="Check out"
             variant="white"
@@ -356,7 +445,7 @@ onBeforeUnmount(() => {
               @click="handleCloseClick"
             />
           </template>
-          <template v-if="badgeStation && badgeUrl && showSuccess">
+          <template v-if="badgeStation && canShowBadgeActions">
             <StandardButton
               v-if="canCustomizeBadge"
               type="button"
@@ -382,7 +471,7 @@ onBeforeUnmount(() => {
             />
           </template>
 
-          <template v-else-if="badgeUrl && showSuccess">
+          <template v-else-if="canShowBadgeActions">
             <StandardButton
               v-if="canCustomizeBadge"
               type="button"
@@ -403,7 +492,7 @@ onBeforeUnmount(() => {
 
           <div class="flex gap-2">
             <StandardButton
-              v-if="message?.secret || message?.orderPositionId"
+              v-if="canEditAttendee"
               type="button"
               text=""
               :icon="PencilSquareIcon"

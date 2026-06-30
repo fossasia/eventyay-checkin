@@ -71,7 +71,7 @@ export const useEventyayApi = defineStore(
         }
       }
       if (!error?.response && (error?.message === 'Failed to fetch' || error?.name === 'TypeError')) {
-        return 'Could not reach the server. Use the same host for the check-in app and API (e.g. both localhost or both 127.0.0.1).'
+        return 'Could not reach the server. Open the check-in app from the same host as the device setup URL (e.g. https://dev.eventyay.com), or check network and CORS settings.'
       }
       return ''
     }
@@ -144,10 +144,6 @@ export const useEventyayApi = defineStore(
 
       if (router) {
         router.push({ name: 'userAuth' })
-      }
-
-      if (typeof sessionStorage !== 'undefined') {
-        sessionStorage.removeItem('eventyay-badge-station-kiosk-ack')
       }
     }
 

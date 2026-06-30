@@ -22,10 +22,16 @@ function isLoopbackHost(hostname) {
   return LOOPBACK_HOSTS.has(String(hostname || '').toLowerCase())
 }
 
+function hostsMatch(left, right) {
+  return String(left || '').toLowerCase() === String(right || '').toLowerCase()
+}
+
 /**
  * Pick an API base URL that the current browser can reach.
  * Chrome blocks cross-origin loopback calls (e.g. 127.0.0.1:8085 -> localhost:8000).
  * When both app and API are on loopback, use the page origin so /api is proxied (vite dev/preview).
+ * When the check-in app is served from the same host as the device QR URL (e.g. dev.eventyay.com),
+ * always use the page origin so API calls stay same-origin in production.
  */
 export function resolveServerUrl(qrUrl) {
   const normalized = normalizeServerUrl(qrUrl)
@@ -37,12 +43,12 @@ export function resolveServerUrl(qrUrl) {
 
   try {
     const api = new URL(normalized)
+    const pageHost = page.hostname
 
-    if (api.origin === page.origin) {
+    if (api.origin === page.origin || hostsMatch(api.hostname, pageHost)) {
       return page.origin
     }
 
-    const pageHost = page.hostname
     const pageIsLoopback = isLoopbackHost(pageHost)
     const apiIsLoopback = isLoopbackHost(api.hostname)
 

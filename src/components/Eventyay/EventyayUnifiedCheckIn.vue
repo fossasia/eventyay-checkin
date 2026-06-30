@@ -14,13 +14,14 @@ import {
   readPopupFieldValue
 } from '@/utils/attendeeEdit'
 import { getDeviceErrorMessage, handleDeviceApiError, isDeviceProfileDenied } from '@/utils/deviceErrors'
-import { MagnifyingGlassIcon, PrinterIcon, ExclamationTriangleIcon } from '@heroicons/vue/24/outline'
+import { MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
 import QRCamera from '@/components/Common/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import BadgePrintPreview from '@/components/Common/BadgePrintPreview.vue'
 import AttendeeInfoModal from '@/components/Eventyay/AttendeeInfoModal.vue'
 import BadgeCustomizeModal from '@/components/Eventyay/BadgeCustomizeModal.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
+import { useEventyayEventStore } from '@/stores/eventyayEvent'
 import { useLiveRegistrationStore } from '@/stores/liveRegistration'
 import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
@@ -28,16 +29,7 @@ import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { getAutoPrintPreference, setAutoPrintPreference } from '@/utils/session'
 import { PRINT_OUTCOME } from '@/utils/badgePdf'
 import { waitForDesignAssets } from '@/utils/waitForDesignAssets'
-import {
-  buildChromeKioskCommand,
-  buildFirefoxKioskCommand,
-  buildKioskUrl,
-  enterKioskShell,
-  getPlatformLabel,
-  getShellLabel
-} from '@/utils/kioskLauncher'
-
-const KIOSK_SETUP_ACK_KEY = 'eventyay-badge-station-kiosk-ack'
+import { enterKioskShell, isKioskEnvironment } from '@/utils/kioskLauncher'
 
 const notificationStore = useNotificationStore()
 const processApi = useEventyayApi()
@@ -60,41 +52,13 @@ const {
 } = processEventyayCheckInStore
 const liveRegistrationStore = useLiveRegistrationStore()
 const { products, isLoadingProducts, isRegistering } = storeToRefs(liveRegistrationStore)
+const eventyayEventStore = useEventyayEventStore()
+const { events } = storeToRefs(eventyayEventStore)
 const loadingStore = useLoadingStore()
 
 const route = useRoute()
-const skipKioskSetup = ref(sessionStorage.getItem(KIOSK_SETUP_ACK_KEY) === '1')
+const isKioskShell = computed(() => isKioskEnvironment(route))
 const checkInReady = ref(false)
-const kioskTargetUrl = computed(() => buildKioskUrl(window.location.origin, route.fullPath))
-const chromeKioskCommand = computed(() => buildChromeKioskCommand(kioskTargetUrl.value))
-const firefoxKioskCommand = computed(() => buildFirefoxKioskCommand(kioskTargetUrl.value))
-const kioskPlatformLabel = computed(() => getPlatformLabel())
-const kioskShellLabel = computed(() => getShellLabel())
-const copiedKioskCommand = ref('')
-
-async function copyKioskCommand(command, label) {
-  try {
-    await navigator.clipboard.writeText(command)
-    copiedKioskCommand.value = label
-    setTimeout(() => {
-      copiedKioskCommand.value = ''
-    }, 2000)
-  } catch {
-    notificationStore.addNotification(
-      ['Copy failed', 'Select the command below and copy it manually.'],
-      'warning'
-    )
-  }
-}
-
-function acknowledgeKioskSetup({ launchedInKiosk = false } = {}) {
-  skipKioskSetup.value = true
-  sessionStorage.setItem(KIOSK_SETUP_ACK_KEY, '1')
-  if (launchedInKiosk || route.query.kiosk === 'true') {
-    enterKioskShell()
-  }
-}
-
 const selectedCheckInListName = computed(() => {
   const list = availableCheckInLists.value.find(
     (l) => String(l.id) === String(selectedCheckInListId.value)
@@ -114,10 +78,18 @@ const isEditDialogOpen = ref(false)
 const isSavingAttendee = ref(false)
 const editError = ref('')
 const isBadgeStation = computed(() => selectedRole.value === 'Badge Station')
-const showBadgeStationSetup = computed(
-  () => isBadgeStation.value && !skipKioskSetup.value
-)
-const showLiveRegistrationEntry = computed(() => !isBadgeStation.value)
+const showLiveRegistrationEntry = computed(() => {
+  if (isBadgeStation.value) {
+    return false
+  }
+
+  const event = events.value.find((entry) => entry.slug === eventSlug.value)
+  if (!event?.plugins?.length) {
+    return true
+  }
+
+  return event.plugins.includes('eventyay.plugins.manualpayment')
+})
 const autoPrintBadge = ref(getAutoPrintPreference(selectedRole.value))
 const shouldAutoPrintBadge = computed(() => isBadgeStation.value && autoPrintBadge.value)
 const attendeeModalPaused = computed(() => isEditDialogOpen.value || showPrintPreview.value)
@@ -453,7 +425,7 @@ const submitLiveRegistration = async () => {
   liveRegistrationError.value = ''
 
   try {
-    const registrationResult = await liveRegistrationStore.registerAndMarkPaid(
+    await liveRegistrationStore.registerAndMarkPaid(
       {
         attendee_name: attendeeName,
         attendee_email: attendeeEmail,
@@ -463,26 +435,8 @@ const submitLiveRegistration = async () => {
       Number(selectedProductId)
     )
 
-    const checkInResponse = await processEventyayCheckInStore.checkInBySecret(
-      registrationResult.secret,
-      {
-        attendeeHints: {
-          attendee_name: attendeeName,
-          attendee_email: attendeeEmail,
-          company: String(liveRegistrationForm.value.company || '').trim(),
-          job_title: String(liveRegistrationForm.value.job_title || '').trim()
-        }
-      }
-    )
-    if (
-      !checkInResponse ||
-      (checkInResponse.status !== 'ok' && checkInResponse.status !== 'redeemed')
-    ) {
-      throw new Error('Registration completed but automatic check-in failed.')
-    }
-
     closeLiveRegistrationDialog()
-    notificationStore.addNotification(['Success', 'Attendee registered and checked in'], 'success')
+    notificationStore.addNotification(['Success', 'Attendee registered successfully'], 'success')
   } catch (error) {
     console.error('Live registration failed:', error)
     liveRegistrationError.value = getDeviceErrorMessage(error, 'Live registration failed.')
@@ -790,12 +744,18 @@ const searchOrders = async (query, { force = false, requestId = ++activeRequestI
 
 onMounted(async () => {
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  if (isKioskShell.value && isBadgeStation.value) {
+    enterKioskShell()
+  }
   loadingStore.contentLoading()
 
   try {
     await waitForDesignAssets()
 
     await Promise.all([
+      eventyayEventStore.events.length
+        ? Promise.resolve()
+        : eventyayEventStore.fetchEvents(),
       isBadgeStation.value
         ? Promise.resolve()
         : liveRegistrationStore.fetchProducts(),
@@ -898,94 +858,8 @@ const checkIn = async (order) => {
 </script>
 
 <template>
-  <div v-if="checkInReady">
-    <div v-if="showBadgeStationSetup" class="page-shell flex min-h-[60vh] items-center justify-center">
-    <div class="card w-full max-w-lg p-5 shadow-card border border-surface-border">
-      <div class="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
-        <PrinterIcon class="h-5 w-5" width="20" height="20" style="width: 20px; height: 20px;" />
-      </div>
-      <h2 class="text-center text-lg">Badge Station</h2>
-      <p class="mt-1.5 text-center text-xs text-body-muted leading-relaxed">
-        Commands for {{ kioskPlatformLabel }}. Run one in {{ kioskShellLabel }}, then continue below.
-      </p>
-
-      <ul class="mt-3 space-y-1.5 text-left text-xs leading-relaxed text-body-muted">
-        <li class="flex gap-2">
-          <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-          <span>Fullscreen kiosk mode</span>
-        </li>
-        <li class="flex gap-2">
-          <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-          <span>Silent printing without a print dialog</span>
-        </li>
-        <li class="flex gap-2">
-          <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-          <span>Same browser profile — you stay logged in</span>
-        </li>
-      </ul>
-
-      <div class="mt-4 space-y-3 text-left">
-        <div class="rounded-xl border border-surface-border bg-surface-muted p-3">
-          <div class="flex flex-wrap items-center gap-1.5">
-            <p class="text-xs font-semibold text-body">Google Chrome</p>
-            <span class="rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary">
-              Recommended
-            </span>
-          </div>
-          <pre
-            class="mt-2 overflow-x-auto rounded-lg bg-surface px-2.5 py-1.5 text-[10px] leading-snug text-body"
-          >{{ chromeKioskCommand }}</pre>
-          <StandardButton
-            type="button"
-            :text="copiedKioskCommand === 'chrome' ? 'Copied' : 'Copy Chrome command'"
-            class="btn-primary mt-2 w-full justify-center"
-            size="sm"
-            @click="copyKioskCommand(chromeKioskCommand, 'chrome')"
-          />
-        </div>
-
-        <div class="rounded-xl border border-surface-border bg-surface-muted p-3">
-          <p class="text-xs font-semibold text-body">Mozilla Firefox</p>
-          <pre
-            class="mt-2 overflow-x-auto rounded-lg bg-surface px-2.5 py-1.5 text-[10px] leading-snug text-body"
-          >{{ firefoxKioskCommand }}</pre>
-          <StandardButton
-            type="button"
-            :text="copiedKioskCommand === 'firefox' ? 'Copied' : 'Copy Firefox command'"
-            class="btn-white mt-2 w-full justify-center"
-            size="sm"
-            @click="copyKioskCommand(firefoxKioskCommand, 'firefox')"
-          />
-        </div>
-      </div>
-
-      <StandardButton
-        type="button"
-        text="I already ran the command"
-        class="btn-primary mt-4 w-full justify-center"
-        size="sm"
-        @click="acknowledgeKioskSetup({ launchedInKiosk: true })"
-      />
-      <StandardButton
-        type="button"
-        text="Continue in this browser"
-        class="btn-white mt-2 w-full justify-center"
-        size="sm"
-        @click="acknowledgeKioskSetup()"
-      />
-      <div
-        class="mt-3 flex items-start gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-left"
-        role="note"
-      >
-        <ExclamationTriangleIcon class="mt-0.5 h-4 w-4 shrink-0 text-warning-dark" aria-hidden="true" />
-        <p class="text-xs leading-relaxed text-warning-dark">
-          Without kiosk mode, silent printing may not work as expected.
-        </p>
-      </div>
-    </div>
-  </div>
   <div
-    v-else
+    v-if="checkInReady"
     class="page-shell flex flex-col py-4 sm:py-5 lg:h-[calc(100dvh-2.75rem-1.25rem)] lg:max-h-[calc(100dvh-2.75rem-1.25rem)] lg:overflow-hidden"
   >
     <div class="mb-3 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1049,7 +923,12 @@ const checkIn = async (order) => {
         >
           <div>
             <p class="text-sm font-semibold text-body">Auto-print badge</p>
-            <p class="text-xs text-body-muted">Prints immediately after each scan.</p>
+            <p class="text-xs text-body-muted">
+              {{ autoPrintBadge ? 'Prints immediately after each scan.' : 'Opens print preview after each scan.' }}
+            </p>
+            <p v-if="autoPrintBadge && !isKioskShell" class="mt-1 text-xs text-body-muted">
+              If you did not run the kiosk command from setup, silent printing will not work.
+            </p>
           </div>
           <button
             type="button"
@@ -1216,7 +1095,7 @@ const checkIn = async (order) => {
             />
             <StandardButton
               type="button"
-              :text="isRegistering ? 'Registering...' : 'Register & check in'"
+              :text="isRegistering ? 'Registering...' : 'Register'"
               variant="primary"
               :disabled="isRegistering || isLoadingProducts || !products.length"
               @click="submitLiveRegistration"
@@ -1324,6 +1203,5 @@ const checkIn = async (order) => {
       :badge-path="badgeUrl"
       @close="handlePrintClose"
     />
-  </div>
   </div>
 </template>

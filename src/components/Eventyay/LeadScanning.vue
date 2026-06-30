@@ -1,7 +1,9 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { XMarkIcon } from '@heroicons/vue/20/solid'
 import { createAuthorizedExhibitorApi, exhibitorApiPath } from '@/utils/serverUrl'
+import { handleExhibitorApiError } from '@/utils/deviceErrors'
 import QRCamera from '@/components/Common/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import TagInput from '@/components/Common/TagInput.vue'
@@ -19,10 +21,69 @@ const { message, showSuccess, showError, currentLeadId } = storeToRefs(leadScanS
 const { currentTags } = storeToRefs(tagStore)
 
 const countdown = ref(5)
+const countdownPaused = ref(false)
 const timerInstance = ref(null)
 const timeoutInstance = ref(null)
 const notes = ref('')
 const manualCode = ref('')
+const saveError = ref('')
+const isSaving = ref(false)
+
+const resultLabel = computed(() => {
+  if (message.value?.alreadyScanned) {
+    return 'Lead already scanned'
+  }
+  if (showError.value) {
+    return 'Lead scan issue'
+  }
+  return 'Lead captured'
+})
+
+function detailRepeatsLabel(label, detail) {
+  const normalize = (value) =>
+    String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/[.!?]+$/g, '')
+      .replace(/-/g, ' ')
+
+  const normalizedLabel = normalize(label)
+  const normalizedDetail = normalize(detail)
+
+  if (!normalizedDetail) {
+    return true
+  }
+  if (normalizedDetail === normalizedLabel) {
+    return true
+  }
+  if (normalizedDetail.includes(normalizedLabel) || normalizedLabel.includes(normalizedDetail)) {
+    return true
+  }
+  return false
+}
+
+const leadHelperText = computed(() => {
+  const label = resultLabel.value
+  const detail = String(message.value?.message || '').trim()
+
+  if (!detail || detailRepeatsLabel(label, detail)) {
+    return ''
+  }
+
+  return detail
+})
+
+const resultToneClass = computed(() => (showError.value ? 'text-danger' : 'text-success'))
+
+const showCountdown = computed(() => !countdownPaused.value && countdown.value > 0)
+
+const countdownLabel = computed(() => {
+  const seconds = Number(countdown.value)
+  if (!Number.isFinite(seconds) || seconds <= 0) {
+    return ''
+  }
+  return `Closing in ${seconds}`
+})
 
 async function submitManualLead() {
   const code = manualCode.value.trim()
@@ -41,7 +102,12 @@ async function submitManualLead() {
 
 loadingStore.contentLoaded()
 
+onMounted(() => {
+  leadScanStore.prefetchLeads()
+})
+
 function startCountdown() {
+  countdownPaused.value = false
   countdown.value = 5
   timerInstance.value = setInterval(() => {
     countdown.value -= 1
@@ -62,7 +128,7 @@ function stopTimer() {
 
 function handleNotesInput() {
   stopTimer()
-  countdown.value = '...'
+  countdownPaused.value = true
 }
 
 async function handleSave() {
@@ -76,6 +142,10 @@ async function handleSave() {
     return
   }
 
+  stopTimer()
+  saveError.value = ''
+  isSaving.value = true
+
   const api = createAuthorizedExhibitorApi(url, apitoken, exikey)
 
   try {
@@ -87,14 +157,26 @@ async function handleSave() {
     leadScanStore.$reset()
     notes.value = ''
   } catch (error) {
-    console.error('Failed to save lead:', error)
+    handleExhibitorApiError(error, processApi, {
+      onError: (msg) => {
+        saveError.value = msg
+      }
+    })
+  } finally {
+    isSaving.value = false
   }
 }
 
 function handleCancel() {
+  stopTimer()
+  saveError.value = ''
   notes.value = ''
   tagStore.reset()
   leadScanStore.$reset()
+}
+
+function handleClose() {
+  handleCancel()
 }
 
 watch([showSuccess, showError], ([newSuccess, newError]) => {
@@ -104,11 +186,11 @@ watch([showSuccess, showError], ([newSuccess, newError]) => {
 })
 
 function showPopup() {
+  stopTimer()
+  saveError.value = ''
   notes.value = ''
   tagStore.reset()
-  if (message.value.lead_id) {
-    currentLeadId.value = message.value.lead_id
-  }
+  countdownPaused.value = false
   startCountdown()
   timeoutInstance.value = setTimeout(() => {
     leadScanStore.$reset()
@@ -162,22 +244,31 @@ function showPopup() {
         v-if="(showSuccess || showError) && message.attendee"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       >
-        <div class="card relative w-full max-w-md p-6">
-          <div
-            class="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-surface-muted text-xs font-semibold text-body-muted"
-          >
-            {{ countdown }}
+        <div class="card relative w-full max-w-md p-6 pt-14">
+          <div class="absolute right-4 top-4 flex items-center gap-3">
+            <div
+              v-if="showCountdown"
+              class="rounded-full bg-surface-muted px-3 py-1.5 text-xs font-medium tabular-nums text-body-muted whitespace-nowrap"
+            >
+              {{ countdownLabel }}
+            </div>
+            <button
+              type="button"
+              class="flex h-10 w-10 items-center justify-center rounded-full bg-surface-muted text-body transition hover:bg-surface-border hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+              aria-label="Close"
+              @click="handleClose"
+            >
+              <XMarkIcon class="h-7 w-7" />
+            </button>
           </div>
 
-          <p
-            class="mb-1 text-xs font-semibold uppercase tracking-wide"
-            :class="showError ? 'text-danger' : 'text-success'"
-          >
-            Lead captured
-          </p>
-          <h2 class="mb-4" :class="showError ? 'text-danger' : 'text-success'">
-            {{ message.message }}
+          <h2 class="mb-1 text-xl" :class="resultToneClass">
+            {{ resultLabel }}
           </h2>
+          <p v-if="leadHelperText" class="mb-4 text-sm text-body-muted">
+            {{ leadHelperText }}
+          </p>
+          <div v-else class="mb-4" />
 
           <dl class="space-y-2 border-t border-surface-border pt-4 text-sm">
             <div class="flex justify-between gap-4">
@@ -202,11 +293,14 @@ function showPopup() {
             />
           </div>
 
+          <p v-if="saveError" class="mt-4 text-sm text-danger">{{ saveError }}</p>
+
           <div class="mt-5 flex gap-2">
             <StandardButton
               type="button"
               text="Save"
               class="btn-primary flex-1 justify-center"
+              :disabled="isSaving"
               @click="handleSave"
             />
             <StandardButton

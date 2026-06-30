@@ -19,14 +19,28 @@ export function getDeviceErrorDetail(error) {
     return DEVICE_PROFILE_DENIED_MESSAGE
   }
 
-  const body = error?.body ?? error?.response?.data
+  const body = error?.body ?? error?.response?.data ?? error?.cause?.body
   if (typeof body === 'string' && body) {
     return body
   }
   if (body && typeof body === 'object') {
-    return String(body.detail || body.message || '')
+    return String(body.detail || body.message || body.error || '')
   }
   return ''
+}
+
+function getDeviceErrorUrl(error) {
+  return String(error?.response?.url || error?.url || '')
+}
+
+export function isExhibitorApiError(error) {
+  const url = getDeviceErrorUrl(error)
+  if (url.includes('/exhibitors/')) {
+    return true
+  }
+
+  const body = error?.body ?? error?.response?.data
+  return Boolean(body && typeof body === 'object' && 'success' in body)
 }
 
 export function isDeviceProfileDeniedResponse(status, detail) {
@@ -34,9 +48,21 @@ export function isDeviceProfileDeniedResponse(status, detail) {
 }
 
 export function isDeviceAuthFailure(error) {
+  if (isExhibitorApiError(error)) {
+    return false
+  }
+
   const status = getDeviceErrorStatus(error)
   if (status === 401) {
-    return true
+    const detail = getDeviceErrorDetail(error).toLowerCase()
+    return (
+      detail.includes('invalid token') ||
+      detail.includes('credentials were not provided') ||
+      detail.includes('device access has been revoked') ||
+      detail.includes('device has not been initialized') ||
+      detail.includes('authentication credentials') ||
+      !detail
+    )
   }
   if (status === 403) {
     const detail = getDeviceErrorDetail(error).toLowerCase()
@@ -55,6 +81,23 @@ export function isDeviceProfileDenied(error) {
     return true
   }
   return isDeviceProfileDeniedResponse(getDeviceErrorStatus(error), getDeviceErrorDetail(error))
+}
+
+/**
+ * Handle exhibitor API failures without signing the device out.
+ * Returns true when the error was handled.
+ */
+export function handleExhibitorApiError(error, processApi, { onError, onProfileDenied } = {}) {
+  if (isDeviceAuthFailure(error)) {
+    processApi?.handleAuthError?.()
+    return true
+  }
+  if (isDeviceProfileDenied(error)) {
+    onProfileDenied?.(DEVICE_PROFILE_DENIED_MESSAGE)
+    return true
+  }
+  onError?.(getDeviceErrorMessage(error, 'Lead scan request failed.'))
+  return true
 }
 
 /**
@@ -83,13 +126,40 @@ export function raiseIfDeviceApiError(error, processApi) {
   }
 }
 
-export function getDeviceErrorMessage(error, fallback = '') {
+export function getDeviceErrorMessage(error, fallback = '', options = {}) {
+  const hideHttpStatusText = Boolean(options.hideHttpStatusText)
   if (isDeviceProfileDenied(error) || error instanceof DeviceProfileDeniedError) {
     return DEVICE_PROFILE_DENIED_MESSAGE
+  }
+  const body = error?.body ?? error?.response?.data ?? error?.cause?.body
+  if (body && typeof body === 'object' && body.error) {
+    return String(body.error)
+  }
+  if (body && typeof body === 'object' && !body.detail && !body.message) {
+    const parts = []
+    for (const [field, value] of Object.entries(body)) {
+      if (Array.isArray(value)) {
+        parts.push(`${field}: ${value.join(', ')}`)
+      } else if (value && typeof value === 'object') {
+        parts.push(`${field}: ${JSON.stringify(value)}`)
+      } else if (value) {
+        parts.push(`${field}: ${value}`)
+      }
+    }
+    if (parts.length) {
+      return parts.join('; ')
+    }
   }
   const detail = getDeviceErrorDetail(error)
   if (detail) {
     return detail
   }
-  return error?.message || fallback
+  const message = error?.message || fallback
+  if (
+    hideHttpStatusText &&
+    /^(internal server error|bad request|not found|forbidden|unauthorized)$/i.test(String(message).trim())
+  ) {
+    return fallback
+  }
+  return message || fallback
 }

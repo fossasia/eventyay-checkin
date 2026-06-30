@@ -50,7 +50,9 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
       )
 
       const fetchedProducts = Array.isArray(response?.results) ? response.results : []
-      products.value = fetchedProducts.filter((product) => product?.active !== false)
+      products.value = fetchedProducts.filter(
+        (product) => product?.active !== false && product?.admission !== false
+      )
       productsLoaded.value = true
       return products.value
     } catch (err) {
@@ -66,32 +68,44 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
     const attendeeEmail = String(attendee.attendee_email || '').trim()
     const attendeeCompany = String(attendee.company || '').trim()
     const attendeeJobTitle = String(attendee.job_title || '').trim()
+    const product = products.value.find((entry) => String(entry.id) === String(productId))
+    const variationId =
+      product?.has_variations && product?.variations?.length
+        ? Number(product.variations[0].id)
+        : null
+
+    if (product?.has_variations && !variationId) {
+      throw new Error('Selected product requires a variation, but none are available.')
+    }
 
     return {
       email: attendeeEmail,
       locale: 'en',
       sales_channel: 'web',
-      payment_provider: 'banktransfer',
+      payment_provider: 'manual',
+      send_email: false,
       invoice_address: {
         ...DEFAULT_INVOICE_ADDRESS,
         company: attendeeCompany,
         name_parts: {
-          full_name: attendeeName
-        }
+          full_name: attendeeName,
+        },
       },
       positions: [
         {
           positionid: 1,
           product: Number(productId),
-          variation: null,
-          attendee_name: attendeeName,
+          variation: variationId,
+          attendee_name_parts: {
+            full_name: attendeeName,
+          },
           company: attendeeCompany,
           job_title: attendeeJobTitle,
           attendee_email: attendeeEmail,
           addon_to: null,
-          subevent: null
-        }
-      ]
+          subevent: null,
+        },
+      ],
     }
   }
 
@@ -115,7 +129,7 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
     try {
       return await api.post(
         `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/${orderCode}/mark_paid/`,
-        {}
+        { send_email: false }
       )
     } catch (err) {
       raiseIfDeviceApiError(err, useEventyayApi())
@@ -133,7 +147,10 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
         throw new Error('Order was created without a valid code.')
       }
 
-      const paidOrder = await markOrderPaid(orderCode)
+      const paidOrder =
+        createdOrder?.status === 'p'
+          ? createdOrder
+          : await markOrderPaid(orderCode)
       if (!paidOrder || paidOrder.code !== orderCode || paidOrder.status !== 'p') {
         throw new Error('Order was created, but mark paid did not complete successfully.')
       }

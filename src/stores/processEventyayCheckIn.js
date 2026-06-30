@@ -262,10 +262,13 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
   function getCheckInResultMessage(status, isBadgeStation) {
     const alreadyCheckedIn = status === 'redeemed'
-    if (isBadgeStation) {
-      return alreadyCheckedIn ? 'Already checked in' : 'Badge ready'
+    if (alreadyCheckedIn) {
+      return ''
     }
-    return alreadyCheckedIn ? 'Already Checked-in!' : 'Check-in successful!'
+    if (isBadgeStation) {
+      return 'Badge ready'
+    }
+    return 'Check-in successful!'
   }
 
   function generateNonce(length = 32) {
@@ -323,8 +326,26 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     if (response.reason_explanation) {
       return String(response.reason_explanation)
     }
+    if (response.reason === 'invalid') {
+      return 'This ticket was not found for this event.'
+    }
+    if (response.reason === 'revoked') {
+      return 'This ticket code has been revoked or changed.'
+    }
+    if (response.reason === 'ambiguous') {
+      return 'Multiple tickets match this code. Try a more specific scan.'
+    }
     if (response.reason === 'invalid_time') {
       return 'This ticket is not valid at this time.'
+    }
+    if (response.reason === 'already_redeemed') {
+      return 'This ticket has already been redeemed.'
+    }
+    if (response.reason === 'checkout_required') {
+      return 'Check-out is required before checking in again.'
+    }
+    if (response.detail) {
+      return String(response.detail)
     }
     if (response.reason) {
       return String(response.reason)
@@ -332,9 +353,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     return ''
   }
 
-
   function getRedeemErrorResponse(error) {
-    const body = error?.body ?? error?.response?.data
+    const body = error?.body ?? error?.response?.data ?? error?.cause?.body
     if (!body || typeof body !== 'object') {
       return null
     }
@@ -344,6 +364,11 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     return null
   }
 
+  function setBadgeUrlFromPosition(position) {
+    const badgeDownload = position?.downloads?.find((download) => download.output === 'badge')
+    badgeUrl.value = normalizeApiResourcePath(badgeDownload?.url || '')
+  }
+
   function handleRedeemErrorResponse(response, normalizedSecret, hints) {
     const msg = buildAttendeeMessage(
       getRedeemErrorMessage(response) || 'Check-in failed!',
@@ -351,10 +376,20 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       normalizedSecret,
       hints
     )
-    if (response?.reason === 'checkout_required') {
+    if (response?.reason === 'checkout_required' && response.cross_gate) {
       showCheckoutRequiredMsg({
         ...msg,
-        crossGateCheckout: Boolean(response.cross_gate),
+        crossGateCheckout: true,
+      })
+    } else if (
+      response?.reason === 'already_redeemed' ||
+      response?.reason === 'checkout_required'
+    ) {
+      setBadgeUrlFromPosition(response?.position)
+      showSuccessMsg({
+        ...msg,
+        alreadyCheckedIn: true,
+        message: '',
       })
     } else {
       showErrorMsg(msg)
@@ -420,11 +455,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           return response
         }
 
-        const badgeDownload = response.position?.downloads?.find(
-          (download) => download.output === 'badge'
-        )
-
-        badgeUrl.value = normalizeApiResourcePath(badgeDownload?.url || '')
+        setBadgeUrlFromPosition(response.position)
         const isBadgeStation = processApi.selectedRole === 'Badge Station'
         const alreadyCheckedIn = response.status === 'redeemed'
         const positionId = response.position?.id
@@ -492,7 +523,11 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
       showErrorMsg(
         buildAttendeeMessage(
-          getDeviceErrorMessage(error, 'Check-in failed. Check your connection and try again.'),
+          getDeviceErrorMessage(
+            error,
+            'Check-in failed. Check your connection and try again.',
+            { hideHttpStatusText: true }
+          ),
           null,
           normalizedSecret,
           hints
