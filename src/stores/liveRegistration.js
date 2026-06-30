@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import { mande } from 'mande'
+import { createAuthorizedDeviceApi } from '@/utils/serverUrl'
+import { raiseIfDeviceApiError } from '@/utils/deviceErrors'
 import { ref } from 'vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 
@@ -22,20 +23,16 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
 
   function createApiClient() {
     const processApi = useEventyayApi()
-    const { apitoken, url } = processApi
-    return mande(url, {
-      headers: {
-        Authorization: `Device ${apitoken}`,
-        Accept: 'application/json',
-        'Content-Type': 'application/json'
-      }
+    processApi.refreshServerUrl()
+    return createAuthorizedDeviceApi(processApi.url, processApi.apitoken, {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
     })
   }
 
   function getApiContext() {
     const processApi = useEventyayApi()
-    const { organizer, eventSlug } = processApi
-    return { organizer, eventSlug }
+    return { organizer: processApi.organizer, eventSlug: processApi.eventSlug }
   }
 
   async function fetchProducts({ force = false } = {}) {
@@ -56,6 +53,9 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
       products.value = fetchedProducts.filter((product) => product?.active !== false)
       productsLoaded.value = true
       return products.value
+    } catch (err) {
+      raiseIfDeviceApiError(err, useEventyayApi())
+      throw err
     } finally {
       isLoadingProducts.value = false
     }
@@ -98,19 +98,29 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
   async function createOrder(attendee, productId) {
     const { organizer, eventSlug } = getApiContext()
     const api = createApiClient()
-    return api.post(
-      `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/`,
-      buildOrderPayload(attendee, productId)
-    )
+    try {
+      return await api.post(
+        `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/`,
+        buildOrderPayload(attendee, productId)
+      )
+    } catch (err) {
+      raiseIfDeviceApiError(err, useEventyayApi())
+      throw err
+    }
   }
 
   async function markOrderPaid(orderCode) {
     const { organizer, eventSlug } = getApiContext()
     const api = createApiClient()
-    return api.post(
-      `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/${orderCode}/mark_paid/`,
-      {}
-    )
+    try {
+      return await api.post(
+        `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/${orderCode}/mark_paid/`,
+        {}
+      )
+    } catch (err) {
+      raiseIfDeviceApiError(err, useEventyayApi())
+      throw err
+    }
   }
 
   async function registerAndMarkPaid(attendee, productId) {

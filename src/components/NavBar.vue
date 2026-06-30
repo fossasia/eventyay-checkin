@@ -1,53 +1,66 @@
 <script setup>
-import { ref, onBeforeMount, nextTick, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { Disclosure, DisclosureButton, DisclosurePanel } from '@headlessui/vue'
-import { Bars3Icon, XMarkIcon } from '@heroicons/vue/24/outline'
-import { useLoadingStore } from '@/stores/loading'
-import { useNavbarStore } from '@/stores/navbar'
-import { useUserStore } from '@/stores/user'
-import PasswordModal from '@/components/Modals/PasswordModal.vue'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useEventyayApi } from '@/stores/eventyayapi'
+import { useLoadingStore } from '@/stores/loading'
+import { getEventyayLogoProps, getRoleLabel } from '@/utils/session'
 
+const route = useRoute()
 const router = useRouter()
-const loadingStore = useLoadingStore()
-const navbarStore = useNavbarStore()
-const userStore = useUserStore()
 const processApi = useEventyayApi()
+const loadingStore = useLoadingStore()
+
 loadingStore.navbarLoaded()
 
-const showLogout = ref(false)
+const isAuthenticated = computed(() => Boolean(processApi.apitoken))
+const showBar = computed(() => isAuthenticated.value && route.name !== 'userAuth')
+const roleLabel = computed(() => getRoleLabel(processApi.selectedRole))
+const eventLabel = computed(() => processApi.eventname || '')
+const gateLabel = computed(() => processApi.gateName || '')
+const deviceLabel = computed(() => processApi.deviceName || '')
+
+const contextLabel = computed(() => {
+  const parts = []
+  if (eventLabel.value) {
+    parts.push(eventLabel.value)
+  }
+  if (roleLabel.value) {
+    parts.push(roleLabel.value)
+  }
+  if (gateLabel.value) {
+    parts.push(gateLabel.value)
+  } else if (deviceLabel.value) {
+    parts.push(deviceLabel.value)
+  }
+  return parts.join(' · ')
+})
 
 function logout() {
-  processApi.$reset()
+  processApi.logout()
   router.push({ name: 'userAuth' })
 }
-
-watch(
-  () => processApi.apitoken,
-  (newValue) => {
-    showLogout.value = newValue !== ''
-  },
-  { immediate: true }
-)
 </script>
 
 <template>
-  <Disclosure v-slot="{ open }" as="header" class="sticky top-0 z-10 bg-white shadow">
-    <div class="mx-auto max-w-7xl px-2 sm:px-4 lg:divide-y lg:divide-secondary-light lg:px-8">
-      <div class="flex h-16 items-center justify-between space-x-5">
-        <div>
-          <div>Eventyay</div>
-        </div>
-        <div v-if="showLogout">
-          <button
-            class="rounded px-4 py-2 text-danger transition-colors hover:bg-danger hover:text-white"
-            @click="logout"
-          >
-            Logout
-          </button>
-        </div>
+  <header
+    v-if="showBar"
+    class="sticky top-0 z-20 border-b border-surface-border bg-surface/95 backdrop-blur-sm"
+  >
+    <div class="mx-auto flex h-11 max-w-6xl xl:max-w-7xl 2xl:max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div class="flex min-w-0 flex-1 items-center gap-3">
+        <img v-bind="getEventyayLogoProps('icon', 'h-7 w-7 shrink-0')" />
+        <p v-if="contextLabel" class="min-w-0 truncate text-sm text-body-muted">
+          {{ contextLabel }}
+        </p>
       </div>
+
+      <button
+        type="button"
+        class="shrink-0 text-sm text-body-muted transition hover:text-body"
+        @click="logout"
+      >
+        Sign out
+      </button>
     </div>
-  </Disclosure>
+  </header>
 </template>

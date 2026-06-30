@@ -1,5 +1,5 @@
 import { useEventyayApi } from '@/stores/eventyayapi'
-import { mande } from 'mande'
+import { createAuthorizedExhibitorApi, exhibitorApiPath } from '@/utils/serverUrl'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
@@ -10,18 +10,21 @@ export const useTagStore = defineStore('tags', () => {
 
   async function fetchTags() {
     const processApi = useEventyayApi()
-    const { url, organizer, eventSlug, apitoken, exikey } = processApi
+    processApi.refreshServerUrl()
+
+    const url = processApi.url
+    const apitoken = processApi.apitoken
+    const organizer = processApi.organizer
+    const eventSlug = processApi.eventSlug
+    const exikey = processApi.exikey
+
+    if (!url || !apitoken || !organizer || !eventSlug || !exikey) {
+      return
+    }
 
     try {
-      const api = mande(`${url}api/v1/event/${organizer}/${eventSlug}/exhibitors/tags`, {
-        headers: {
-          Authorization: `Device ${apitoken}`,
-          Accept: 'application/json',
-          Exhibitor: exikey
-        }
-      })
-
-      const response = await api.get()
+      const api = createAuthorizedExhibitorApi(url, apitoken, exikey)
+      const response = await api.get(exhibitorApiPath(organizer, eventSlug, 'tags'))
       if (response.success) {
         availableTags.value = response.tags
       }
