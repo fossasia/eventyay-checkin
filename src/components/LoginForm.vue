@@ -1,23 +1,29 @@
 <script setup>
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import QRCamera from '@/components/Utilities/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
+import KioskLauncherInstructions from '@/components/Common/KioskLauncherInstructions.vue'
 import { useCameraStore } from '@/stores/camera'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useLoadingStore } from '@/stores/loading'
 import { getEventyayLogoProps, getRoleRouteName, STATION_TYPE_DEFINITIONS } from '@/utils/session'
+import { buildKioskUrl, isKioskEnvironment } from '@/utils/kioskLauncher'
 import { UserGroupIcon, PrinterIcon, BuildingStorefrontIcon } from '@heroicons/vue/24/outline'
 
 const loadingStore = useLoadingStore()
 const processApi = useEventyayApi()
 const cameraStore = useCameraStore()
 const router = useRouter()
+const route = useRoute()
 
 const errmessage = ref('')
 const showError = ref(false)
 const showScanner = ref(false)
+const showKioskPrereq = ref(false)
 const pendingRole = ref('')
+const isKioskShell = computed(() => isKioskEnvironment(route))
+const kioskLoginUrl = computed(() => buildKioskUrl(window.location.origin, '/'))
 
 const ROLE_ICONS = {
   CheckIn: UserGroupIcon,
@@ -47,13 +53,28 @@ function handleRoleSelection(role) {
   pendingRole.value = role
   processApi.setRole(role)
   showError.value = false
+  showKioskPrereq.value = false
 
   if (!processApi.apitoken) {
+    if (role === 'Badge Station' && !isKioskShell.value) {
+      showKioskPrereq.value = true
+      return
+    }
     showScanner.value = true
     return
   }
 
   redirectForRole(role)
+}
+
+function proceedToDeviceRegistration() {
+  showKioskPrereq.value = false
+  showScanner.value = true
+}
+
+function backFromKioskPrereq() {
+  showKioskPrereq.value = false
+  pendingRole.value = ''
 }
 
 async function handleQrScanned() {
@@ -141,7 +162,37 @@ loadingStore.contentLoaded()
       </div>
 
       <Transition name="fade" mode="out-in">
-        <div v-if="showScanner" key="scanner" class="space-y-4">
+        <div v-if="showKioskPrereq" key="kiosk-prereq" class="space-y-4">
+          <div class="rounded-xl border border-surface-border bg-surface-muted p-4 text-center">
+            <p class="text-sm font-medium text-body">Set up kiosk mode before registering</p>
+            <p class="mt-1 text-xs text-body-muted">
+              Kiosk mode enables silent badge printing. Run the command below, then register in that
+              window.
+            </p>
+          </div>
+
+          <KioskLauncherInstructions
+            :target-url="kioskLoginUrl"
+            :show-registration-steps="true"
+          />
+
+          <StandardButton
+            type="button"
+            text="I'm in kiosk mode — register device"
+            variant="primary"
+            block
+            @click="proceedToDeviceRegistration"
+          />
+          <StandardButton
+            type="button"
+            text="Back"
+            variant="white"
+            block
+            @click="backFromKioskPrereq"
+          />
+        </div>
+
+        <div v-else-if="showScanner" key="scanner" class="space-y-4">
           <div v-if="!showManualInput" class="space-y-4">
             <div class="rounded-xl border border-surface-border bg-surface-muted p-4 text-center">
               <p class="text-sm font-medium text-body">Scan device registration QR</p>

@@ -332,6 +332,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     return ''
   }
 
+
   function getRedeemErrorResponse(error) {
     const body = error?.body ?? error?.response?.data
     if (!body || typeof body !== 'object') {
