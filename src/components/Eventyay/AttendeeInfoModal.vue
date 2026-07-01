@@ -86,20 +86,17 @@ const popupExtraRows = computed(() => {
     .filter(Boolean)
 })
 
-const canCustomizeBadge = computed(
-  () =>
-    props.showSuccess &&
-    Boolean(props.badgeUrl) &&
-    props.message?.badge_customization?.allow_customization &&
-    (props.message?.badge_customization?.fields || []).length > 0
-)
-
-const emit = defineEmits(['print', 'preview', 'edit', 'close', 'timeout', 'interact', 'exit', 'checkin', 'customize-badge'])
+const emit = defineEmits(['print', 'preview', 'edit', 'close', 'timeout', 'interact', 'exit', 'checkin', 'checkout-confirm'])
 
 const effectiveDuration = computed(() => props.duration)
 
 const showCountdown = computed(
-  () => !countdownHidden.value && !props.paused && props.duration > 0 && countdown.value > 0
+  () =>
+    !suppressAutoClose.value &&
+    !countdownHidden.value &&
+    !props.paused &&
+    props.duration > 0 &&
+    countdown.value > 0
 )
 
 const countdownLabel = computed(() => {
@@ -126,6 +123,28 @@ const resultLabel = computed(() => {
     if (props.message?.checkoutRequired) {
       return 'Check-out required'
     }
+    if (props.message?.errorReason === 'invalid_time') {
+      const detail = String(props.message?.message || '').toLowerCase()
+      if (detail.includes('not valid yet')) {
+        return 'Ticket not yet valid'
+      }
+      return 'Ticket no longer valid'
+    }
+    if (props.message?.errorReason === 'invalid') {
+      return 'Ticket not found'
+    }
+    if (props.message?.errorReason === 'product') {
+      return 'Wrong ticket type'
+    }
+    if (props.message?.errorReason === 'subevent') {
+      return 'Wrong date or session'
+    }
+    if (props.message?.errorReason === 'unpaid') {
+      return 'Payment required'
+    }
+    if (props.message?.errorReason === 'rules') {
+      return 'Check-in blocked'
+    }
     return props.badgeStation ? 'Badge issue' : 'Check-in issue'
   }
   if (props.message?.offerCheckInAtGate) {
@@ -139,7 +158,7 @@ const resultLabel = computed(() => {
     if (detail) {
       return detail
     }
-    return props.badgeStation ? 'Badge ready' : 'Check-in successful!'
+    return 'Check-in successful!'
   }
   return props.badgeStation ? 'Badge station' : 'Check-in result'
 })
@@ -168,6 +187,15 @@ function detailRepeatsLabel(label, detail) {
 }
 
 const modalHelperText = computed(() => {
+  if (props.message?.checkoutRequired) {
+    return String(props.message?.message || '').trim()
+  }
+
+  const submessage = String(props.message?.submessage || '').trim()
+  if (submessage) {
+    return submessage
+  }
+
   const label = resultLabel.value
   const detail = String(props.message?.message || '').trim()
 
@@ -190,6 +218,19 @@ const canCheckOut = computed(
     !props.message?.offerCheckInAtGate
 )
 
+const isCheckoutFlow = computed(
+  () =>
+    Boolean(props.message?.checkoutRequired) ||
+    Boolean(props.message?.offerCheckInAtGate) ||
+    canCheckOut.value
+)
+
+const showCheckoutConfirm = ref(false)
+
+const suppressAutoClose = computed(
+  () => isCheckoutFlow.value || showCheckoutConfirm.value
+)
+
 const canShowBadgeActions = computed(
   () =>
     Boolean(props.badgeUrl) &&
@@ -208,7 +249,10 @@ const canEditAttendee = computed(
 )
 
 const resultToneClass = computed(() => {
-  if (isAlreadyCheckedIn.value && !props.message?.checkoutRequired) {
+  if (props.message?.checkoutRequired) {
+    return 'text-danger'
+  }
+  if (isAlreadyCheckedIn.value) {
     return 'text-success'
   }
   if (props.showError || isCheckedOutResult.value) {
@@ -244,6 +288,7 @@ function stopTimer() {
 }
 
 function handleInteract(eventName) {
+  stopTimer()
   countdownHidden.value = true
   emit('interact')
   emit(eventName)
@@ -263,16 +308,24 @@ function handleEditClick() {
 
 function handleExitClick() {
   stopTimer()
+  showCheckoutConfirm.value = true
+  emit('checkout-confirm', true)
+}
+
+function confirmCheckout() {
+  showCheckoutConfirm.value = false
+  emit('checkout-confirm', false)
   emit('exit')
+}
+
+function cancelCheckout() {
+  showCheckoutConfirm.value = false
+  emit('checkout-confirm', false)
 }
 
 function handleCheckInClick() {
   stopTimer()
   emit('checkin')
-}
-
-function handleCustomizeBadgeClick() {
-  handleInteract('customize-badge')
 }
 
 function handleCloseClick() {
@@ -281,32 +334,58 @@ function handleCloseClick() {
 }
 
 watch(
+  () => props.showSuccess || props.showError,
+  (isOpen, wasOpen) => {
+    if (isOpen && !wasOpen) {
+      countdownHidden.value = false
+    }
+  }
+)
+
+watch(
   () => props.paused,
   (isPaused) => {
-    if (isPaused) {
+    if (isPaused || suppressAutoClose.value) {
       stopTimer()
-    } else if (props.showSuccess || props.showError) {
+    } else if ((props.showSuccess || props.showError) && props.duration > 0) {
       startTimer()
     }
   }
 )
 
 watch(
-  () => [props.showSuccess, props.showError, props.message, props.duration, props.paused],
+  () => [props.showSuccess, props.showError, props.duration, props.paused, suppressAutoClose],
   () => {
     if (props.showSuccess || props.showError) {
-      countdownHidden.value = false
-      if (!props.paused && props.duration > 0) {
+      if (!props.paused && !suppressAutoClose.value && props.duration > 0) {
         startTimer()
       } else {
         stopTimer()
       }
     } else {
+      countdownHidden.value = false
+      showCheckoutConfirm.value = false
       stopTimer()
     }
   },
-  { immediate: true, deep: true }
+  { immediate: true }
 )
+
+const checkoutConfirmTitle = computed(() => {
+  const name = props.message?.attendee_name || props.message?.attendee
+  if (props.message?.checkoutRequired) {
+    return 'Check-out required'
+  }
+  return name ? `Check out ${name}?` : 'Check out attendee?'
+})
+
+const checkoutConfirmMessage = computed(() => {
+  if (!props.message?.checkoutRequired) {
+    return ''
+  }
+  const detail = String(props.message?.message || '').trim()
+  return detail || 'Check out this attendee before continuing.'
+})
 
 onBeforeUnmount(() => {
   stopTimer()
@@ -417,15 +496,15 @@ onBeforeUnmount(() => {
             v-if="canCheckOut"
             type="button"
             text="Check out"
-            variant="white"
+            variant="danger"
             block
             @click="handleExitClick"
           />
           <StandardButton
             v-else-if="message?.checkoutRequired"
             type="button"
-            text="Confirm checkout"
-            variant="primary"
+            text="Check out"
+            variant="danger"
             block
             @click="handleExitClick"
           />
@@ -447,14 +526,6 @@ onBeforeUnmount(() => {
           </template>
           <template v-if="badgeStation && canShowBadgeActions">
             <StandardButton
-              v-if="canCustomizeBadge"
-              type="button"
-              text="Customize badge"
-              variant="white"
-              block
-              @click="handleCustomizeBadgeClick"
-            />
-            <StandardButton
               type="button"
               text="Print preview"
               :variant="autoPrintEnabled ? 'white' : 'primary'"
@@ -472,14 +543,6 @@ onBeforeUnmount(() => {
           </template>
 
           <template v-else-if="canShowBadgeActions">
-            <StandardButton
-              v-if="canCustomizeBadge"
-              type="button"
-              text="Customize badge"
-              variant="white"
-              block
-              @click="handleCustomizeBadgeClick"
-            />
             <StandardButton
               type="button"
               :text="isGeneratingBadge ? 'Preparing badge...' : 'Print badge'"
@@ -509,6 +572,36 @@ onBeforeUnmount(() => {
               @click="handleCloseClick"
             />
           </div>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <Transition name="modal">
+    <div
+      v-if="showCheckoutConfirm"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+    >
+      <div class="card w-full max-w-sm p-6">
+        <h2 class="text-xl font-semibold text-danger">{{ checkoutConfirmTitle }}</h2>
+        <p v-if="checkoutConfirmMessage" class="mt-3 text-sm text-body-muted">
+          {{ checkoutConfirmMessage }}
+        </p>
+        <div class="mt-6 space-y-2">
+          <StandardButton
+            type="button"
+            text="Check out"
+            variant="danger"
+            block
+            @click="confirmCheckout"
+          />
+          <StandardButton
+            type="button"
+            text="Cancel"
+            variant="white"
+            block
+            @click="cancelCheckout"
+          />
         </div>
       </div>
     </div>

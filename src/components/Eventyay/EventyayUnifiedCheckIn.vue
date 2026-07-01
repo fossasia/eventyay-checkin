@@ -35,7 +35,7 @@ const notificationStore = useNotificationStore()
 const processApi = useEventyayApi()
 const { apitoken, url, organizer, eventSlug, selectedRole, selectedCheckInListId, gateName } = storeToRefs(processApi)
 const processEventyayCheckInStore = useProcessEventyayCheckInStore()
-const { message, showSuccess, showError, badgeUrl, isGeneratingBadge, availableCheckInLists, autoPrintFeedback, badgeCustomizeRequest } = storeToRefs(
+const { message, showSuccess, showError, badgeUrl, isGeneratingBadge, availableCheckInLists, autoPrintFeedback, badgeCustomizeRequest, autoPrintCustomizeOnce } = storeToRefs(
   processEventyayCheckInStore
 )
 const {
@@ -75,6 +75,7 @@ const orders = ref([])
 const loading = ref(false)
 const showPrintPreview = ref(false)
 const isEditDialogOpen = ref(false)
+const isCheckoutConfirmOpen = ref(false)
 const isSavingAttendee = ref(false)
 const editError = ref('')
 const isBadgeStation = computed(() => selectedRole.value === 'Badge Station')
@@ -92,7 +93,14 @@ const showLiveRegistrationEntry = computed(() => {
 })
 const autoPrintBadge = ref(getAutoPrintPreference(selectedRole.value))
 const shouldAutoPrintBadge = computed(() => isBadgeStation.value && autoPrintBadge.value)
-const attendeeModalPaused = computed(() => isEditDialogOpen.value || showPrintPreview.value)
+const attendeeModalPaused = computed(
+  () =>
+    isEditDialogOpen.value ||
+    showPrintPreview.value ||
+    isCheckoutConfirmOpen.value ||
+    Boolean(badgeCustomizeRequest.value) ||
+    isGeneratingBadge.value
+)
 
 const showAttendeeModal = computed(() => {
   if (!message.value || showPrintPreview.value) {
@@ -166,8 +174,13 @@ watch(autoPrintBadge, (enabled) => {
   }
   if (!enabled) {
     clearAutoPrintFeedback()
+    autoPrintCustomizeOnce.value = false
   }
 })
+
+const toggleAutoPrintCustomizeOnce = () => {
+  autoPrintCustomizeOnce.value = !autoPrintCustomizeOnce.value
+}
 
 const closePopup = () => {
   isEditDialogOpen.value = false
@@ -235,28 +248,6 @@ const handleModalPrint = async () => {
   }
 
   openBadgePreviewFromModal()
-}
-
-const handleCustomizeBadge = async () => {
-  const customization = message.value?.badge_customization
-  const positionId = message.value?.orderPositionId
-  if (!customization?.allow_customization || !customization.fields?.length) {
-    return
-  }
-
-  const hiddenFields = await openBadgeCustomization(customization, positionId)
-  if (!hiddenFields || !message.value) {
-    return
-  }
-
-  message.value = {
-    ...message.value,
-    badge_customization: {
-      ...customization,
-      hidden_fields: hiddenFields
-    }
-  }
-  notificationStore.addNotification(['Badge', 'Customization saved'], 'success')
 }
 
 const handleExitFromModal = async () => {
@@ -580,7 +571,7 @@ const resolveOrderPositionId = async (knownOrderPositionId, attendeeSecret) => {
   return exactMatch?.id || null
 }
 
-const saveAttendeeAndCheckIn = async () => {
+const saveAttendeeDetails = async () => {
   if (isSavingAttendee.value) {
     return
   }
@@ -601,31 +592,19 @@ const saveAttendeeAndCheckIn = async () => {
     )
 
     const patchPayload = getModifiedAttendeeFields()
-    if (Object.keys(patchPayload).length > 0) {
-      if (!orderPositionId) {
-        throw new Error('Unable to determine attendee record for update.')
-      }
-      const updatedOrderPosition = await patchAttendeeDetails(orderPositionId, patchPayload)
-      updatePopupAttendee(updatedOrderPosition)
-      updateOrderInSearchResults(updatedOrderPosition)
+    if (Object.keys(patchPayload).length === 0) {
+      isEditDialogOpen.value = false
+      return
     }
 
-    const checkInResponse = await processEventyayCheckInStore.checkInBySecret(attendeeSecret, {
-      attendeeHints: {
-        attendee_name: editableAttendee.value.attendee_name,
-        attendee_email: editableAttendee.value.fields.attendee_email || message.value?.attendee_email || '',
-        company: editableAttendee.value.fields.company || message.value?.company || '',
-        job_title: editableAttendee.value.fields.job_title || message.value?.job_title || '',
-        answers: message.value?.answers || []
-      }
-    })
-    if (
-      !checkInResponse ||
-      (checkInResponse.status !== 'ok' && checkInResponse.status !== 'redeemed')
-    ) {
-      throw new Error('Attendee updated, but check-in failed.')
+    if (!orderPositionId) {
+      throw new Error('Unable to determine attendee record for update.')
     }
 
+    const updatedOrderPosition = await patchAttendeeDetails(orderPositionId, patchPayload)
+    updatePopupAttendee(updatedOrderPosition)
+    updateOrderInSearchResults(updatedOrderPosition)
+    notificationStore.addNotification(['Attendee', 'Details updated'], 'success')
     isEditDialogOpen.value = false
   } catch (error) {
     console.error('Error saving attendee details:', error)
@@ -914,7 +893,6 @@ const checkIn = async (order) => {
         <QRCamera
           qr-type="eventyaycheckin"
           :scan-type="isBadgeStation ? 'Badge' : 'Check-In'"
-          :keep-active="shouldAutoPrintBadge"
         />
 
         <div
@@ -953,6 +931,44 @@ const checkIn = async (order) => {
               aria-hidden="true"
               class="relative inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-300 ease-in-out z-10"
               :class="autoPrintBadge ? 'translate-x-5' : 'translate-x-0'"
+            />
+          </button>
+        </div>
+
+        <div
+          v-if="isBadgeStation && autoPrintBadge"
+          class="mt-3 flex items-center justify-between rounded-xl border border-surface-border bg-surface-muted px-4 py-3"
+        >
+          <div>
+            <p class="text-sm font-semibold text-body">Customize badge before printing</p>
+            <p class="text-xs text-body-muted">
+              {{
+                autoPrintCustomizeOnce
+                  ? 'Shows field options once, then prints.'
+                  : 'Prints immediately using the default badge layout.'
+              }}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-300 ease-in-out items-center focus:outline-none focus:ring-2 focus:ring-primary/20"
+            :class="autoPrintCustomizeOnce ? 'bg-primary' : 'bg-[#E9E9EB]'"
+            role="switch"
+            :aria-checked="autoPrintCustomizeOnce"
+            @click="toggleAutoPrintCustomizeOnce"
+          >
+            <span
+              class="absolute left-2.5 h-2.5 w-0.5 rounded-full bg-white transition-opacity duration-300"
+              :class="autoPrintCustomizeOnce ? 'opacity-100' : 'opacity-0'"
+            />
+            <span
+              class="absolute right-2 h-2 w-2 rounded-full border border-body-light transition-opacity duration-300"
+              :class="autoPrintCustomizeOnce ? 'opacity-0' : 'opacity-100'"
+            />
+            <span
+              aria-hidden="true"
+              class="relative inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-300 ease-in-out z-10"
+              :class="autoPrintCustomizeOnce ? 'translate-x-5' : 'translate-x-0'"
             />
           </button>
         </div>
@@ -1155,10 +1171,10 @@ const checkIn = async (order) => {
             />
             <StandardButton
               type="button"
-              :text="isSavingAttendee ? 'Saving...' : 'Save & check in'"
+              :text="isSavingAttendee ? 'Saving...' : 'Save'"
               variant="primary"
               :disabled="isSavingAttendee"
-              @click="saveAttendeeAndCheckIn"
+              @click="saveAttendeeDetails"
             />
           </div>
         </div>
@@ -1183,9 +1199,9 @@ const checkIn = async (order) => {
       @preview="openBadgePreviewFromModal"
       @print="handleModalPrint"
       @edit="openEditDialog"
-      @customize-badge="handleCustomizeBadge"
       @exit="handleExitFromModal"
       @checkin="handleCheckInAfterCheckout"
+      @checkout-confirm="isCheckoutConfirmOpen = $event"
       @close="closePopup"
       @timeout="closePopup"
     />

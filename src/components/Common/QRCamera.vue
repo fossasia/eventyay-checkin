@@ -16,10 +16,6 @@ const props = defineProps({
   details: {
     type: String,
     default: ''
-  },
-  keepActive: {
-    type: Boolean,
-    default: false
   }
 })
 
@@ -48,6 +44,6 @@ async function processQR() {
       Scan QR · {{ scanType }}
     </h3>
     <p v-if="details" class="mb-3 text-sm text-body-muted">{{ details }}</p>
-    <QRCamera :keep-active="keepActive" @scanned="processQR" />
+    <QRCamera @scanned="processQR" />
   </div>
 </template>

@@ -200,7 +200,7 @@ loadingStore.contentLoaded()
                 The QR code includes your server URL and setup token from the Eventyay organizer dashboard.
               </p>
             </div>
-            <QRCamera keep-active @scanned="handleQrScanned" />
+            <QRCamera @scanned="handleQrScanned" />
             <div class="text-center py-1">
               <button
                 type="button"

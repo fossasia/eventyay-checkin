@@ -7,13 +7,6 @@ import RefreshButton from '@/components/Utilities/RefreshButton.vue'
 import { useCameraStore } from '@/stores/camera'
 import { paintQrScannerTrack } from '@/utils/qrScannerTrack'
 
-const props = defineProps({
-  keepActive: {
-    type: Boolean,
-    default: false
-  }
-})
-
 const emit = defineEmits(['scanned'])
 
 const cameraStore = useCameraStore()
@@ -21,7 +14,6 @@ const destroyed = ref(false)
 const isCameraOn = ref(false)
 const hasDetection = ref(false)
 const cameraStreamNonce = ref(0)
-let inactivityTimer = null
 
 const scanFormats = ['qr_code']
 
@@ -128,7 +120,6 @@ async function switchCamera() {
 
   const hasSwitchedCamera = cameraStore.toggleCameraSide()
   if (!isCameraOn.value || !hasSwitchedCamera) {
-    startInactivityTimer()
     return
   }
 
@@ -136,7 +127,6 @@ async function switchCamera() {
   await nextTick()
   cameraStreamNonce.value += 1
   destroyed.value = false
-  startInactivityTimer()
 }
 
 function toggleCamera() {
@@ -145,34 +135,6 @@ function toggleCamera() {
   if (isCameraOn.value) {
     cameraStore.clearLastScan()
     hasDetection.value = false
-  }
-  startInactivityTimer()
-}
-
-function handleVisibilityChange() {
-  if (document.hidden) {
-    isCameraOn.value = false
-    cameraStore.paused = true
-    clearInactivityTimer()
-  }
-}
-
-function startInactivityTimer() {
-  clearInactivityTimer()
-  if (props.keepActive) {
-    return
-  }
-
-  inactivityTimer = setTimeout(() => {
-    isCameraOn.value = false
-    cameraStore.paused = true
-  }, 60000)
-}
-
-function clearInactivityTimer() {
-  if (inactivityTimer) {
-    clearTimeout(inactivityTimer)
-    inactivityTimer = null
   }
 }
 
@@ -185,32 +147,15 @@ watch(
   }
 )
 
-watch(
-  () => props.keepActive,
-  (keepActive) => {
-    if (keepActive) {
-      isCameraOn.value = true
-      cameraStore.paused = false
-      clearInactivityTimer()
-    } else {
-      startInactivityTimer()
-    }
-  }
-)
-
 onMounted(async () => {
   cameraStore.paused = false
   await updateAvailableCamera()
   isCameraOn.value = true
-  if (!props.keepActive) {
-    startInactivityTimer()
-  }
-  document.addEventListener('visibilitychange', handleVisibilityChange)
 })
 
 onUnmounted(() => {
-  clearInactivityTimer()
-  document.removeEventListener('visibilitychange', handleVisibilityChange)
+  isCameraOn.value = false
+  cameraStore.paused = true
 })
 </script>
 
