@@ -39,6 +39,19 @@ const resultLabel = computed(() => {
   return 'Lead captured'
 })
 
+const errorAlertMessage = computed(() => {
+  if (!showError.value || message.value?.attendee) {
+    return ''
+  }
+  return String(message.value?.message || 'Lead scan failed.').trim()
+})
+
+const showAttendeeModal = computed(
+  () => (showSuccess.value || showError.value) && Boolean(message.value?.attendee)
+)
+
+const showErrorAlert = computed(() => Boolean(errorAlertMessage.value))
+
 function detailRepeatsLabel(label, detail) {
   const normalize = (value) =>
     String(value || '')
@@ -179,11 +192,23 @@ function handleClose() {
   handleCancel()
 }
 
-watch([showSuccess, showError], ([newSuccess, newError]) => {
-  if (newSuccess || (newError && message.value.attendee)) {
+watch([showAttendeeModal, showErrorAlert], ([attendeeModal, errorAlert]) => {
+  if (attendeeModal) {
     showPopup()
+  } else if (errorAlert) {
+    showErrorPopup()
   }
 })
+
+function showErrorPopup() {
+  stopTimer()
+  saveError.value = ''
+  countdownPaused.value = false
+  startCountdown()
+  timeoutInstance.value = setTimeout(() => {
+    leadScanStore.$reset()
+  }, 5000)
+}
 
 function showPopup() {
   stopTimer()
@@ -241,7 +266,45 @@ function showPopup() {
 
     <Transition name="modal">
       <div
-        v-if="(showSuccess || showError) && message.attendee"
+        v-if="showErrorAlert"
+        class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      >
+        <div class="card relative w-full max-w-md p-6 pt-14">
+          <div class="absolute right-4 top-4 flex items-center gap-3">
+            <div
+              v-if="showCountdown"
+              class="rounded-full bg-surface-muted px-3 py-1.5 text-xs font-medium tabular-nums text-body-muted whitespace-nowrap"
+            >
+              {{ countdownLabel }}
+            </div>
+            <button
+              type="button"
+              class="flex h-10 w-10 items-center justify-center rounded-full bg-surface-muted text-body transition hover:bg-surface-border hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+              aria-label="Close"
+              @click="handleClose"
+            >
+              <XMarkIcon class="h-7 w-7" />
+            </button>
+          </div>
+
+          <h2 class="mb-3 text-xl text-danger">Could not scan lead</h2>
+          <p class="text-sm text-body-muted">{{ errorAlertMessage }}</p>
+
+          <div class="mt-6">
+            <StandardButton
+              type="button"
+              text="OK"
+              class="btn-primary w-full justify-center"
+              @click="handleClose"
+            />
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="modal">
+      <div
+        v-if="showAttendeeModal"
         class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
       >
         <div class="card relative w-full max-w-md p-6 pt-14">

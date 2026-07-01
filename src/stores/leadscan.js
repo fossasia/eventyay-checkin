@@ -17,10 +17,11 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
     message.value = ''
     showSuccess.value = false
     showError.value = false
+    currentLeadId.value = ''
   }
 
   function showErrorMsg(msg) {
-    message.value = msg
+    message.value = typeof msg === 'string' ? { message: msg, attendee: null } : msg
     showSuccess.value = false
     showError.value = true
   }
@@ -101,20 +102,20 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
     const eventSlug = processApi.eventSlug
     const exikey = processApi.exikey
 
-    if (!url || !apitoken || !organizer || !eventSlug || !exikey) {
-      showErrorMsg({
-        message: 'Device or exhibitor session is not configured.',
-        attendee: null
-      })
+    if (!url || !apitoken || !organizer || !eventSlug) {
+      showErrorMsg('Device is not registered. Set up this device before scanning leads.')
+      return
+    }
+    if (!exikey) {
+      showErrorMsg('Exhibitor sign-in required. Enter your exhibitor key before scanning leads.')
       return
     }
 
     const leadValue = await resolveLeadIdentifier(code, processApi)
     if (!leadValue) {
-      showErrorMsg({
-        message: 'No lead code found. Scan a badge QR or enter a lead code.',
-        attendee: null
-      })
+      showErrorMsg(
+        'Invalid or unrecognized QR code. Scan an attendee badge QR or enter a valid lead code.'
+      )
       return
     }
 
@@ -144,7 +145,12 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
           attendee: response.attendee
         })
         currentLeadId.value = leadValue
+        return
       }
+
+      showErrorMsg(
+        String(response?.error || response?.message || 'Lead could not be recorded. Try again.')
+      )
     } catch (err) {
       const status = err?.response?.status ?? err?.status ?? 0
       const body = err?.body ?? err?.response?.data
@@ -157,25 +163,14 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
 
       if (
         handleExhibitorApiError(err, processApi, {
-          onProfileDenied: (msg) =>
-            showErrorMsg({
-              message: msg,
-              attendee: null
-            }),
-          onError: (msg) =>
-            showErrorMsg({
-              message: msg,
-              attendee: null
-            })
+          onProfileDenied: (msg) => showErrorMsg(msg),
+          onError: (msg) => showErrorMsg(msg)
         })
       ) {
         return
       }
 
-      showErrorMsg({
-        message: getDeviceErrorMessage(err, 'Lead scan failed.'),
-        attendee: null
-      })
+      showErrorMsg(getDeviceErrorMessage(err, 'Lead scan failed.', { hideHttpStatusText: true }))
     }
   }
 

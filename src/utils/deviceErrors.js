@@ -83,11 +83,34 @@ export function isDeviceProfileDenied(error) {
   return isDeviceProfileDeniedResponse(getDeviceErrorStatus(error), getDeviceErrorDetail(error))
 }
 
+export function getExhibitorErrorMessage(error, fallback = 'Lead scan request failed.') {
+  const status = getDeviceErrorStatus(error)
+  if (status === 401) {
+    const detail = getDeviceErrorDetail(error).toLowerCase()
+    if (
+      detail.includes('invalid token') ||
+      detail.includes('device access has been revoked') ||
+      detail.includes('device has not been initialized')
+    ) {
+      return 'Device authentication failed. Register this device again from the organizer dashboard.'
+    }
+    return 'Exhibitor authentication failed. Open exhibitor sign-in and enter your exhibitor key again.'
+  }
+  if (status === 403 && isDeviceProfileDenied(error)) {
+    return DEVICE_PROFILE_DENIED_MESSAGE
+  }
+  return getDeviceErrorMessage(error, fallback, { hideHttpStatusText: true })
+}
+
 /**
  * Handle exhibitor API failures without signing the device out.
  * Returns true when the error was handled.
  */
 export function handleExhibitorApiError(error, processApi, { onError, onProfileDenied } = {}) {
+  if (isExhibitorApiError(error) && getDeviceErrorStatus(error) === 401) {
+    onError?.(getExhibitorErrorMessage(error))
+    return true
+  }
   if (isDeviceAuthFailure(error)) {
     processApi?.handleAuthError?.()
     return true
@@ -96,7 +119,7 @@ export function handleExhibitorApiError(error, processApi, { onError, onProfileD
     onProfileDenied?.(DEVICE_PROFILE_DENIED_MESSAGE)
     return true
   }
-  onError?.(getDeviceErrorMessage(error, 'Lead scan request failed.'))
+  onError?.(getExhibitorErrorMessage(error))
   return true
 }
 

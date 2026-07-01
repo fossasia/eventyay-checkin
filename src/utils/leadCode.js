@@ -41,8 +41,11 @@ export async function resolveLeadIdentifier(code, processApi) {
   }
 
   const searchTerm = ticketSecret || raw
-  if (!searchTerm || !processApi?.organizer || !processApi?.eventSlug || !processApi?.url || !processApi?.apitoken) {
-    return searchTerm
+  if (!searchTerm) {
+    return null
+  }
+  if (!processApi?.organizer || !processApi?.eventSlug || !processApi?.url || !processApi?.apitoken) {
+    return null
   }
 
   try {
@@ -58,8 +61,8 @@ export async function resolveLeadIdentifier(code, processApi) {
     )
     const results = response?.results || []
     const match = pickLeadMatch(results, searchTerm)
-    return match?.pseudonymization_id || searchTerm
+    return match?.pseudonymization_id || null
   } catch {
-    return searchTerm
+    return null
   }
 }
