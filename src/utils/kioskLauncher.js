@@ -43,7 +43,7 @@ export function getPlatformLabel(platform = detectPlatform()) {
   if (platform === 'linux') {
     return 'Linux'
   }
-  return 'Linux'
+  return 'Unknown'
 }
 
 export function getShellLabel(platform = detectPlatform()) {

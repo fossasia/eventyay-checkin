@@ -113,4 +113,10 @@ router.beforeEach(async (to, from, next) => {
   next()
 })
 
+router.afterEach(() => {
+  const loadingStore = useLoadingStore()
+  loadingStore.contentLoaded()
+  loadingStore.navbarLoaded()
+})
+
 export default router

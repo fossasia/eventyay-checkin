@@ -181,6 +181,29 @@ export function buildAttendeePatchPayload(editable, original, displayFieldKeys, 
       )
       if (answerEntry) {
         answerUpdates.push(answerEntry)
+      } else if (isQuestionFieldKey(fieldKey)) {
+        const questionId = questionIdFromFieldKey(fieldKey)
+        const question = questionsById[questionId]
+        if (questionId && question) {
+          if (isChoiceQuestion(question)) {
+            const option = (question.options || []).find(
+              (entry) => String(entry.answer) === String(nextValue) || String(entry.id) === String(nextValue)
+            )
+            if (option) {
+              answerUpdates.push({
+                question: questionId,
+                answer: option.answer,
+                options: [option.id]
+              })
+            }
+          } else {
+            answerUpdates.push({
+              question: questionId,
+              answer: nextValue,
+              options: []
+            })
+          }
+        }
       }
       continue
     }

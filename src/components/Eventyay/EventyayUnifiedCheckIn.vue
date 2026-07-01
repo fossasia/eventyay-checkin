@@ -26,6 +26,7 @@ import { useLiveRegistrationStore } from '@/stores/liveRegistration'
 import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
+import { useCameraStore } from '@/stores/camera'
 import { getAutoPrintPreference, setAutoPrintPreference } from '@/utils/session'
 import { PRINT_OUTCOME } from '@/utils/badgePdf'
 import { waitForDesignAssets } from '@/utils/waitForDesignAssets'
@@ -55,6 +56,7 @@ const { products, isLoadingProducts, isRegistering } = storeToRefs(liveRegistrat
 const eventyayEventStore = useEventyayEventStore()
 const { events } = storeToRefs(eventyayEventStore)
 const loadingStore = useLoadingStore()
+const cameraStore = useCameraStore()
 
 const route = useRoute()
 const isKioskShell = computed(() => isKioskEnvironment(route))
@@ -67,7 +69,7 @@ const selectedCheckInListName = computed(() => {
 })
 
 function getDeviceApi() {
-  return createAuthorizedDeviceApi(url.value, apitoken.value)
+  return createAuthorizedDeviceApi(url.value, apitoken.value, { Accept: 'application/json' })
 }
 
 const searchQuery = ref('')
@@ -178,6 +180,18 @@ watch(autoPrintBadge, (enabled) => {
   }
 })
 
+watch(showAttendeeModal, (visible) => {
+  if (visible) {
+    cameraStore.clearLastScan()
+    cameraStore.isProcessing = true
+    return
+  }
+  if (!cameraStore.paused) {
+    cameraStore.clearLastScan()
+    cameraStore.isProcessing = false
+  }
+})
+
 const toggleAutoPrintCustomizeOnce = () => {
   autoPrintCustomizeOnce.value = !autoPrintCustomizeOnce.value
 }
@@ -263,6 +277,8 @@ const handleExitFromModal = async () => {
     closePopup()
     return
   }
+  cameraStore.clearLastScan()
+  cameraStore.isProcessing = true
   const wasCrossGate = message.value?.crossGateCheckout
   const attendeeHints = {
     attendee_name: message.value?.attendee_name,
@@ -297,6 +313,8 @@ const handleCheckInAfterCheckout = async () => {
     closePopup()
     return
   }
+  cameraStore.clearLastScan()
+  cameraStore.isProcessing = true
   await checkInBySecret(secret, {
     attendeeHints: {
       attendee_name: message.value?.attendee_name,
@@ -548,6 +566,9 @@ const patchAttendeeDetails = async (orderPositionId, payload) => {
       payload
     )
   } catch (error) {
+    if (handleDeviceApiError(error, processApi)) {
+      throw new Error(getDeviceErrorMessage(error, 'Unable to update attendee details'))
+    }
     throw new Error(getDeviceErrorMessage(error, 'Unable to update attendee details'))
   }
 }

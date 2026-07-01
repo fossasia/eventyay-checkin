@@ -14,7 +14,7 @@ const loadingStore = useLoadingStore()
 const processApi = useEventyayApi()
 const isKioskShell = computed(() => isKioskEnvironment(route))
 
-const SESSION_POLL_MS = 2000
+const SESSION_POLL_MS = 45000
 let sessionPollTimer = null
 
 function ensureNavbarLoadedForKiosk() {
@@ -50,9 +50,14 @@ function stopSessionPolling() {
 }
 
 function handleVisibilityChange() {
-  if (document.visibilityState === 'visible' && processApi.apitoken) {
-    pollDeviceSession()
+  if (document.visibilityState === 'visible') {
+    if (processApi.apitoken) {
+      pollDeviceSession()
+      startSessionPolling()
+    }
+    return
   }
+  stopSessionPolling()
 }
 
 onMounted(() => {

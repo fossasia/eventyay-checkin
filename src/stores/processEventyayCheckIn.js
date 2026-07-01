@@ -494,10 +494,10 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         ...msg,
         crossGateCheckout: true,
       })
-    } else if (
-      reason === 'already_redeemed' ||
-      reason === 'checkout_required'
-    ) {
+    } else if (reason === 'checkout_required') {
+      setBadgeUrlFromPosition(response?.position)
+      showCheckoutRequiredMsg(msg)
+    } else if (reason === 'already_redeemed') {
       setBadgeUrlFromPosition(response?.position)
       showSuccessMsg({
         ...msg,

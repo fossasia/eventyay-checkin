@@ -55,6 +55,7 @@ const fetchPDF = async () => {
   } catch (error) {
     console.error('Error fetching PDF:', error)
     printError.value = true
+    loadError.value = 'Could not load the badge PDF. Check your connection and try Print again.'
   } finally {
     isLoading.value = false
   }

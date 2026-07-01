@@ -71,6 +71,7 @@ async function updateAvailableCamera() {
     cameraStore.cameraDevices = videoDevices
 
     if (videoDevices.length === 0) {
+      cameraStore.selectedCameraId = { deviceId: 'environment' }
       return
     }
 
