@@ -15,11 +15,7 @@ const processApi = useEventyayApi()
 
 const email = ref('')
 const password = ref('')
-const server = ref('Eventyay.com')
 const showError = ref(false)
-const showServerError = ref(false)
-const errmessage = ref('')
-const DEFAULT_SERVER_VALUE = 'Select a Server'
 // router
 const router = useRouter()
 
@@ -40,16 +36,6 @@ if(processApi.apitoken) {
 }
 
 async function submitLogin() {
-  if (server.value === '' || server.value === DEFAULT_SERVER_VALUE) {
-    showServerError.value = true
-    return
-  }
-  if (server.value === 'Eventyay.com') {
-    errmessage.value = 'Please Register a Device for eventyay.com'
-    showServerError.value = true
-    return
-  }
-  showServerError.value = false
   loadingStore.contentLoading()
   showError.value = false
 
@@ -74,13 +60,7 @@ async function submitLogin() {
 }
 
 function registerDevice() {
-  if (server.value === '' || server.value === 'Select a Server') {
-    errmessage.value = 'Please select a server first'
-    showServerError.value = true
-    return
-  }
-  processApi.setServer(server.value)
-  showServerError.value = false
+  processApi.setServer('eventyay.com')
   router.push({
     name: 'device'
   })
@@ -105,15 +85,8 @@ onMounted(() => {
 <template>
   <div class="-mt-16 flex h-screen flex-col justify-center">
     <div class="my-auto sm:mx-auto sm:w-full sm:max-w-sm">
-      <h2 class="text-center">Select Server and Purpose</h2>
+      <h2 class="text-center">Select Purpose</h2>
       <div class="mt-10 space-y-3">
-        <div>
-          <label for="select">Select a Server</label>
-          <select id="select" v-model="server" class="mt-2 block w-full">
-            <option>eventyay.com</option>
-            <option>Testing</option>
-          </select>
-        </div>
         <div>
           <StandardButton
             type="button"
@@ -140,8 +113,5 @@ onMounted(() => {
         </div>
       </div>
     </div>
-  </div>
-  <div v-if="showServerError" class="mt-5">
-    <p class="text-center text-sm text-danger">{{ errmessage }}</p>
   </div>
 </template>
