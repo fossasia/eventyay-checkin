@@ -193,9 +193,9 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
     if (shouldCustomize) {
       try {
-        const hiddenFields = await requestBadgeCustomization(customization)
+        const customizationResult = await requestBadgeCustomization(customization)
         if (position?.id) {
-          await saveBadgeHiddenFields(position.id, hiddenFields)
+          await saveBadgeCustomization(position.id, customizationResult)
         }
       } catch (error) {
         if (error?.message === 'cancelled') {
@@ -672,15 +672,22 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function saveBadgeHiddenFields(positionId, hiddenFields) {
+  async function saveBadgeCustomization(positionId, result) {
     const { organizer, eventSlug, url, apitoken } = getEventListContext()
     if (!organizer || !eventSlug || !url || !apitoken || !positionId) {
       return
     }
+
+    const hiddenFields = Array.isArray(result) ? result : result.hiddenFields
+    const payload = { badge_hidden_fields: hiddenFields }
+    if (!Array.isArray(result) && result.fieldOverrides) {
+      payload.badge_field_overrides = result.fieldOverrides
+    }
+
     const api = createAuthorizedDeviceApi(url, apitoken, { Accept: 'application/json' })
     await api.patch(
       `/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${positionId}/`,
-      { badge_hidden_fields: hiddenFields }
+      payload
     )
   }
 
@@ -690,8 +697,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     })
   }
 
-  function resolveBadgeCustomization(hiddenFields) {
-    badgeCustomizeRequest.value?.resolve(hiddenFields)
+  function resolveBadgeCustomization(result) {
+    badgeCustomizeRequest.value?.resolve(result)
     badgeCustomizeRequest.value = null
   }
 
@@ -706,11 +713,11 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
 
     try {
-      const hiddenFields = await requestBadgeCustomization(customization)
+      const customizationResult = await requestBadgeCustomization(customization)
       if (positionId) {
-        await saveBadgeHiddenFields(positionId, hiddenFields)
+        await saveBadgeCustomization(positionId, customizationResult)
       }
-      return hiddenFields
+      return customizationResult
     } catch (error) {
       if (error?.message === 'cancelled') {
         return null
@@ -727,9 +734,9 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     const customization = position?.badge_customization
     if (customize && customization?.allow_customization && customization.fields?.length) {
       try {
-        const hiddenFields = await requestBadgeCustomization(customization)
+        const customizationResult = await requestBadgeCustomization(customization)
         if (position?.id) {
-          await saveBadgeHiddenFields(position.id, hiddenFields)
+          await saveBadgeCustomization(position.id, customizationResult)
         }
       } catch (error) {
         if (error?.message === 'cancelled') {

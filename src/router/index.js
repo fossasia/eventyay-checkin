@@ -71,7 +71,7 @@ router.beforeEach(async (to, from, next) => {
       }
 
       if (processApi.eventSlug && processApi.selectedRole === 'Exhibitor') {
-        next({ name: 'leadscan' })
+        next({ name: 'eventyayleedlogin' })
         return
       }
 
@@ -102,6 +102,11 @@ router.beforeEach(async (to, from, next) => {
 
   if (eventRequiredPages.has(to.name) && !processApi.eventSlug) {
     next({ name: 'eventyayevents' })
+    return
+  }
+
+  if (to.name === 'leadscan' && !processApi.exikey?.trim()) {
+    next({ name: 'eventyayleedlogin' })
     return
   }
 

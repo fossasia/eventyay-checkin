@@ -2,7 +2,7 @@ import { useCameraStore } from '@/stores/camera'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { resolveLeadIdentifier } from '@/utils/leadCode'
 import { createAuthorizedExhibitorApi, exhibitorApiPath } from '@/utils/serverUrl'
-import { getDeviceErrorMessage, handleExhibitorApiError } from '@/utils/deviceErrors'
+import { getDeviceErrorMessage, getExhibitorErrorMessage, handleExhibitorApiError } from '@/utils/deviceErrors'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 

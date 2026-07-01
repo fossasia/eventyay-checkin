@@ -117,7 +117,7 @@ export function exhibitorApiPath(organizer, eventSlug, subpath) {
 }
 
 export function createAuthorizedExhibitorApi(baseUrl, apitoken, exhibitorKey, extraHeaders = {}) {
-  const resolvedKey = unwrapValue(exhibitorKey)
+  const resolvedKey = String(unwrapValue(exhibitorKey) || '').trim()
   if (!resolvedKey) {
     throw new Error('Exhibitor key is not configured')
   }

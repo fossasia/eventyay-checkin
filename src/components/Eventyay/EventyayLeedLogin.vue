@@ -11,12 +11,17 @@ const router = useRouter()
 
 const password = ref('')
 const showError = ref(false)
+const errorMessage = ref('')
 
 async function submitLogin() {
+  showError.value = false
+  errorMessage.value = ''
   const response = await leedauth.leedlogin({ key: password.value })
   if (response.success) {
     router.push({ name: 'leadscan' })
   } else {
+    errorMessage.value =
+      String(response?.error || 'Invalid exhibitor key or exhibitor not found.').trim()
     showError.value = true
   }
 }
@@ -52,7 +57,7 @@ loadingStore.contentLoaded()
         />
 
         <p v-if="showError" class="text-sm text-danger">
-          Invalid exhibitor key or exhibitor not found.
+          {{ errorMessage }}
         </p>
       </form>
     </div>

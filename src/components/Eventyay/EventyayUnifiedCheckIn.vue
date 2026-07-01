@@ -232,16 +232,23 @@ const handleModalPrint = async () => {
   }
 
   if (position.badge_customization?.allow_customization) {
-    const hiddenFields = await openBadgeCustomization(position.badge_customization, position.id)
-    if (!hiddenFields) {
+    const customizationResult = await openBadgeCustomization(position.badge_customization, position.id)
+    if (!customizationResult) {
       return
     }
     if (message.value) {
+      const hiddenFields = Array.isArray(customizationResult)
+        ? customizationResult
+        : customizationResult.hiddenFields
+      const fieldOverrides = Array.isArray(customizationResult)
+        ? position.badge_customization.field_overrides || {}
+        : customizationResult.fieldOverrides || {}
       message.value = {
         ...message.value,
         badge_customization: {
           ...position.badge_customization,
-          hidden_fields: hiddenFields
+          hidden_fields: hiddenFields,
+          field_overrides: fieldOverrides
         }
       }
     }
@@ -1210,6 +1217,8 @@ const checkIn = async (order) => {
       v-if="badgeCustomizeRequest"
       :fields="badgeCustomizeRequest.customization.fields"
       :hidden-fields="badgeCustomizeRequest.customization.hidden_fields || []"
+      :field-overrides="badgeCustomizeRequest.customization.field_overrides || {}"
+      :allow-badge-editing="Boolean(badgeCustomizeRequest.customization.allow_badge_editing)"
       @confirm="resolveBadgeCustomization"
       @cancel="cancelBadgeCustomization"
     />

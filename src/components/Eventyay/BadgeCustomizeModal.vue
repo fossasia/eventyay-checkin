@@ -10,18 +10,41 @@ const props = defineProps({
   hiddenFields: {
     type: Array,
     default: () => []
+  },
+  fieldOverrides: {
+    type: Object,
+    default: () => ({})
+  },
+  allowBadgeEditing: {
+    type: Boolean,
+    default: false
   }
 })
 
 const emit = defineEmits(['confirm', 'cancel'])
 
 const selectedHidden = ref([...props.hiddenFields])
+const fieldValues = ref({})
+
+function buildFieldValues(sourceFields, overrides) {
+  const values = {}
+  for (const field of sourceFields) {
+    const key = String(field.key || '')
+    if (!key) {
+      continue
+    }
+    values[key] = String(overrides?.[key] ?? field.value ?? '')
+  }
+  return values
+}
 
 watch(
-  () => props.hiddenFields,
-  (value) => {
-    selectedHidden.value = [...(value || [])]
-  }
+  () => [props.fields, props.hiddenFields, props.fieldOverrides],
+  () => {
+    selectedHidden.value = [...(props.hiddenFields || [])]
+    fieldValues.value = buildFieldValues(props.fields, props.fieldOverrides)
+  },
+  { immediate: true, deep: true }
 )
 
 const visibleFields = computed(() =>
@@ -37,7 +60,26 @@ function toggleField(key) {
 }
 
 function handleConfirm() {
-  emit('confirm', [...selectedHidden.value])
+  const hiddenFields = [...selectedHidden.value]
+  if (!props.allowBadgeEditing) {
+    emit('confirm', hiddenFields)
+    return
+  }
+
+  const fieldOverrides = {}
+  for (const field of visibleFields.value) {
+    const key = String(field.key || '')
+    if (!key) {
+      continue
+    }
+    const value = String(fieldValues.value[key] || '').trim()
+    const original = String(field.value || '').trim()
+    if (value && value !== original) {
+      fieldOverrides[key] = value
+    }
+  }
+
+  emit('confirm', { hiddenFields, fieldOverrides })
 }
 
 function handleCancel() {
@@ -50,11 +92,16 @@ function handleCancel() {
     <div class="card w-full max-w-md p-6">
       <h2 class="text-xl font-semibold text-body">Customize your badge before printing</h2>
       <p class="mt-2 text-sm text-body-muted">
-        Uncheck fields you want to hide on the printed badge.
+        <template v-if="allowBadgeEditing">
+          Choose which fields to show and edit the text that will appear on the printed badge.
+        </template>
+        <template v-else>
+          Uncheck fields you want to hide on the printed badge.
+        </template>
       </p>
 
-      <ul class="mt-4 space-y-2">
-        <li v-for="field in fields" :key="field.key">
+      <ul class="mt-4 space-y-3">
+        <li v-for="field in fields" :key="field.key" class="space-y-2">
           <label class="flex items-center gap-3 text-sm text-body">
             <input
               type="checkbox"
@@ -64,6 +111,13 @@ function handleCancel() {
             />
             <span>{{ field.label }}</span>
           </label>
+          <input
+            v-if="allowBadgeEditing && !selectedHidden.includes(field.key)"
+            v-model="fieldValues[field.key]"
+            type="text"
+            class="w-full"
+            :aria-label="`Edit ${field.label}`"
+          />
         </li>
       </ul>
 

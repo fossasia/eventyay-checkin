@@ -22,7 +22,8 @@ export const STATION_TYPE_DEFINITIONS = [
   {
     id: 'Exhibitor',
     title: 'Lead Scanner',
-    description: 'Capture exhibitor leads by scanning attendee badges.'
+    description:
+      'Capture exhibitor leads by scanning attendee badges. Register this device with Full device access in the organizer dashboard.'
   },
   {
     id: 'CheckIn',

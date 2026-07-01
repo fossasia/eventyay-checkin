@@ -93,7 +93,17 @@ export const useEventyayApi = defineStore(
       gateName.value = gate?.name ? String(gate.name) : ''
     }
 
+    function clearExhibitor() {
+      exikey.value = ''
+      exhiname.value = ''
+      boothname.value = ''
+      boothid.value = ''
+    }
+
     function setEvent(slug, name) {
+      if (eventSlug.value && eventSlug.value !== slug) {
+        clearExhibitor()
+      }
       eventSlug.value = slug
       eventname.value = name
       selectedCheckInListId.value = null
@@ -109,7 +119,7 @@ export const useEventyayApi = defineStore(
     }
 
     function setExhibitor(key, name, booth, bid) {
-      exikey.value = key
+      exikey.value = String(key || '').trim()
       exhiname.value = name
       boothname.value = booth
       boothid.value = bid

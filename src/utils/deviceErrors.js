@@ -1,6 +1,9 @@
 export const DEVICE_PROFILE_DENIED_MESSAGE =
   'The security profile selected for this device does not allow this functionality. Please contact your organizer to change your profile if you feel this is a mistake.'
 
+export const LEAD_SCAN_PROFILE_DENIED_MESSAGE =
+  'Lead scanning requires Full device access for this device. Ask your organizer to change the security profile in the dashboard, then register the device again.'
+
 export const DEVICE_PROFILE_DENIED_SERVER_DETAIL = 'Request denied by device security profile.'
 
 export class DeviceProfileDeniedError extends Error {
@@ -85,18 +88,25 @@ export function isDeviceProfileDenied(error) {
 
 export function getExhibitorErrorMessage(error, fallback = 'Lead scan request failed.') {
   const status = getDeviceErrorStatus(error)
+  const detail = getDeviceErrorDetail(error)
   if (status === 401) {
-    const detail = getDeviceErrorDetail(error).toLowerCase()
+    const normalized = detail.toLowerCase()
     if (
-      detail.includes('invalid token') ||
-      detail.includes('device access has been revoked') ||
-      detail.includes('device has not been initialized')
+      normalized.includes('invalid token') ||
+      normalized.includes('device access has been revoked') ||
+      normalized.includes('device has not been initialized')
     ) {
       return 'Device authentication failed. Register this device again from the organizer dashboard.'
+    }
+    if (detail) {
+      return detail
     }
     return 'Exhibitor authentication failed. Open exhibitor sign-in and enter your exhibitor key again.'
   }
   if (status === 403 && isDeviceProfileDenied(error)) {
+    if (isExhibitorApiError(error)) {
+      return LEAD_SCAN_PROFILE_DENIED_MESSAGE
+    }
     return DEVICE_PROFILE_DENIED_MESSAGE
   }
   return getDeviceErrorMessage(error, fallback, { hideHttpStatusText: true })
@@ -116,7 +126,9 @@ export function handleExhibitorApiError(error, processApi, { onError, onProfileD
     return true
   }
   if (isDeviceProfileDenied(error)) {
-    onProfileDenied?.(DEVICE_PROFILE_DENIED_MESSAGE)
+    onProfileDenied?.(
+      isExhibitorApiError(error) ? LEAD_SCAN_PROFILE_DENIED_MESSAGE : DEVICE_PROFILE_DENIED_MESSAGE
+    )
     return true
   }
   onError?.(getExhibitorErrorMessage(error))
