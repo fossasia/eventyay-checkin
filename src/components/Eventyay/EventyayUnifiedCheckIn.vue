@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
-import { apiV1Path, createAuthorizedDeviceApi } from '@/utils/serverUrl'
+import { apiV1Path, createAuthorizedDeviceApi, normalizeApiResourcePath } from '@/utils/serverUrl'
 import {
   buildAttendeePatchPayload,
   buildEditableAttendeeState,
@@ -20,6 +20,7 @@ import StandardButton from '@/components/Common/StandardButton.vue'
 import BadgePrintPreview from '@/components/Common/BadgePrintPreview.vue'
 import AttendeeInfoModal from '@/components/Eventyay/AttendeeInfoModal.vue'
 import BadgeCustomizeModal from '@/components/Eventyay/BadgeCustomizeModal.vue'
+import { useCheckinSettingsStore } from '@/stores/checkinSettings'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useEventyayEventStore } from '@/stores/eventyayEvent'
 import { useLiveRegistrationStore } from '@/stores/liveRegistration'
@@ -27,8 +28,8 @@ import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { useCameraStore } from '@/stores/camera'
-import { getAutoPrintPreference, setAutoPrintPreference } from '@/utils/session'
-import { PRINT_OUTCOME } from '@/utils/badgePdf'
+import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
+import { downloadPdfBlob, fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME } from '@/utils/badgePdf'
 import { waitForDesignAssets } from '@/utils/waitForDesignAssets'
 import { enterKioskShell, isKioskEnvironment } from '@/utils/kioskLauncher'
 
@@ -36,14 +37,16 @@ const notificationStore = useNotificationStore()
 const processApi = useEventyayApi()
 const { apitoken, url, organizer, eventSlug, selectedRole, selectedCheckInListId, gateName } = storeToRefs(processApi)
 const processEventyayCheckInStore = useProcessEventyayCheckInStore()
+const checkinSettings = useCheckinSettingsStore()
+const { autoPrintEnabled } = storeToRefs(checkinSettings)
 const { message, showSuccess, showError, badgeUrl, isGeneratingBadge, availableCheckInLists, autoPrintFeedback, badgeCustomizeRequest, autoPrintCustomizeOnce } = storeToRefs(
   processEventyayCheckInStore
 )
 const {
-  clearAutoPrintFeedback,
   checkOutBySecret,
   checkInBySecret,
   showOfferCheckInMsg,
+  showCanceledAttendeeFromSearch,
   buildAttendeeMessage,
   getSelectedCheckInList,
   resolveBadgeCustomization,
@@ -76,6 +79,7 @@ const searchQuery = ref('')
 const orders = ref([])
 const loading = ref(false)
 const showPrintPreview = ref(false)
+const badgePreviewKey = ref(0)
 const isEditDialogOpen = ref(false)
 const isCheckoutConfirmOpen = ref(false)
 const isSavingAttendee = ref(false)
@@ -93,15 +97,13 @@ const showLiveRegistrationEntry = computed(() => {
 
   return event.plugins.includes('eventyay.plugins.manualpayment')
 })
-const autoPrintBadge = ref(getAutoPrintPreference(selectedRole.value))
-const shouldAutoPrintBadge = computed(() => isBadgeStation.value && autoPrintBadge.value)
+const shouldAutoPrintBadge = computed(() => isBadgeStation.value && autoPrintEnabled.value)
 const attendeeModalPaused = computed(
   () =>
     isEditDialogOpen.value ||
     showPrintPreview.value ||
     isCheckoutConfirmOpen.value ||
-    Boolean(badgeCustomizeRequest.value) ||
-    isGeneratingBadge.value
+    Boolean(badgeCustomizeRequest.value)
 )
 
 const showAttendeeModal = computed(() => {
@@ -145,6 +147,9 @@ const originalAttendee = ref({
   _answers: []
 })
 const isLiveRegistrationDialogOpen = ref(false)
+const liveRegistrationResult = ref(null)
+const liveRegistrationTicketError = ref('')
+const isLoadingLiveRegistrationTicket = ref(false)
 const liveRegistrationError = ref('')
 const liveRegistrationForm = ref({
   attendee_name: '',
@@ -170,12 +175,12 @@ watch(displayPopupFields, () => {
   void ensureEventQuestionsLoaded()
 })
 
-watch(autoPrintBadge, (enabled) => {
-  if (isBadgeStation.value) {
-    setAutoPrintPreference(selectedRole.value, enabled)
-  }
+watch(selectedRole, (role) => {
+  checkinSettings.syncAutoPrintForRole(role)
+})
+
+watch(autoPrintEnabled, (enabled) => {
   if (!enabled) {
-    clearAutoPrintFeedback()
     autoPrintCustomizeOnce.value = false
   }
 })
@@ -191,6 +196,39 @@ watch(showAttendeeModal, (visible) => {
     cameraStore.isProcessing = false
   }
 })
+
+watch(
+  () => ({
+    success: showSuccess.value,
+    orderPositionId: message.value?.orderPositionId,
+    checkedOut: message.value?.checkedOut,
+    alreadyCheckedIn: message.value?.alreadyCheckedIn
+  }),
+  ({ success, orderPositionId, checkedOut, alreadyCheckedIn }) => {
+    if (!success || !orderPositionId) {
+      return
+    }
+
+    const positionUpdate = {
+      id: orderPositionId,
+      attendee_name: message.value?.attendee_name,
+      attendee_email: message.value?.attendee_email,
+      company: message.value?.company,
+      job_title: message.value?.job_title
+    }
+
+    if (checkedOut) {
+      updateOrderInSearchResults(positionUpdate, { action: 'exit', status: 'ok' })
+      return
+    }
+
+    updateOrderInSearchResults(positionUpdate, {
+      action: 'entry',
+      status: alreadyCheckedIn ? 'redeemed' : 'ok'
+    })
+  }
+)
+
 
 const toggleAutoPrintCustomizeOnce = () => {
   autoPrintCustomizeOnce.value = !autoPrintCustomizeOnce.value
@@ -220,6 +258,55 @@ const openBadgePreviewFromModal = () => {
   openBadgePreview()
 }
 
+function applyBadgeCustomizationResult(customization, customizationResult) {
+  if (!message.value || !customizationResult) {
+    return
+  }
+
+  const hiddenFields = Array.isArray(customizationResult)
+    ? customizationResult
+    : customizationResult.hiddenFields
+  const fieldOverrides = Array.isArray(customizationResult)
+    ? customization?.field_overrides || {}
+    : customizationResult.fieldOverrides || {}
+
+  message.value = {
+    ...message.value,
+    badge_customization: {
+      ...customization,
+      hidden_fields: hiddenFields,
+      field_overrides: fieldOverrides
+    }
+  }
+  badgePreviewKey.value += 1
+}
+
+const openBadgeEditDialog = async () => {
+  const customization = message.value?.badge_customization
+  const positionId = message.value?.orderPositionId
+
+  if (!customization?.allow_customization || !customization.fields?.length) {
+    return
+  }
+
+  try {
+    const customizationResult = await openBadgeCustomization(customization, positionId, {
+      badgeUrlPath: badgeUrl.value,
+      editMode: true
+    })
+    if (!customizationResult) {
+      return
+    }
+    applyBadgeCustomizationResult(customization, customizationResult)
+    if (!isBadgeCustomizationUnchanged(customization, customizationResult)) {
+      notificationStore.addNotification(['Badge', 'Badge updated'], 'success')
+    }
+  } catch (error) {
+    console.error('Error editing badge:', error)
+    notificationStore.addNotification(['Badge', 'Unable to update badge'], 'error')
+  }
+}
+
 const handleModalPrint = async () => {
   if (!badgeUrl.value) {
     return
@@ -230,7 +317,9 @@ const handleModalPrint = async () => {
   }
 
   if (isBadgeStation.value) {
-    const outcome = await printBadgeWithOptionalCustomization(badgeUrl.value, position)
+    const outcome = await printBadgeWithOptionalCustomization(badgeUrl.value, position, {
+      customize: false
+    })
     if (outcome === PRINT_OUTCOME.PRINTED && message.value?.orderPositionId) {
       processEventyayCheckInStore.markPrintedBadge(message.value.orderPositionId)
     }
@@ -250,21 +339,8 @@ const handleModalPrint = async () => {
     if (!customizationResult) {
       return
     }
-    if (message.value) {
-      const hiddenFields = Array.isArray(customizationResult)
-        ? customizationResult
-        : customizationResult.hiddenFields
-      const fieldOverrides = Array.isArray(customizationResult)
-        ? position.badge_customization.field_overrides || {}
-        : customizationResult.fieldOverrides || {}
-      message.value = {
-        ...message.value,
-        badge_customization: {
-          ...position.badge_customization,
-          hidden_fields: hiddenFields,
-          field_overrides: fieldOverrides
-        }
-      }
+    if (!isBadgeCustomizationUnchanged(position.badge_customization, customizationResult)) {
+      applyBadgeCustomizationResult(position.badge_customization, customizationResult)
     }
   }
 
@@ -291,6 +367,16 @@ const handleExitFromModal = async () => {
     suppressSuccess: wasCrossGate
   })
   if (
+    checkoutResponse &&
+    (checkoutResponse.status === 'ok' || checkoutResponse.status === 'redeemed') &&
+    checkoutResponse.position
+  ) {
+    updateOrderInSearchResults(checkoutResponse.position, {
+      action: 'exit',
+      status: checkoutResponse.status
+    })
+  }
+  if (
     wasCrossGate &&
     checkoutResponse &&
     (checkoutResponse.status === 'ok' || checkoutResponse.status === 'redeemed')
@@ -315,7 +401,7 @@ const handleCheckInAfterCheckout = async () => {
   }
   cameraStore.clearLastScan()
   cameraStore.isProcessing = true
-  await checkInBySecret(secret, {
+  const checkInResponse = await checkInBySecret(secret, {
     attendeeHints: {
       attendee_name: message.value?.attendee_name,
       attendee_email: message.value?.attendee_email,
@@ -323,6 +409,16 @@ const handleCheckInAfterCheckout = async () => {
       job_title: message.value?.job_title
     }
   })
+  if (
+    checkInResponse &&
+    (checkInResponse.status === 'ok' || checkInResponse.status === 'redeemed') &&
+    checkInResponse.position
+  ) {
+    updateOrderInSearchResults(checkInResponse.position, {
+      action: 'entry',
+      status: checkInResponse.status
+    })
+  }
 }
 
 const openBadgePreview = () => {
@@ -330,6 +426,20 @@ const openBadgePreview = () => {
     return
   }
   showPrintPreview.value = true
+}
+
+const handleBadgeCustomizePreview = async (result) => {
+  try {
+    await processEventyayCheckInStore.previewBadgeCustomization(result)
+    badgePreviewKey.value += 1
+    openBadgePreview()
+  } catch (error) {
+    console.error('Badge preview failed:', error)
+    notificationStore.addNotification(
+      ['Preview failed', error?.message || 'Could not load the badge preview.'],
+      'error'
+    )
+  }
 }
 
 const handlePrintClose = () => {
@@ -424,6 +534,86 @@ const closeLiveRegistrationDialog = () => {
   liveRegistrationError.value = ''
 }
 
+const closeLiveRegistrationSuccess = () => {
+  liveRegistrationResult.value = null
+  liveRegistrationTicketError.value = ''
+  isLoadingLiveRegistrationTicket.value = false
+}
+
+const liveRegistrationTicketFilename = computed(() => {
+  const orderCode = String(liveRegistrationResult.value?.orderCode || 'ticket').trim()
+  return `${orderCode}-ticket.pdf`
+})
+
+async function fetchLiveRegistrationTicketBlob() {
+  const ticketDownloadUrl = liveRegistrationResult.value?.ticketDownloadUrl || ''
+  if (!ticketDownloadUrl) {
+    throw new Error('No ticket download is available for this registration.')
+  }
+
+  const result = await fetchBadgePdfWithRetry(
+    normalizeApiResourcePath(ticketDownloadUrl),
+    {
+      baseUrl: url.value,
+      apitoken: apitoken.value
+    }
+  )
+
+  if (result.status === 'ready') {
+    return result.blob
+  }
+  if (result.profileDenied) {
+    throw new Error(result.detail || 'Ticket download is not allowed for this device profile.')
+  }
+  if (result.status === 'generating') {
+    throw new Error('Ticket is still generating. Try again in a moment.')
+  }
+  throw new Error(result.detail || 'Could not load the ticket PDF.')
+}
+
+const printLiveRegistrationTicket = async () => {
+  if (isLoadingLiveRegistrationTicket.value) {
+    return
+  }
+
+  liveRegistrationTicketError.value = ''
+  isLoadingLiveRegistrationTicket.value = true
+
+  try {
+    const blob = await fetchLiveRegistrationTicketBlob()
+    const outcome = await printPdfBlob(blob)
+    if (outcome === PRINT_OUTCOME.FAILED) {
+      liveRegistrationTicketError.value = 'Could not open the print dialog for this ticket.'
+    }
+  } catch (error) {
+    console.error('Live registration ticket print failed:', error)
+    liveRegistrationTicketError.value = error?.message || 'Could not print the ticket.'
+  } finally {
+    isLoadingLiveRegistrationTicket.value = false
+  }
+}
+
+const downloadLiveRegistrationTicket = async () => {
+  if (isLoadingLiveRegistrationTicket.value) {
+    return
+  }
+
+  liveRegistrationTicketError.value = ''
+  isLoadingLiveRegistrationTicket.value = true
+
+  try {
+    const blob = await fetchLiveRegistrationTicketBlob()
+    if (!downloadPdfBlob(blob, liveRegistrationTicketFilename.value)) {
+      liveRegistrationTicketError.value = 'Could not download the ticket PDF.'
+    }
+  } catch (error) {
+    console.error('Live registration ticket download failed:', error)
+    liveRegistrationTicketError.value = error?.message || 'Could not download the ticket.'
+  } finally {
+    isLoadingLiveRegistrationTicket.value = false
+  }
+}
+
 const submitLiveRegistration = async () => {
   if (isRegistering.value) {
     return
@@ -441,7 +631,7 @@ const submitLiveRegistration = async () => {
   liveRegistrationError.value = ''
 
   try {
-    await liveRegistrationStore.registerAndMarkPaid(
+    const registrationResult = await liveRegistrationStore.registerAndMarkPaid(
       {
         attendee_name: attendeeName,
         attendee_email: attendeeEmail,
@@ -452,7 +642,13 @@ const submitLiveRegistration = async () => {
     )
 
     closeLiveRegistrationDialog()
-    notificationStore.addNotification(['Success', 'Attendee registered successfully'], 'success')
+    liveRegistrationResult.value = {
+      attendeeName,
+      orderCode: registrationResult.orderCode,
+      orderPositionId: registrationResult.orderPositionId || registrationResult.orderPosition?.id || null,
+      ticketDownloadUrl: registrationResult.ticketDownloadUrl || '',
+      ticketDownloadAvailable: registrationResult.ticketDownloadAvailable === true
+    }
   } catch (error) {
     console.error('Live registration failed:', error)
     liveRegistrationError.value = getDeviceErrorMessage(error, 'Live registration failed.')
@@ -521,22 +717,116 @@ const getModifiedAttendeeFields = () =>
     questionsById.value
   )
 
-const updateOrderInSearchResults = (updatedOrderPosition) => {
+const getCheckinListId = (checkin) => {
+  if (checkin?.list == null) {
+    return null
+  }
+  if (typeof checkin.list === 'object') {
+    return checkin.list.id ?? checkin.list.pk ?? null
+  }
+  return checkin.list
+}
+
+const getLastCheckinFromArray = (checkins, listId = selectedCheckInListId.value) => {
+  if (!checkins?.length) {
+    return null
+  }
+
+  let relevant = checkins
+  if (listId) {
+    const scoped = checkins.filter(
+      (checkin) => String(getCheckinListId(checkin)) === String(listId)
+    )
+    if (scoped.length) {
+      relevant = scoped
+    }
+  }
+
+  return relevant.reduce((latest, checkin) => {
+    if (!latest) {
+      return checkin
+    }
+    return new Date(checkin.datetime) > new Date(latest.datetime) ? checkin : latest
+  }, null)
+}
+
+const ensureCheckinsReflectRedeem = (checkins, redeemContext) => {
+  const next = Array.isArray(checkins) ? [...checkins] : []
+  if (!redeemContext || (redeemContext.status !== 'ok' && redeemContext.status !== 'redeemed')) {
+    return next
+  }
+
+  const listId = selectedCheckInListId.value
+  const last = getLastCheckinFromArray(next, listId)
+  const fallbackListId = listId || getCheckinListId(last) || getCheckinListId(next[0])
+  const timestamp = new Date().toISOString()
+
+  if (redeemContext.action === 'exit' && redeemContext.status === 'ok') {
+    if (last?.type === 'exit') {
+      return next
+    }
+    next.push({ type: 'exit', list: fallbackListId, datetime: timestamp })
+    return next
+  }
+
+  if (redeemContext.action === 'entry') {
+    if (redeemContext.status === 'redeemed' || last?.type === 'entry') {
+      if (!next.length) {
+        next.push({ type: 'entry', list: fallbackListId, datetime: timestamp })
+      }
+      return next
+    }
+    if (redeemContext.status === 'ok' && last?.type !== 'entry') {
+      next.push({ type: 'entry', list: fallbackListId, datetime: timestamp })
+    }
+  }
+
+  return next
+}
+
+const buildOrderUpdateFromPosition = (updatedOrderPosition, existingOrder = {}, redeemContext = null) => ({
+  ...existingOrder,
+  ...updatedOrderPosition,
+  attendee_name: updatedOrderPosition.attendee_name || existingOrder.attendee_name,
+  attendee_email: updatedOrderPosition.attendee_email || existingOrder.attendee_email,
+  company: updatedOrderPosition.company ?? existingOrder.company ?? '',
+  job_title: updatedOrderPosition.job_title ?? existingOrder.job_title ?? '',
+  checkins: ensureCheckinsReflectRedeem(
+    Array.isArray(updatedOrderPosition.checkins)
+      ? updatedOrderPosition.checkins
+      : existingOrder.checkins,
+    redeemContext
+  ),
+  downloads: updatedOrderPosition.downloads || existingOrder.downloads
+})
+
+const updateOrderInSearchResults = (updatedOrderPosition, redeemContext = null) => {
   if (!updatedOrderPosition?.id) {
     return
   }
 
-  const matchedOrder = orders.value.find(
-    (order) => String(order.id) === String(updatedOrderPosition.id)
-  )
-  if (!matchedOrder) {
-    return
+  const replaceOrder = (orderList) => {
+    const index = orderList.findIndex(
+      (order) => String(order.id) === String(updatedOrderPosition.id)
+    )
+    if (index < 0) {
+      return orderList
+    }
+
+    const nextList = [...orderList]
+    nextList[index] = buildOrderUpdateFromPosition(
+      updatedOrderPosition,
+      orderList[index],
+      redeemContext
+    )
+    return nextList
   }
 
-  matchedOrder.attendee_name = updatedOrderPosition.attendee_name || matchedOrder.attendee_name
-  matchedOrder.attendee_email = updatedOrderPosition.attendee_email || matchedOrder.attendee_email
-  matchedOrder.company = updatedOrderPosition.company || ''
-  matchedOrder.job_title = updatedOrderPosition.job_title || ''
+  orders.value = replaceOrder(orders.value)
+
+  for (const [query, cached] of searchCache.entries()) {
+    searchCache.set(query, replaceOrder(cached))
+  }
 }
 
 const updatePopupAttendee = (updatedOrderPosition) => {
@@ -585,7 +875,8 @@ const resolveOrderPositionId = async (knownOrderPositionId, attendeeSecret) => {
 
   const params = new URLSearchParams({
     search: normalizedSecret,
-    page_size: '50'
+    page_size: '50',
+    include_canceled_positions: 'true'
   })
   const response = await getDeviceApi().get(
     apiV1Path(
@@ -654,7 +945,8 @@ const buildSearchPath = (query) => {
   const params = new URLSearchParams({
     search: query,
     page_size: String(SEARCH_RESULTS_LIMIT),
-    order__status__in: 'p,n',
+    order__status__in: 'p,n,c',
+    include_canceled_positions: 'true',
     exclude_details: 'true'
   })
   return apiV1Path(
@@ -750,6 +1042,7 @@ const searchOrders = async (query, { force = false, requestId = ++activeRequestI
 }
 
 onMounted(async () => {
+  checkinSettings.syncAutoPrintForRole(selectedRole.value)
   document.addEventListener('visibilitychange', handleVisibilityChange)
   if (isKioskShell.value && isBadgeStation.value) {
     enterKioskShell()
@@ -825,18 +1118,31 @@ onBeforeUnmount(() => {
   }
 })
 
-const isCheckedIn = (order) => order.checkins && order.checkins.length > 0
+const getLastCheckinForOrder = (order, listId = selectedCheckInListId.value) =>
+  getLastCheckinFromArray(order?.checkins, listId)
+
+const isCheckedIn = (order) => getLastCheckinForOrder(order)?.type === 'entry'
+
+const isPositionCanceled = (order) =>
+  Boolean(order?.canceled) || String(order?.order__status || '').toLowerCase() === 'c'
 
 const getAttendeeActionLabel = (order) => {
+  if (isPositionCanceled(order)) {
+    return 'Canceled'
+  }
   if (isBadgeStation.value) {
     return isCheckedIn(order) ? 'View & print' : 'Check in & print'
   }
   return isCheckedIn(order) ? 'Checked in' : 'Check in'
 }
 
-const isAttendeeActionDisabled = (order) => !isBadgeStation.value && isCheckedIn(order)
-
-const checkIn = async (order) => {
+const openAttendeeFromSearch = async (order) => {
+  cameraStore.clearLastScan()
+  if (isPositionCanceled(order)) {
+    showCanceledAttendeeFromSearch(order)
+    return
+  }
+  cameraStore.isProcessing = true
   const response = await processEventyayCheckInStore.checkInBySecret(order.secret, {
     attendeeHints: {
       attendee_name: order.attendee_name,
@@ -846,21 +1152,19 @@ const checkIn = async (order) => {
     }
   })
   if (!response || (response.status !== 'ok' && response.status !== 'redeemed')) {
-    notificationStore.addNotification(['Error', 'Unable to check in attendee'], 'error')
+    if (!showSuccess.value && !showError.value) {
+      notificationStore.addNotification(['Error', 'Unable to open attendee details'], 'error')
+    }
+    cameraStore.isProcessing = false
     return
   }
 
-  order.checkins = response.position?.checkins || [
-    ...(order.checkins || []),
-    { datetime: new Date().toISOString() }
-  ]
-  if (response.position?.downloads) {
-    order.downloads = response.position.downloads
+  if (response.position) {
+    updateOrderInSearchResults(response.position, {
+      action: 'entry',
+      status: response.status
+    })
   }
-  order.attendee_name = response.position?.attendee_name || order.attendee_name
-  order.attendee_email = response.position?.attendee_email || order.attendee_email
-  order.company = response.position?.company || order.company || ''
-  order.job_title = response.position?.job_title || order.job_title || ''
 }
 </script>
 
@@ -914,7 +1218,10 @@ const checkIn = async (order) => {
       </div>
     </div>
 
-    <div class="grid min-h-0 flex-1 gap-5 lg:grid-cols-2">
+    <div
+      class="grid min-h-0 flex-1 gap-5"
+      :class="isBadgeStation ? 'max-w-2xl mx-auto w-full' : 'lg:grid-cols-2'"
+    >
       <section class="card flex min-h-0 flex-col overflow-hidden p-5 sm:p-6">
         <p class="section-title mb-4 shrink-0">QR scanner</p>
         <div class="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto">
@@ -924,48 +1231,8 @@ const checkIn = async (order) => {
         />
 
         <div
-          v-if="isBadgeStation"
+          v-if="isBadgeStation && autoPrintEnabled"
           class="mt-5 flex items-center justify-between rounded-xl border border-surface-border bg-surface-muted px-4 py-3"
-        >
-          <div>
-            <p class="text-sm font-semibold text-body">Auto-print badge</p>
-            <p class="text-xs text-body-muted">
-              {{ autoPrintBadge ? 'Prints immediately after each scan.' : 'Opens print preview after each scan.' }}
-            </p>
-            <p v-if="autoPrintBadge && !isKioskShell" class="mt-1 text-xs text-body-muted">
-              If you did not run the kiosk command from setup, silent printing will not work.
-            </p>
-          </div>
-          <button
-            type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-300 ease-in-out items-center focus:outline-none focus:ring-2 focus:ring-primary/20"
-            :class="autoPrintBadge ? 'bg-primary' : 'bg-[#E9E9EB]'"
-            role="switch"
-            :aria-checked="autoPrintBadge"
-            @click="autoPrintBadge = !autoPrintBadge"
-          >
-            <!-- Accessibility On Label (Line) -->
-            <span
-              class="absolute left-2.5 h-2.5 w-0.5 rounded-full bg-white transition-opacity duration-300"
-              :class="autoPrintBadge ? 'opacity-100' : 'opacity-0'"
-            />
-            <!-- Accessibility Off Label (Circle) -->
-            <span
-              class="absolute right-2 h-2 w-2 rounded-full border border-body-light transition-opacity duration-300"
-              :class="autoPrintBadge ? 'opacity-0' : 'opacity-100'"
-            />
-            <!-- Slider Handle -->
-            <span
-              aria-hidden="true"
-              class="relative inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-300 ease-in-out z-10"
-              :class="autoPrintBadge ? 'translate-x-5' : 'translate-x-0'"
-            />
-          </button>
-        </div>
-
-        <div
-          v-if="isBadgeStation && autoPrintBadge"
-          class="mt-3 flex items-center justify-between rounded-xl border border-surface-border bg-surface-muted px-4 py-3"
         >
           <div>
             <p class="text-sm font-semibold text-body">Customize badge before printing</p>
@@ -1003,26 +1270,20 @@ const checkIn = async (order) => {
 
         <div
           v-if="isBadgeStation && autoPrintFeedback"
-          class="mt-3 flex items-start gap-2.5 rounded-xl border px-4 py-3 text-sm"
+          class="mt-3 rounded-xl border px-4 py-2.5 text-sm"
           :class="{
-            'border-primary/20 bg-primary/5 text-body': autoPrintFeedback.status === 'printing',
-            'border-success/20 bg-success/5 text-success-dark': autoPrintFeedback.status === 'success',
+            'border-primary/20 bg-primary/5 text-body-muted': autoPrintFeedback.status === 'printing',
             'border-danger/20 bg-danger/5 text-danger': autoPrintFeedback.status === 'error'
           }"
           role="status"
           aria-live="polite"
         >
-          <span
-            v-if="autoPrintFeedback.status === 'printing'"
-            class="mt-0.5 inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-primary"
-            aria-hidden="true"
-          />
-          <p class="leading-snug">{{ autoPrintFeedback.text }}</p>
+          {{ autoPrintFeedback.text }}
         </div>
         </div>
       </section>
 
-      <section class="card flex min-h-0 flex-col overflow-hidden p-5 sm:p-6">
+      <section v-if="!isBadgeStation" class="card flex min-h-0 flex-col overflow-hidden p-5 sm:p-6">
         <p class="section-title mb-4 shrink-0">Search</p>
 
         <div class="relative mb-4 shrink-0">
@@ -1069,10 +1330,11 @@ const checkIn = async (order) => {
                 </div>
                 <StandardButton
                   :text="getAttendeeActionLabel(order)"
-                  :variant="isCheckedIn(order) && !isBadgeStation ? 'white' : 'success'"
+                  :variant="
+                    (isCheckedIn(order) || isPositionCanceled(order)) && !isBadgeStation ? 'white' : 'success'
+                  "
                   size="sm"
-                  :disabled="isAttendeeActionDisabled(order)"
-                  @click="checkIn(order)"
+                  @click="openAttendeeFromSearch(order)"
                 />
               </div>
             </article>
@@ -1151,6 +1413,63 @@ const checkIn = async (order) => {
 
     <Transition name="modal">
       <div
+        v-if="liveRegistrationResult"
+        class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+      >
+        <div class="card w-full max-w-md p-6">
+          <h2 class="mb-1 text-xl text-success">Registration complete</h2>
+          <p class="mb-4 text-sm text-body-muted">
+            {{ liveRegistrationResult.attendeeName }}
+            <span v-if="liveRegistrationResult.orderCode">
+              · Order {{ liveRegistrationResult.orderCode }}
+            </span>
+          </p>
+
+          <p
+            v-if="!liveRegistrationResult.ticketDownloadAvailable"
+            class="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-dark"
+          >
+            Ticket PDF download is not configured for this event. Enable the PDF ticket output
+            plugin and ensure a Celery worker is running for ticket generation.
+          </p>
+
+          <p v-if="liveRegistrationTicketError" class="mt-3 text-sm text-danger">
+            {{ liveRegistrationTicketError }}
+          </p>
+
+          <div class="mt-6 space-y-2">
+            <StandardButton
+              v-if="liveRegistrationResult.ticketDownloadAvailable"
+              type="button"
+              :text="isLoadingLiveRegistrationTicket ? 'Preparing ticket…' : 'Print ticket'"
+              variant="primary"
+              block
+              :disabled="isLoadingLiveRegistrationTicket"
+              @click="printLiveRegistrationTicket"
+            />
+            <StandardButton
+              v-if="liveRegistrationResult.ticketDownloadAvailable"
+              type="button"
+              :text="isLoadingLiveRegistrationTicket ? 'Preparing ticket…' : 'Download ticket'"
+              variant="white"
+              block
+              :disabled="isLoadingLiveRegistrationTicket"
+              @click="downloadLiveRegistrationTicket"
+            />
+            <StandardButton
+              type="button"
+              text="Done"
+              variant="white"
+              block
+              @click="closeLiveRegistrationSuccess"
+            />
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="modal">
+      <div
         v-if="isEditDialogOpen"
         class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
       >
@@ -1199,7 +1518,7 @@ const checkIn = async (order) => {
             />
             <StandardButton
               type="button"
-              :text="isSavingAttendee ? 'Saving...' : 'Save'"
+              :text="isSavingAttendee ? 'Saving…' : 'Save attendee'"
               variant="primary"
               :disabled="isSavingAttendee"
               @click="saveAttendeeDetails"
@@ -1210,7 +1529,7 @@ const checkIn = async (order) => {
     </Transition>
 
     <AttendeeInfoModal
-      v-if="showAttendeeModal && message?.attendee"
+      v-if="showAttendeeModal"
       :message="message"
       :show-success="showSuccess"
       :show-error="showError"
@@ -1227,6 +1546,7 @@ const checkIn = async (order) => {
       @preview="openBadgePreviewFromModal"
       @print="handleModalPrint"
       @edit="openEditDialog"
+      @edit-badge="openBadgeEditDialog"
       @exit="handleExitFromModal"
       @checkin="handleCheckInAfterCheckout"
       @checkout-confirm="isCheckoutConfirmOpen = $event"
@@ -1240,12 +1560,16 @@ const checkIn = async (order) => {
       :hidden-fields="badgeCustomizeRequest.customization.hidden_fields || []"
       :field-overrides="badgeCustomizeRequest.customization.field_overrides || {}"
       :allow-badge-editing="Boolean(badgeCustomizeRequest.customization.allow_badge_editing)"
+      :show-preview="Boolean(badgeCustomizeRequest.badgeUrlPath || badgeUrl)"
+      :mode="badgeCustomizeRequest.editMode ? 'edit' : 'print'"
+      @preview="handleBadgeCustomizePreview"
       @confirm="resolveBadgeCustomization"
       @cancel="cancelBadgeCustomization"
     />
 
     <BadgePrintPreview
       v-if="showPrintPreview && badgeUrl"
+      :key="badgePreviewKey"
       :badge-path="badgeUrl"
       @close="handlePrintClose"
     />

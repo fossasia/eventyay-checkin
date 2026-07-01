@@ -84,7 +84,7 @@ watch(
 
 <template>
   <div class="flex min-h-screen flex-col">
-    <NavBar v-if="!isKioskShell" />
+    <NavBar />
     <main class="flex-1">
       <RouterView />
     </main>

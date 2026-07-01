@@ -137,6 +137,22 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
     }
   }
 
+  function pickTicketDownloadUrl(orderPosition) {
+    return (orderPosition?.downloads || []).find((entry) => entry.output === 'pdf')?.url || ''
+  }
+
+  function resolveTicketDownload(orderPosition) {
+    const positionId = orderPosition?.id || null
+    const ticketDownloadUrl = pickTicketDownloadUrl(orderPosition)
+
+    return {
+      orderPosition,
+      orderPositionId: positionId,
+      ticketDownloadUrl,
+      ticketDownloadAvailable: Boolean(ticketDownloadUrl)
+    }
+  }
+
   async function registerAndMarkPaid(attendee, productId) {
     isRegistering.value = true
 
@@ -162,11 +178,22 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
         throw new Error('Order marked paid, but ticket secret is missing.')
       }
 
+      const {
+        orderPosition: resolvedPosition,
+        orderPositionId,
+        ticketDownloadUrl,
+        ticketDownloadAvailable
+      } = resolveTicketDownload(orderPosition)
+
       return {
         createdOrder,
         paidOrder,
         secret,
-        orderCode
+        orderCode,
+        orderPosition: resolvedPosition,
+        orderPositionId,
+        ticketDownloadUrl,
+        ticketDownloadAvailable
       }
     } finally {
       isRegistering.value = false

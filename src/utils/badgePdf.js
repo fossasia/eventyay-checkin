@@ -94,7 +94,7 @@ export async function fetchBadgePdfWithRetry(
 
 const PDF_PRINT_RENDER_DELAY_MS = 600
 const PDF_SILENT_PRINT_RENDER_DELAY_MS = 900
-const PDF_PRINT_DIALOG_TIMEOUT_MS = 120000
+const PDF_PRINT_DIALOG_TIMEOUT_MS = 45000
 const PDF_INTERACTIVE_PRINT_DIALOG_TIMEOUT_MS = 30000
 const PDF_PRINT_FOCUS_LISTEN_DELAY_MS = 250
 const PDF_PRINT_CANCEL_DEBOUNCE_MS = 200
@@ -382,4 +382,21 @@ export function printPdfBlob(blob, { silent = false } = {}) {
     revokeBlobUrl: true,
     silent: false
   })
+}
+
+export function downloadPdfBlob(blob, filename = 'ticket.pdf') {
+  if (!blob || typeof window === 'undefined') {
+    return false
+  }
+
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
+  return true
 }

@@ -66,6 +66,94 @@ const POPUP_FIELD_LABELS = {
   seat: 'Seat'
 }
 
+function formatDateTime(value) {
+  if (!value) {
+    return ''
+  }
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return String(value)
+  }
+  return parsed.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
+}
+
+function getInvalidTimeKind(message) {
+  const now = Date.now()
+  const validFrom = message?.admission_valid_from
+  const validUntil = message?.admission_valid_until
+
+  if (validFrom) {
+    const fromMs = new Date(validFrom).getTime()
+    if (!Number.isNaN(fromMs) && fromMs > now) {
+      return 'not_yet'
+    }
+  }
+  if (validUntil) {
+    const untilMs = new Date(validUntil).getTime()
+    if (!Number.isNaN(untilMs) && untilMs < now) {
+      return 'expired'
+    }
+  }
+
+  const detail = String(message?.message || '').toLowerCase()
+  if (detail.includes('not valid yet')) {
+    return 'not_yet'
+  }
+  if (detail.includes('no longer valid')) {
+    return 'expired'
+  }
+  return null
+}
+
+const validityDisplayText = computed(() => {
+  const windowText = String(props.message?.validityWindow || '').trim()
+  if (windowText) {
+    return windowText
+  }
+
+  const validFrom = props.message?.admission_valid_from
+  const validUntil = props.message?.admission_valid_until
+  if (!validFrom && !validUntil) {
+    return ''
+  }
+
+  const fromLabel = formatDateTime(validFrom)
+  const untilLabel = formatDateTime(validUntil)
+  if (fromLabel && untilLabel) {
+    return `${fromLabel} – ${untilLabel}`
+  }
+  return fromLabel || untilLabel
+})
+
+const hasAttendeeIdentity = computed(() => {
+  if (props.message?.orderPositionId) {
+    return true
+  }
+  if (String(props.message?.attendee_name || '').trim()) {
+    return true
+  }
+  return Boolean(String(props.message?.attendee || '').trim())
+})
+
+const isSimpleError = computed(
+  () => Boolean(props.message?.simpleError) || (props.showError && !hasAttendeeIdentity.value)
+)
+
+const showAttendeeDetails = computed(() => {
+  if (isSimpleError.value) {
+    return false
+  }
+  return (
+    props.showSuccess ||
+    props.message?.checkoutRequired ||
+    props.message?.offerCheckInAtGate ||
+    props.message?.checkedOut ||
+    Boolean(props.message?.alreadyCheckedIn) ||
+    (props.showError &&
+      Boolean(props.message?.attendee_name || props.message?.attendee || props.message?.orderPositionId))
+  )
+})
+
 const popupExtraRows = computed(() => {
   if (!props.showSuccess || !props.message) {
     return []
@@ -86,7 +174,7 @@ const popupExtraRows = computed(() => {
     .filter(Boolean)
 })
 
-const emit = defineEmits(['print', 'preview', 'edit', 'close', 'timeout', 'interact', 'exit', 'checkin', 'checkout-confirm'])
+const emit = defineEmits(['print', 'preview', 'edit', 'edit-badge', 'close', 'timeout', 'interact', 'exit', 'checkin', 'checkout-confirm'])
 
 const effectiveDuration = computed(() => props.duration)
 
@@ -120,21 +208,27 @@ const resultLabel = computed(() => {
     return 'Already checked in'
   }
   if (props.showError) {
+    if (props.message?.errorLabel) {
+      return props.message.errorLabel
+    }
     if (props.message?.checkoutRequired) {
       return 'Check-out required'
     }
     if (props.message?.errorReason === 'invalid_time') {
-      const detail = String(props.message?.message || '').toLowerCase()
-      if (detail.includes('not valid yet')) {
+      const kind = getInvalidTimeKind(props.message)
+      if (kind === 'not_yet') {
         return 'Ticket not yet valid'
       }
-      return 'Ticket no longer valid'
+      if (kind === 'expired') {
+        return 'Ticket no longer valid'
+      }
+      return 'Ticket not valid'
     }
     if (props.message?.errorReason === 'invalid') {
       return 'Ticket not found'
     }
     if (props.message?.errorReason === 'product') {
-      return 'Wrong ticket type'
+      return 'Wrong check-in list'
     }
     if (props.message?.errorReason === 'subevent') {
       return 'Wrong date or session'
@@ -144,6 +238,12 @@ const resultLabel = computed(() => {
     }
     if (props.message?.errorReason === 'rules') {
       return 'Check-in blocked'
+    }
+    if (props.message?.errorReason === 'canceled' || props.message?.positionCanceled || props.message?.orderCanceled) {
+      if (props.message?.orderCanceled) {
+        return 'Order canceled'
+      }
+      return 'Ticket canceled'
     }
     return props.badgeStation ? 'Badge issue' : 'Check-in issue'
   }
@@ -187,8 +287,16 @@ function detailRepeatsLabel(label, detail) {
 }
 
 const modalHelperText = computed(() => {
+  if (isSimpleError.value) {
+    return ''
+  }
+
   if (props.message?.checkoutRequired) {
     return String(props.message?.message || '').trim()
+  }
+
+  if (props.message?.errorReason === 'invalid_time' && validityDisplayText.value) {
+    return ''
   }
 
   const submessage = String(props.message?.submessage || '').trim()
@@ -240,12 +348,21 @@ const canShowBadgeActions = computed(
 
 const canEditAttendee = computed(
   () =>
+    !props.badgeStation &&
     (props.showSuccess || isAlreadyCheckedIn.value) &&
     !props.showError &&
     !props.message?.checkedOut &&
     !props.message?.checkoutRequired &&
     !props.message?.offerCheckInAtGate &&
     Boolean(props.message?.secret || props.message?.orderPositionId)
+)
+
+const canEditBadge = computed(
+  () =>
+    props.badgeStation &&
+    canShowBadgeActions.value &&
+    Boolean(props.message?.badge_customization?.allow_customization) &&
+    Boolean(props.message?.badge_customization?.fields?.length)
 )
 
 const resultToneClass = computed(() => {
@@ -304,6 +421,10 @@ function handlePrintClick() {
 
 function handleEditClick() {
   handleInteract('edit')
+}
+
+function handleEditBadgeClick() {
+  handleInteract('edit-badge')
 }
 
 function handleExitClick() {
@@ -425,13 +546,7 @@ onBeforeUnmount(() => {
         <div v-else class="mb-4" />
 
         <dl
-          v-if="
-            showSuccess ||
-            message?.checkoutRequired ||
-            message?.offerCheckInAtGate ||
-            message?.checkedOut ||
-            isAlreadyCheckedIn
-          "
+          v-if="showAttendeeDetails"
           class="space-y-2 border-t border-surface-border pt-4 text-sm"
         >
           <div class="flex justify-between gap-4">
@@ -443,6 +558,17 @@ onBeforeUnmount(() => {
           <div v-if="productName" class="flex justify-between gap-4">
             <dt class="text-body-muted">Ticket</dt>
             <dd class="text-right text-body">{{ productName }}</dd>
+          </div>
+          <div
+            v-if="message?.positionCanceled || message?.orderCanceled || message?.errorReason === 'canceled'"
+            class="flex justify-between gap-4"
+          >
+            <dt class="text-body-muted">Status</dt>
+            <dd class="text-right font-medium text-danger">Canceled</dd>
+          </div>
+          <div v-if="validityDisplayText" class="flex justify-between gap-4">
+            <dt class="text-body-muted">Valid</dt>
+            <dd class="text-right text-body">{{ validityDisplayText }}</dd>
           </div>
           <div
             v-for="row in popupExtraRows"
@@ -555,13 +681,23 @@ onBeforeUnmount(() => {
 
           <div class="flex gap-2">
             <StandardButton
+              v-if="canEditBadge"
+              type="button"
+              text=""
+              :icon="PencilSquareIcon"
+              variant="success"
+              size="sm"
+              aria-label="Edit badge"
+              @click="handleEditBadgeClick"
+            />
+            <StandardButton
               v-if="canEditAttendee"
               type="button"
               text=""
               :icon="PencilSquareIcon"
               variant="success"
               size="sm"
-              aria-label="Edit attendee details"
+              aria-label="Edit attendee"
               @click="handleEditClick"
             />
             <StandardButton

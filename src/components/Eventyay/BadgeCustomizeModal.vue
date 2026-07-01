@@ -18,10 +18,19 @@ const props = defineProps({
   allowBadgeEditing: {
     type: Boolean,
     default: false
+  },
+  showPreview: {
+    type: Boolean,
+    default: true
+  },
+  mode: {
+    type: String,
+    default: 'print',
+    validator: (value) => ['print', 'edit'].includes(value)
   }
 })
 
-const emit = defineEmits(['confirm', 'cancel'])
+const emit = defineEmits(['confirm', 'cancel', 'preview'])
 
 const selectedHidden = ref([...props.hiddenFields])
 const fieldValues = ref({})
@@ -47,6 +56,27 @@ watch(
   { immediate: true, deep: true }
 )
 
+const isEditMode = computed(() => props.mode === 'edit')
+
+const headingText = computed(() =>
+  isEditMode.value ? 'Edit badge' : 'Customize your badge before printing'
+)
+
+const helperText = computed(() => {
+  if (isEditMode.value) {
+    if (props.allowBadgeEditing) {
+      return 'Choose which fields to show on the badge and edit the printed text.'
+    }
+    return 'Uncheck fields if you want to hide them on the badge.'
+  }
+  if (props.allowBadgeEditing) {
+    return 'Choose which fields to show and edit the text that will appear on the printed badge.'
+  }
+  return 'Uncheck fields if you want to hide on the printed badge.'
+})
+
+const confirmButtonText = computed(() => (isEditMode.value ? 'Save badge' : 'Continue to print'))
+
 const visibleFields = computed(() =>
   props.fields.filter((field) => !selectedHidden.value.includes(field.key))
 )
@@ -59,11 +89,10 @@ function toggleField(key) {
   }
 }
 
-function handleConfirm() {
+function buildCustomizationResult() {
   const hiddenFields = [...selectedHidden.value]
   if (!props.allowBadgeEditing) {
-    emit('confirm', hiddenFields)
-    return
+    return hiddenFields
   }
 
   const fieldOverrides = {}
@@ -79,7 +108,15 @@ function handleConfirm() {
     }
   }
 
-  emit('confirm', { hiddenFields, fieldOverrides })
+  return { hiddenFields, fieldOverrides }
+}
+
+function handleConfirm() {
+  emit('confirm', buildCustomizationResult())
+}
+
+function handlePreview() {
+  emit('preview', buildCustomizationResult())
 }
 
 function handleCancel() {
@@ -90,14 +127,9 @@ function handleCancel() {
 <template>
   <div class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4">
     <div class="card w-full max-w-md p-6">
-      <h2 class="text-xl font-semibold text-body">Customize your badge before printing</h2>
+      <h2 class="text-xl font-semibold text-body">{{ headingText }}</h2>
       <p class="mt-2 text-sm text-body-muted">
-        <template v-if="allowBadgeEditing">
-          Choose which fields to show and edit the text that will appear on the printed badge.
-        </template>
-        <template v-else>
-          Uncheck fields you want to hide on the printed badge.
-        </template>
+        {{ helperText }}
       </p>
 
       <ul class="mt-4 space-y-3">
@@ -116,7 +148,7 @@ function handleCancel() {
             v-model="fieldValues[field.key]"
             type="text"
             class="w-full"
-            :aria-label="`Edit ${field.label}`"
+            :aria-label="`Edit badge field: ${field.label}`"
           />
         </li>
       </ul>
@@ -127,8 +159,17 @@ function handleCancel() {
 
       <div class="mt-6 space-y-2">
         <StandardButton
+          v-if="showPreview"
           type="button"
-          text="Continue to print"
+          text="Preview badge"
+          variant="white"
+          block
+          :disabled="visibleFields.length === 0"
+          @click="handlePreview"
+        />
+        <StandardButton
+          type="button"
+          :text="confirmButtonText"
           variant="primary"
           block
           :disabled="visibleFields.length === 0"

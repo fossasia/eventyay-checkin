@@ -3,7 +3,7 @@ import { onMounted } from 'vue'
 import { useTagStore } from '@/stores/tags'
 import { storeToRefs } from 'pinia'
 
-const props = defineProps({
+defineProps({
   modelValue: {
     type: Array,
     required: true
@@ -19,40 +19,43 @@ onMounted(() => {
   tagStore.fetchTags()
 })
 
-function handleInput(e) {
-  tagStore.handleCommaInput(e.target.value)
+function syncModelValue() {
   emit('update:modelValue', currentTags.value)
 }
 
-function handleKeydown(e) {
-  if (e.key === 'Enter') {
-    e.preventDefault()
-    if (inputValue.value) {
-      tagStore.addTag(inputValue.value)
-      inputValue.value = ''
-      emit('update:modelValue', currentTags.value)
-    }
-  } else if (e.key === 'Backspace' && !inputValue.value && currentTags.value.length > 0) {
+function handleInput(event) {
+  tagStore.handleInputChange(event.target.value)
+  syncModelValue()
+}
+
+function handleKeydown(event) {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    tagStore.commitInput()
+    syncModelValue()
+    return
+  }
+
+  if (event.key === 'Backspace' && !inputValue.value && currentTags.value.length > 0) {
     tagStore.removeTag(currentTags.value.length - 1)
-    emit('update:modelValue', currentTags.value)
+    syncModelValue()
   }
 }
 
 function addExistingTag(tag) {
   tagStore.addTag(tag)
-  emit('update:modelValue', currentTags.value)
+  syncModelValue()
 }
 
 function removeTag(index) {
   tagStore.removeTag(index)
-  emit('update:modelValue', currentTags.value)
+  syncModelValue()
 }
 </script>
 
 <template>
   <div class="w-full">
     <div class="mb-2 flex flex-wrap gap-2">
-      <!-- Current tags -->
       <div
         v-for="(tag, index) in currentTags"
         :key="index"
@@ -63,11 +66,11 @@ function removeTag(index) {
       </div>
     </div>
 
-    <!-- Available tags -->
     <div class="mb-2 flex flex-wrap gap-2">
       <button
         v-for="tag in availableTags.filter((t) => !currentTags.includes(t))"
         :key="tag"
+        type="button"
         class="rounded-full border px-2 py-1 text-sm text-black hover:bg-secondary hover:text-white"
         @click="addExistingTag(tag)"
       >
@@ -75,12 +78,12 @@ function removeTag(index) {
       </button>
     </div>
 
-    <!-- Tag input -->
     <input
-      v-model="inputValue"
+      :value="inputValue"
       type="text"
       class="w-full rounded border p-2"
-      placeholder="Add tags (comma-separated)"
+      placeholder="Tags"
+      aria-label="Tags"
       @input="handleInput"
       @keydown="handleKeydown"
       @focus="tagStore.fetchTags()"

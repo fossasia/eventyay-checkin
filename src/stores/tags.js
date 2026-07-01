@@ -34,7 +34,7 @@ export const useTagStore = defineStore('tags', () => {
   }
 
   function addTag(tag) {
-    const trimmedTag = tag.trim()
+    const trimmedTag = String(tag || '').trim()
     if (trimmedTag && !currentTags.value.includes(trimmedTag)) {
       currentTags.value = [...currentTags.value, trimmedTag]
     }
@@ -44,16 +44,47 @@ export const useTagStore = defineStore('tags', () => {
     currentTags.value = currentTags.value.filter((_, i) => i !== index)
   }
 
-  function handleCommaInput(value) {
-    if (value.endsWith(',')) {
-      const tag = value.slice(0, -1).trim()
-      if (tag) {
-        addTag(tag)
-        inputValue.value = ''
-      }
-    } else {
-      inputValue.value = value
+  function commitSegments(segments) {
+    for (const segment of segments) {
+      addTag(segment)
     }
+  }
+
+  function handleInputChange(value) {
+    const rawValue = String(value ?? '')
+
+    if (!rawValue.includes(',')) {
+      inputValue.value = rawValue
+      return
+    }
+
+    const segments = rawValue.split(',')
+    const endsWithComma = rawValue.endsWith(',')
+
+    if (endsWithComma) {
+      commitSegments(segments)
+      inputValue.value = ''
+      return
+    }
+
+    const remainder = segments.pop() ?? ''
+    commitSegments(segments)
+    inputValue.value = remainder
+  }
+
+  function commitInput() {
+    const rawValue = String(inputValue.value ?? '').trim()
+    if (!rawValue) {
+      return
+    }
+
+    if (rawValue.includes(',')) {
+      commitSegments(rawValue.split(','))
+    } else {
+      addTag(rawValue)
+    }
+
+    inputValue.value = ''
   }
 
   function reset() {
@@ -68,7 +99,8 @@ export const useTagStore = defineStore('tags', () => {
     fetchTags,
     addTag,
     removeTag,
-    handleCommaInput,
+    handleInputChange,
+    commitInput,
     reset
   }
 })

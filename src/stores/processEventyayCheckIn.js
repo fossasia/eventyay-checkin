@@ -11,13 +11,20 @@ import {
 import { createAuthorizedDeviceApi, normalizeApiResourcePath } from '@/utils/serverUrl'
 import { DEVICE_PROFILE_DENIED_MESSAGE, getDeviceErrorMessage, handleDeviceApiError } from '@/utils/deviceErrors'
 import { fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME } from '@/utils/badgePdf'
-import { getAutoPrintPreference, parseQrPayload } from '@/utils/session'
+import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
+import { shouldUseSilentPrint } from '@/utils/kioskLauncher'
+import { parseQrPayload } from '@/utils/session'
+import { useCheckinSettingsStore } from '@/stores/checkinSettings'
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+const AUTO_PRINT_COSMETIC_MS = 1000
+const AUTO_PRINT_ERROR_MS = 3000
+
 export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckIn', () => {
   const cameraStore = useCameraStore()
+  const checkinSettings = useCheckinSettingsStore()
   const message = ref(null)
   const showSuccess = ref(false)
   const showError = ref(false)
@@ -59,12 +66,12 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     checkInListRequestCoordinator.reset()
   }
 
-  async function fetchAndStoreCheckInLists(cacheKey) {
+  async function fetchAndStoreCheckInLists(cacheKey, eventSlugOverride = null) {
     const { processApi } = getEventListContext()
     const apitoken = processApi.apitoken
     const url = processApi.url
     const organizer = processApi.organizer
-    const eventSlug = processApi.eventSlug
+    const eventSlug = eventSlugOverride || processApi.eventSlug
     const limitCheckInLists = processApi.limitCheckInLists
 
     return checkInListRequestCoordinator.run(cacheKey, async () => {
@@ -96,19 +103,22 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     })
   }
 
-  async function getCheckInLists({ force = false } = {}) {
+  async function getCheckInLists({ force = false, eventSlug: eventSlugOverride = null } = {}) {
     const { processApi, cacheKey, isReady } = getEventListContext()
+    const fetchSlug = eventSlugOverride || processApi.eventSlug
 
-    if (!isReady) {
+    if (!processApi.organizer || !processApi.apitoken || !processApi.url || !fetchSlug) {
       return []
     }
 
-    if (!force && isCheckInListCacheEntryValid(checkInListCache.value, cacheKey)) {
+    const effectiveCacheKey = eventSlugOverride ? `${cacheKey}:${eventSlugOverride}` : cacheKey
+
+    if (!force && isCheckInListCacheEntryValid(checkInListCache.value, effectiveCacheKey)) {
       return checkInListCache.value.listIds
     }
 
     try {
-      return await fetchAndStoreCheckInLists(cacheKey)
+      return await fetchAndStoreCheckInLists(effectiveCacheKey, fetchSlug)
     } catch (err) {
       handleDeviceApiError(err, processApi)
       throw err
@@ -150,7 +160,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
   function isAutoPrintEnabled() {
     const { processApi } = getEventListContext()
-    return processApi.selectedRole === 'Badge Station' && getAutoPrintPreference('Badge Station')
+    return checkinSettings.isAutoPrintActive(processApi.selectedRole)
   }
 
   function clearAutoPrintFeedback() {
@@ -161,7 +171,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     autoPrintFeedback.value = null
   }
 
-  function pushAutoPrintFeedback(status, text, durationMs = 2500) {
+  function showAutoPrintFeedback(status, text, durationMs) {
     autoPrintFeedback.value = { status, text }
     if (autoPrintFeedbackTimer) {
       clearTimeout(autoPrintFeedbackTimer)
@@ -173,15 +183,29 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     autoPrintFeedbackTimer = setTimeout(() => {
       autoPrintFeedback.value = null
       autoPrintFeedbackTimer = null
-      $reset()
     }, durationMs)
   }
 
-  async function runAutoPrintAfterCheckIn(badgeUrlPath, position, alreadyCheckedIn) {
+  function queueBadgePrint(badgeUrlPath) {
+    void (async () => {
+      try {
+        const badgeResult = await getBadgeBlob(badgeUrlPath)
+        if (!badgeResult?.blob) {
+          console.warn('Badge print skipped:', badgeResult?.detail)
+          return
+        }
+        void printPdfBlob(badgeResult.blob, { silent: shouldUseSilentPrint() })
+      } catch (error) {
+        console.warn('Background badge print failed:', error)
+      }
+    })()
+  }
+
+  async function runAutoPrintAfterCheckIn(badgeUrlPath, position) {
     const attendeeLabel = position?.attendee_name || 'attendee'
 
     if (!badgeUrlPath) {
-      pushAutoPrintFeedback('error', `No badge available for ${attendeeLabel}.`, 5000)
+      showAutoPrintFeedback('error', `No badge available for ${attendeeLabel}.`, AUTO_PRINT_ERROR_MS)
       return false
     }
 
@@ -193,50 +217,33 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
     if (shouldCustomize) {
       try {
-        const customizationResult = await requestBadgeCustomization(customization)
+        const customizationResult = await requestBadgeCustomization(customization, {
+          positionId: position?.id,
+          badgeUrlPath
+        })
         if (position?.id) {
-          await saveBadgeCustomization(position.id, customizationResult)
+          await saveBadgeCustomization(position.id, customizationResult, customization)
         }
       } catch (error) {
         if (error?.message === 'cancelled') {
           clearAutoPrintFeedback()
+          cameraStore.clearLastScan()
           return false
         }
         throw error
       }
+      autoPrintCustomizeOnce.value = false
     }
 
-    pushAutoPrintFeedback('printing', `Printing badge for ${attendeeLabel}…`, 0)
-
-    const outcome = await printBadge(badgeUrlPath, { silent: true })
-
-    if (outcome === PRINT_OUTCOME.PRINTED) {
-      if (shouldCustomize) {
-        autoPrintCustomizeOnce.value = false
-      }
-      pushAutoPrintFeedback(
-        'success',
-        alreadyCheckedIn
-          ? `Reprinted: ${attendeeLabel} (already checked in)`
-          : `Printed: ${attendeeLabel}`,
-        2000
-      )
-    } else if (outcome === PRINT_OUTCOME.CANCELLED) {
-      clearAutoPrintFeedback()
-    } else {
-      pushAutoPrintFeedback(
-        'error',
-        `Print failed for ${attendeeLabel}. Check printer or turn off auto-print to preview.`,
-        4000
-      )
-    }
-
-    return outcome === PRINT_OUTCOME.PRINTED
+    showAutoPrintFeedback('printing', `Printing badge for ${attendeeLabel}…`, AUTO_PRINT_COSMETIC_MS)
+    queueBadgePrint(badgeUrlPath)
+    cameraStore.clearLastScan()
+    return true
   }
 
   function showErrorMsg(msg) {
     if (isAutoPrintEnabled()) {
-      pushAutoPrintFeedback('error', msg?.message || 'Check-in failed.', 4000)
+      showAutoPrintFeedback('error', msg?.message || 'Check-in failed.', AUTO_PRINT_ERROR_MS)
       return
     }
     message.value = msg
@@ -246,7 +253,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
   function showCheckoutRequiredMsg(msg) {
     if (isAutoPrintEnabled()) {
-      pushAutoPrintFeedback('error', msg?.message || 'Check-out required.', 8000)
+      showAutoPrintFeedback('error', msg?.message || 'Check-out required.', AUTO_PRINT_ERROR_MS)
       return
     }
     message.value = { ...msg, checkoutRequired: true }
@@ -269,7 +276,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   function buildAttendeeMessage(messageText, position, secret = '', hints = {}) {
     return {
       message: messageText,
-      attendee: position?.attendee_name || hints.attendee_name || 'Unknown Attendee',
+      attendee: position?.attendee_name || hints.attendee_name || '',
       attendee_name: position?.attendee_name || hints.attendee_name || '',
       attendee_email: position?.attendee_email || hints.attendee_email || '',
       product_id: position?.product || null,
@@ -287,9 +294,34 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       offerCheckInAtGate: Boolean(hints.offerCheckInAtGate),
       manualReprintOnly: Boolean(hints.manualReprintOnly),
       errorReason: hints.errorReason || null,
+      errorLabel: hints.errorLabel || '',
+      positionCanceled: Boolean(hints.positionCanceled),
+      orderCanceled: Boolean(hints.orderCanceled),
+      simpleError: Boolean(hints.simpleError),
       submessage: hints.submessage || '',
+      validityWindow: hints.validityWindow || '',
+      admission_valid_from: position?.admission_valid_from || hints.admission_valid_from || null,
+      admission_valid_until: position?.admission_valid_until || hints.admission_valid_until || null,
       badge_customization: position?.badge_customization || hints.badge_customization || null
     }
+  }
+
+  function hasKnownAttendee(position, hints = {}) {
+    if (position?.id) {
+      return true
+    }
+    return Boolean(String(hints.attendee_name || position?.attendee_name || '').trim())
+  }
+
+  function showSimpleScanError(messageText, secret, hints = {}) {
+    showErrorMsg(
+      buildAttendeeMessage('', null, secret, {
+        ...hints,
+        errorReason: hints.errorReason || 'invalid',
+        errorLabel: messageText,
+        simpleError: true
+      })
+    )
   }
 
   function getCheckInResultMessage(status) {
@@ -348,12 +380,52 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
+  function isCanceledPosition(position) {
+    if (!position) {
+      return false
+    }
+    if (position.canceled) {
+      return true
+    }
+    const orderStatus = String(position.order__status || position.order?.status || '').toLowerCase()
+    return orderStatus === 'c'
+  }
+
+  function getCanceledPresentation(position, explanation = '') {
+    const detail = String(explanation || '').trim()
+    if (position?.canceled) {
+      return {
+        errorLabel: 'Ticket canceled',
+        message: detail || 'This ticket has been canceled and cannot be used for check-in.',
+        positionCanceled: true,
+        orderCanceled: false
+      }
+    }
+    const orderStatus = String(position?.order__status || position?.order?.status || '').toLowerCase()
+    if (orderStatus === 'c') {
+      return {
+        errorLabel: 'Order canceled',
+        message: detail || 'This order was canceled. Check-in is not allowed.',
+        positionCanceled: false,
+        orderCanceled: true
+      }
+    }
+    return {
+      errorLabel: 'Ticket canceled',
+      message: detail || 'This ticket cannot be checked in because it was canceled.',
+      positionCanceled: isCanceledPosition(position),
+      orderCanceled: orderStatus === 'c'
+    }
+  }
+
   function getRedeemErrorReason(response) {
     if (!response || typeof response !== 'object') {
       return null
     }
 
     const reason = String(response.reason || '').trim()
+    const explanation = String(response.reason_explanation || response.detail || '').trim()
+    const lowerExplanation = explanation.toLowerCase()
     const knownReasons = new Set([
       'invalid',
       'invalid_time',
@@ -364,7 +436,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       'product',
       'subevent',
       'unpaid',
-      'rules'
+      'rules',
+      'canceled'
     ])
     if (knownReasons.has(reason)) {
       return reason
@@ -386,49 +459,134 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     if (lowerReason.includes('already been redeemed')) {
       return 'already_redeemed'
     }
+    if (lowerExplanation.includes('cancel')) {
+      return 'canceled'
+    }
 
     return reason || null
   }
 
-  function getRedeemErrorMessage(response) {
+  function getRedeemErrorPresentation(response) {
     if (!response || typeof response !== 'object') {
-      return ''
+      return { errorLabel: '', message: '' }
     }
 
     const reason = getRedeemErrorReason(response)
-    if (reason === 'checkout_required' && response.reason_explanation) {
-      return String(response.reason_explanation)
+    const explanation = String(response.reason_explanation || '').trim()
+    const lowerExplanation = explanation.toLowerCase()
+
+    if (reason === 'checkout_required') {
+      return {
+        errorLabel: 'Check-out required',
+        message:
+          explanation ||
+          'This attendee must check out before they can check in here again.'
+      }
     }
-    if (reason === 'rules' && response.reason_explanation) {
-      return String(response.reason_explanation)
+    if (reason === 'rules') {
+      return {
+        errorLabel: 'Check-in blocked',
+        message: explanation || 'Custom rules prevent check-in for this ticket.'
+      }
+    }
+    if (reason === 'invalid_time') {
+      const position = response.position
+      const now = Date.now()
+      if (position?.admission_valid_from) {
+        const fromMs = new Date(position.admission_valid_from).getTime()
+        if (!Number.isNaN(fromMs) && fromMs > now) {
+          return { errorLabel: 'Ticket not yet valid', message: 'This ticket is not valid yet.' }
+        }
+      }
+      if (position?.admission_valid_until) {
+        const untilMs = new Date(position.admission_valid_until).getTime()
+        if (!Number.isNaN(untilMs) && untilMs < now) {
+          return { errorLabel: 'Ticket no longer valid', message: 'This ticket is no longer valid.' }
+        }
+      }
+      if (lowerExplanation.includes('not valid yet')) {
+        return { errorLabel: 'Ticket not yet valid', message: explanation || 'This ticket is not valid yet.' }
+      }
+      if (lowerExplanation.includes('no longer valid')) {
+        return {
+          errorLabel: 'Ticket no longer valid',
+          message: explanation || 'This ticket is no longer valid.'
+        }
+      }
+      return { errorLabel: 'Ticket not valid', message: 'This ticket is not valid at this time.' }
+    }
+    if (reason === 'product') {
+      if (lowerExplanation.includes('does not grant admission')) {
+        return {
+          errorLabel: 'Not an entry ticket',
+          message:
+            explanation ||
+            'This product does not grant admission. Only event tickets can be checked in.'
+        }
+      }
+      return {
+        errorLabel: 'Wrong check-in list',
+        message:
+          explanation ||
+          'This ticket type is not accepted at this check-in list. Try another list or gate.'
+      }
+    }
+    if (reason === 'subevent') {
+      return {
+        errorLabel: 'Wrong session',
+        message:
+          explanation ||
+          'This ticket is for a different date or session. Use the matching check-in list.'
+      }
+    }
+    if (reason === 'unpaid') {
+      if (lowerExplanation.includes('cancel') || isCanceledPosition(response.position)) {
+        return getCanceledPresentation(response.position, explanation)
+      }
+      return {
+        errorLabel: 'Payment required',
+        message: explanation || 'This order has not been paid yet.'
+      }
+    }
+    if (reason === 'canceled') {
+      return getCanceledPresentation(response.position, explanation)
+    }
+    if (reason === 'invalid') {
+      return {
+        errorLabel: 'This code is not valid for this event.',
+        message: '',
+        simpleError: true
+      }
+    }
+    if (reason === 'revoked') {
+      return {
+        errorLabel: 'Ticket revoked',
+        message:
+          explanation ||
+          'This code was revoked or replaced. Scan the current ticket from the order confirmation.'
+      }
+    }
+    if (reason === 'ambiguous') {
+      return {
+        errorLabel: 'Ambiguous scan',
+        message: explanation || 'Multiple tickets match this code. Try a more specific scan.'
+      }
+    }
+    if (reason === 'already_redeemed') {
+      return {
+        errorLabel: 'Already checked in',
+        message: explanation || 'This ticket has already been checked in.'
+      }
     }
 
-    const operatorMessages = {
-      invalid: 'This ticket was not found for this event.',
-      revoked: 'This ticket code has been revoked or changed.',
-      ambiguous: 'Multiple tickets match this code. Try a more specific scan.',
-      invalid_time: 'This ticket is not valid at this time.',
-      already_redeemed: 'This ticket has already been redeemed.',
-      checkout_required: 'Check-out is required before checking in again.',
-      product: 'This ticket is not accepted at this check-in list/gate.',
-      subevent: 'This ticket is for a different date or session. Use the correct check-in list/gate.',
-      unpaid: 'This order has not been marked as paid.',
-      rules: 'Check-in is blocked by custom rules for this ticket.'
+    return {
+      errorLabel: '',
+      message: explanation || String(response.detail || '').trim() || 'Check-in failed.'
     }
+  }
 
-    if (reason && operatorMessages[reason]) {
-      return operatorMessages[reason]
-    }
-    if (response.reason_explanation) {
-      return String(response.reason_explanation)
-    }
-    if (response.detail) {
-      return String(response.detail)
-    }
-    if (reason) {
-      return reason
-    }
-    return ''
+  function getRedeemErrorMessage(response) {
+    return getRedeemErrorPresentation(response).message
   }
 
   function getRedeemErrorResponse(error) {
@@ -481,13 +639,53 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     badgeUrl.value = normalizeApiResourcePath(badgeDownload?.url || '')
   }
 
+  function showCanceledAttendeeFromSearch(order, hints = {}) {
+    const presentation = getCanceledPresentation(order)
+    showErrorMsg(
+      buildAttendeeMessage(presentation.message, order, order.secret, {
+        attendee_name: order.attendee_name,
+        attendee_email: order.attendee_email,
+        company: order.company,
+        job_title: order.job_title,
+        product_id: order.product,
+        variation: order.variation,
+        errorReason: 'canceled',
+        errorLabel: presentation.errorLabel,
+        positionCanceled: presentation.positionCanceled,
+        orderCanceled: presentation.orderCanceled,
+        ...hints
+      })
+    )
+  }
+
   function handleRedeemErrorResponse(response, normalizedSecret, hints) {
     const reason = getRedeemErrorReason(response)
+    const presentation = getRedeemErrorPresentation(response)
+    const errorHints = {
+      ...hints,
+      errorReason: reason,
+      errorLabel: presentation.errorLabel,
+      positionCanceled: Boolean(presentation.positionCanceled),
+      orderCanceled: Boolean(presentation.orderCanceled),
+      simpleError: Boolean(presentation.simpleError)
+    }
+    if (reason === 'invalid_time' && response.reason_explanation) {
+      const explanation = String(response.reason_explanation).trim()
+      const lower = explanation.toLowerCase()
+      const looksLikeWindow =
+        explanation.includes('–') ||
+        (/\d/.test(explanation) &&
+          !lower.includes('not valid yet') &&
+          !lower.includes('no longer valid'))
+      if (looksLikeWindow) {
+        errorHints.validityWindow = explanation
+      }
+    }
     const msg = buildAttendeeMessage(
-      getRedeemErrorMessage(response) || 'Check-in failed!',
+      presentation.message || 'Check-in failed!',
       response?.position,
       normalizedSecret,
-      { ...hints, errorReason: reason }
+      errorHints
     )
     if (reason === 'checkout_required' && response.cross_gate) {
       showCheckoutRequiredMsg({
@@ -496,7 +694,11 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       })
     } else if (reason === 'checkout_required') {
       setBadgeUrlFromPosition(response?.position)
-      showCheckoutRequiredMsg(msg)
+      showSuccessMsg({
+        ...msg,
+        alreadyCheckedIn: true,
+        message: '',
+      })
     } else if (reason === 'already_redeemed') {
       setBadgeUrlFromPosition(response?.position)
       showSuccessMsg({
@@ -504,6 +706,12 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         alreadyCheckedIn: true,
         message: '',
       })
+    } else if (presentation.simpleError || (reason === 'invalid' && !hasKnownAttendee(response?.position, hints))) {
+      showSimpleScanError(
+        presentation.errorLabel || presentation.message || 'This code is not valid for this event.',
+        normalizedSecret,
+        errorHints
+      )
     } else {
       showErrorMsg(msg)
     }
@@ -574,11 +782,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         const positionId = response.position?.id
 
         if (isBadgeStation && isAutoPrintEnabled() && !alreadyCheckedIn) {
-          const printed = await runAutoPrintAfterCheckIn(
-            badgeUrl.value,
-            response.position,
-            alreadyCheckedIn
-          )
+          const printed = await runAutoPrintAfterCheckIn(badgeUrl.value, response.position)
           if (printed) {
             markPrintedBadge(positionId)
           }
@@ -644,7 +848,10 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         : getDeviceErrorMessage(error, 'This code is not valid for this event.', {
             hideHttpStatusText: true
           })
-      showErrorMsg(buildAttendeeMessage(fallbackMessage, null, normalizedSecret, hints))
+      showSimpleScanError(fallbackMessage, normalizedSecret, {
+        ...hints,
+        errorReason: 'invalid'
+      })
       return null
     }
   }
@@ -672,10 +879,16 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function saveBadgeCustomization(positionId, result) {
+  async function saveBadgeCustomization(positionId, result, customization = null) {
     const { organizer, eventSlug, url, apitoken } = getEventListContext()
     if (!organizer || !eventSlug || !url || !apitoken || !positionId) {
-      return
+      return false
+    }
+
+    const sourceCustomization =
+      customization || badgeCustomizeRequest.value?.customization || null
+    if (sourceCustomization && isBadgeCustomizationUnchanged(sourceCustomization, result)) {
+      return false
     }
 
     const hiddenFields = Array.isArray(result) ? result : result.hiddenFields
@@ -689,11 +902,22 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       `/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${positionId}/`,
       payload
     )
+    return true
   }
 
-  function requestBadgeCustomization(customization) {
+  function requestBadgeCustomization(
+    customization,
+    { positionId = null, badgeUrlPath = '', editMode = false } = {}
+  ) {
     return new Promise((resolve, reject) => {
-      badgeCustomizeRequest.value = { customization, resolve, reject }
+      badgeCustomizeRequest.value = {
+        customization,
+        positionId,
+        badgeUrlPath: badgeUrlPath || badgeUrl.value || '',
+        editMode,
+        resolve,
+        reject
+      }
     })
   }
 
@@ -707,15 +931,41 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     badgeCustomizeRequest.value = null
   }
 
-  async function openBadgeCustomization(customization, positionId) {
+  async function previewBadgeCustomization(result) {
+    const request = badgeCustomizeRequest.value
+    if (!request?.badgeUrlPath) {
+      throw new Error('No badge is available to preview.')
+    }
+    if (request.positionId) {
+      const saved = await saveBadgeCustomization(
+        request.positionId,
+        result,
+        request.customization
+      )
+      if (!saved) {
+        return request.badgeUrlPath
+      }
+    }
+    return request.badgeUrlPath
+  }
+
+  async function openBadgeCustomization(
+    customization,
+    positionId,
+    { badgeUrlPath = '', editMode = false } = {}
+  ) {
     if (!customization?.allow_customization || !customization.fields?.length) {
       return null
     }
 
     try {
-      const customizationResult = await requestBadgeCustomization(customization)
+      const customizationResult = await requestBadgeCustomization(customization, {
+        positionId,
+        badgeUrlPath,
+        editMode
+      })
       if (positionId) {
-        await saveBadgeCustomization(positionId, customizationResult)
+        await saveBadgeCustomization(positionId, customizationResult, customization)
       }
       return customizationResult
     } catch (error) {
@@ -729,14 +979,17 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   async function printBadgeWithOptionalCustomization(
     badgeUrlPath,
     position,
-    { silent = false, customize = true } = {}
+    { silent = false, customize = false } = {}
   ) {
     const customization = position?.badge_customization
     if (customize && customization?.allow_customization && customization.fields?.length) {
       try {
-        const customizationResult = await requestBadgeCustomization(customization)
+        const customizationResult = await requestBadgeCustomization(customization, {
+          positionId: position?.id,
+          badgeUrlPath
+        })
         if (position?.id) {
-          await saveBadgeCustomization(position.id, customizationResult)
+          await saveBadgeCustomization(position.id, customizationResult, customization)
         }
       } catch (error) {
         if (error?.message === 'cancelled') {
@@ -771,7 +1024,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         return PRINT_OUTCOME.FAILED
       }
 
-      return await printPdfBlob(badgeResult.blob, { silent })
+      const useSilentPrint = silent && shouldUseSilentPrint()
+      return await printPdfBlob(badgeResult.blob, { silent: useSilentPrint })
     } catch (error) {
       console.error('Error printing badge:', error)
       return PRINT_OUTCOME.FAILED
@@ -821,9 +1075,11 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     printBadgeWithOptionalCustomization,
     resolveBadgeCustomization,
     cancelBadgeCustomization,
+    previewBadgeCustomization,
     openBadgeCustomization,
     clearAutoPrintFeedback,
     showOfferCheckInMsg,
+    showCanceledAttendeeFromSearch,
     buildAttendeeMessage,
     prefetchCheckInLists,
     getCheckInLists,

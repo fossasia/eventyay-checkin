@@ -14,7 +14,15 @@ export function isKioskEnvironment(route = null) {
   if (typeof window === 'undefined') {
     return false
   }
-  return route?.query?.kiosk === 'true'
+  if (route?.query?.kiosk === 'true') {
+    return true
+  }
+  return new URLSearchParams(window.location.search).get('kiosk') === 'true'
+}
+
+/** Silent iframe printing only works reliably in kiosk mode with kiosk-printing. */
+export function shouldUseSilentPrint(route = null) {
+  return isKioskEnvironment(route)
 }
 
 export function detectPlatform() {
