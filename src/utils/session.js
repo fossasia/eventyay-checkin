@@ -78,7 +78,10 @@ export async function validateDeviceSession(processApi) {
 
   try {
     const api = createAuthorizedDeviceApi(processApi.url, processApi.apitoken)
-    await api.get('/api/v1/device/session')
+    const response = await api.get('/api/v1/device/session')
+    if (response && 'security_profile' in response) {
+      processApi.setSecurityProfile(response.security_profile)
+    }
     return true
   } catch (error) {
     return !isDeviceAuthFailure(error)

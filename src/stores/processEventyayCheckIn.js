@@ -92,14 +92,9 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       availableCheckInLists.value = lists
 
       const listIds = lists.map((list) => list.id.toString())
-      // If no restriction, fall back to all lists (default: use first if multiple)
-      const resolvedListIds = limitCheckInLists && limitCheckInLists.length > 0
-        ? listIds
-        : listIds.length > 0 ? [listIds[0]] : []
+      checkInListCache.value = createCheckInListCache(cacheKey, listIds)
 
-      checkInListCache.value = createCheckInListCache(cacheKey, resolvedListIds)
-
-      return resolvedListIds
+      return listIds
     })
   }
 
@@ -742,12 +737,13 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         return null
       }
 
-      // If the operator has selected a specific checkin list, use only that one
+      // Use the list the operator picked in event setup / Configure, not whatever happens to be first in cache.
       const selectedListId = processApi.selectedCheckInListId
-      const effectiveLists = selectedListId
-        ? checkInLists.filter((id) => String(id) === String(selectedListId))
-        : checkInLists
-      const listsToUse = effectiveLists.length > 0 ? effectiveLists : checkInLists
+      const listsToUse = selectedListId
+        ? [String(selectedListId)]
+        : checkInLists.length
+          ? [checkInLists[0]]
+          : []
       const api = createAuthorizedDeviceApi(url, apitoken, { Accept: 'application/json' })
       const checkInNonce = generateNonce()
 

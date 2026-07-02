@@ -329,8 +329,7 @@ const canCheckOut = computed(
 const isCheckoutFlow = computed(
   () =>
     Boolean(props.message?.checkoutRequired) ||
-    Boolean(props.message?.offerCheckInAtGate) ||
-    canCheckOut.value
+    Boolean(props.message?.offerCheckInAtGate)
 )
 
 const showCheckoutConfirm = ref(false)

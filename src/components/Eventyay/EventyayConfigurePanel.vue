@@ -25,6 +25,11 @@ const { events } = storeToRefs(eventStore)
 const { availableCheckInLists } = storeToRefs(processEventyayCheckInStore)
 const { autoPrintEnabled } = storeToRefs(checkinSettings)
 
+const isUnlocked = ref(false)
+const setupToken = ref('')
+const unlockError = ref('')
+const unlocking = ref(false)
+
 const draftEventSlug = ref('')
 const draftCheckInListId = ref(null)
 const draftAutoPrint = ref(true)
@@ -53,6 +58,13 @@ function resetDraftFromStore() {
   checkinSettings.syncAutoPrintForRole(selectedRole.value)
   draftAutoPrint.value = autoPrintEnabled.value
   errorMessage.value = ''
+}
+
+function resetUnlockState() {
+  isUnlocked.value = false
+  setupToken.value = ''
+  unlockError.value = ''
+  unlocking.value = false
 }
 
 async function loadListsForDraftEvent() {
@@ -92,16 +104,49 @@ watch(
 )
 
 async function openPanel() {
+  resetUnlockState()
   resetDraftFromStore()
-  if (!events.value.length) {
-    await eventStore.fetchEvents()
-  }
-  if (draftEventSlug.value) {
-    await loadListsForDraftEvent()
-  }
 }
 
 void openPanel()
+
+async function unlockPanel() {
+  const token = setupToken.value.trim()
+  if (!token) {
+    unlockError.value = 'Enter the device setup token to continue.'
+    return
+  }
+
+  unlocking.value = true
+  unlockError.value = ''
+
+  try {
+    const result = await processApi.verifySetupToken(token)
+    if (!result.success) {
+      if (result.error === 'missing_credentials') {
+        unlockError.value = 'Enter the device setup token to continue.'
+      } else {
+        unlockError.value =
+          result.message ||
+          'Could not verify the setup token. Check the token on the organizer device connect page and try again.'
+      }
+      return
+    }
+
+    isUnlocked.value = true
+    if (!events.value.length) {
+      await eventStore.fetchEvents()
+    }
+    if (draftEventSlug.value) {
+      await loadListsForDraftEvent()
+    }
+  } catch (error) {
+    console.error('Failed to verify setup token:', error)
+    unlockError.value = 'Could not verify the setup token. Try again.'
+  } finally {
+    unlocking.value = false
+  }
+}
 
 async function closePanel() {
   if (processApi.eventSlug) {
@@ -160,12 +205,35 @@ async function applySettings() {
     <div class="card flex max-h-[min(90dvh,720px)] w-full max-w-lg flex-col overflow-hidden">
       <div class="border-b border-surface-border px-5 py-4 sm:px-6">
         <h2 class="text-lg font-semibold text-body">Configure</h2>
-        <p class="mt-1 text-sm text-body-muted">
+        <p v-if="isUnlocked" class="mt-1 text-sm text-body-muted">
           Event, check-in list, and printing options for this device.
+        </p>
+        <p v-else class="mt-1 text-sm text-body-muted">
+          Enter the device setup token from the organizer connect page to change settings.
         </p>
       </div>
 
-      <div class="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4 sm:px-6">
+      <div v-if="!isUnlocked" class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
+        <label class="block">
+          <span class="section-title mb-2 block">Setup token</span>
+          <input
+            v-model="setupToken"
+            type="password"
+            autocomplete="off"
+            class="w-full rounded-xl border border-surface-border bg-surface px-3 py-2 text-sm text-body"
+            placeholder="Paste or type the setup token"
+            :disabled="unlocking"
+            @keyup.enter="unlockPanel"
+          />
+        </label>
+        <p class="text-xs text-body-muted">
+          Copy or download this token from the device connect page in the organizer dashboard. Keep it handy if
+          you switch between events or check-in lists on this device.
+        </p>
+        <p v-if="unlockError" class="text-sm text-danger">{{ unlockError }}</p>
+      </div>
+
+      <div v-else class="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-4 sm:px-6">
         <div
           v-if="gateName || deviceName"
           class="rounded-xl border border-surface-border bg-surface-muted px-4 py-3 text-sm text-body-muted"
@@ -250,10 +318,20 @@ async function applySettings() {
           text="Cancel"
           variant="white"
           block
-          :disabled="saving"
+          :disabled="saving || unlocking"
           @click="closePanel"
         />
         <StandardButton
+          v-if="!isUnlocked"
+          type="button"
+          :text="unlocking ? 'Verifying…' : 'Continue'"
+          variant="primary"
+          block
+          :disabled="unlocking || !setupToken.trim()"
+          @click="unlockPanel"
+        />
+        <StandardButton
+          v-else
           type="button"
           :text="saving ? 'Saving…' : 'Save'"
           variant="primary"

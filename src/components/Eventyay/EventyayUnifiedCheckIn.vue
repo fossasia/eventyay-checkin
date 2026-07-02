@@ -168,6 +168,10 @@ let activeRequestId = 0
 
 watch(eventSlug, () => {
   eventQuestions.value = []
+  searchCache.clear()
+  orders.value = []
+  searchQuery.value = ''
+  activeRequestId += 1
   void ensureEventQuestionsLoaded()
 })
 

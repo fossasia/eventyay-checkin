@@ -21,6 +21,7 @@ export const useEventyayApi = defineStore(
     const isRegistering = ref(false)
     const deviceName = ref('')
     const gateName = ref('')
+    const securityProfile = ref('')
 
     function $reset() {
       apitoken.value = ''
@@ -38,6 +39,7 @@ export const useEventyayApi = defineStore(
       isRegistering.value = false
       deviceName.value = ''
       gateName.value = ''
+      securityProfile.value = ''
     }
 
     function parseRegistrationError(error) {
@@ -93,6 +95,10 @@ export const useEventyayApi = defineStore(
       gateName.value = gate?.name ? String(gate.name) : ''
     }
 
+    function setSecurityProfile(profile) {
+      securityProfile.value = profile ? String(profile) : ''
+    }
+
     function clearExhibitor() {
       exikey.value = ''
       exhiname.value = ''
@@ -129,6 +135,29 @@ export const useEventyayApi = defineStore(
       selectedRole.value = role
     }
 
+    function applyStationTypeChange(nextRole) {
+      const previousRole = selectedRole.value
+      if (!nextRole || previousRole === nextRole) {
+        return
+      }
+
+      if (nextRole === 'Exhibitor') {
+        selectedCheckInListId.value = null
+        if (previousRole === 'CheckIn' || previousRole === 'Badge Station') {
+          eventSlug.value = ''
+          eventname.value = ''
+        }
+        return
+      }
+
+      clearExhibitor()
+      if (previousRole === 'Exhibitor') {
+        eventSlug.value = ''
+        eventname.value = ''
+        selectedCheckInListId.value = null
+      }
+    }
+
     function logout({ clearRole = true } = {}) {
       const preservedRole = selectedRole.value
 
@@ -145,6 +174,7 @@ export const useEventyayApi = defineStore(
       selectedCheckInListId.value = null
       deviceName.value = ''
       gateName.value = ''
+      securityProfile.value = ''
 
       if (!clearRole) {
         selectedRole.value = preservedRole
@@ -187,6 +217,7 @@ export const useEventyayApi = defineStore(
         setApiCred(response.api_token, cleanUrl, response.organizer)
         setLimitCheckInLists(response.limit_checkin_lists || [])
         setDeviceInfo({ name: response.name, gate: response.gate })
+        setSecurityProfile(response.security_profile)
         return { success: true }
       }
       return { success: false, error: 'registration_failed' }
@@ -267,8 +298,42 @@ export const useEventyayApi = defineStore(
           software_version: '1.0'
         })
         setDeviceInfo({ name: response.name, gate: response.gate })
+        setSecurityProfile(response.security_profile)
       } catch {
         // Session polling will handle revoked tokens.
+      }
+    }
+
+    async function verifySetupToken(token) {
+      const cleanToken = String(token || '').trim()
+      if (!apitoken.value || !url.value || !cleanToken) {
+        return { success: false, error: 'missing_credentials' }
+      }
+
+      refreshServerUrl()
+
+      try {
+        const api = createAuthorizedDeviceApi(url.value, apitoken.value)
+        await api.post('/api/v1/device/verify-setup-token', { token: cleanToken })
+        return { success: true }
+      } catch (error) {
+        const status = error?.response?.status
+        const body = error?.body
+        if (body?.token) {
+          const tokenError = Array.isArray(body.token) ? body.token[0] : body.token
+          return { success: false, error: 'invalid_token', message: String(tokenError) }
+        }
+        if (body?.detail) {
+          return { success: false, error: 'verification_failed', message: String(body.detail) }
+        }
+        if (status === 403) {
+          return {
+            success: false,
+            error: 'verification_failed',
+            message: 'This device is not allowed to verify the setup token. Contact the organizer.'
+          }
+        }
+        return { success: false, error: 'verification_failed' }
       }
     }
 
@@ -279,11 +344,13 @@ export const useEventyayApi = defineStore(
       setExhibitor,
       selectedRole,
       setRole,
+      applyStationTypeChange,
       logout,
       handleAuthError,
       registerDeviceByQr,
       registerDeviceManually,
       syncDeviceInfo,
+      verifySetupToken,
       refreshServerUrl,
       apitoken,
       url,
@@ -302,6 +369,8 @@ export const useEventyayApi = defineStore(
       deviceName,
       gateName,
       setDeviceInfo,
+      securityProfile,
+      setSecurityProfile,
     }
   },
   {
