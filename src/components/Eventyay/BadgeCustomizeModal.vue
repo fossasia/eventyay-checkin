@@ -72,7 +72,7 @@ const helperText = computed(() => {
   if (props.allowBadgeEditing) {
     return 'Choose which fields to show and edit the text that will appear on the printed badge.'
   }
-  return 'Uncheck fields if you want to hide on the printed badge.'
+  return 'Uncheck fields if you want to hide them on the printed badge.'
 })
 
 const confirmButtonText = computed(() => (isEditMode.value ? 'Save badge' : 'Continue to print'))

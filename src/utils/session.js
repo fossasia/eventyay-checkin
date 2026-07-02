@@ -22,17 +22,20 @@ export const STATION_TYPE_DEFINITIONS = [
   {
     id: 'Exhibitor',
     title: 'Lead Scanner',
+    buttonLabel: "I'm An Exhibitor",
     description:
       'Capture exhibitor leads by scanning attendee badges. Register this device with Full device access in the organizer dashboard.'
   },
   {
     id: 'CheckIn',
     title: 'Check-In Staff',
+    buttonLabel: "I'm Check-In Staff",
     description: 'Scan tickets, search attendees, edit details, live registration, and badge printing.'
   },
   {
     id: 'Badge Station',
     title: 'Badge Station',
+    buttonLabel: "I'm Badge Station Staff",
     description: 'Kiosk fast check-in and badge printing station. Set up kiosk mode before registering.'
   }
 ]

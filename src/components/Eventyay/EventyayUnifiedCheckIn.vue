@@ -6,6 +6,7 @@ import { apiV1Path, createAuthorizedDeviceApi, normalizeApiResourcePath } from '
 import {
   buildAttendeePatchPayload,
   buildEditableAttendeeState,
+  choiceOptionLabel,
   getAttendeeEditFieldKeys,
   indexQuestionsById,
   normalizeDisplayPopupFields,
@@ -123,10 +124,13 @@ const showAttendeeModal = computed(() => {
   return showSuccess.value || showError.value
 })
 
-const displayPopupFields = computed(() =>
-  normalizeDisplayPopupFields(getSelectedCheckInList()?.display_popup_fields || [])
+const configuredDisplayFields = computed(
+  () => getSelectedCheckInList()?.display_popup_fields || []
 )
-const attendeeEditFieldKeys = computed(() => getAttendeeEditFieldKeys(displayPopupFields.value))
+const displayPopupFields = computed(() =>
+  normalizeDisplayPopupFields(configuredDisplayFields.value)
+)
+const attendeeEditFieldKeys = computed(() => getAttendeeEditFieldKeys(configuredDisplayFields.value))
 const eventQuestions = ref([])
 const questionsById = computed(() => indexQuestionsById(eventQuestions.value))
 const popupQuestionLabels = computed(() => {
@@ -660,7 +664,7 @@ const submitLiveRegistration = async () => {
 }
 
 const formatAttendeeForEdit = (attendeeMessage = {}) =>
-  buildEditableAttendeeState(attendeeMessage, displayPopupFields.value)
+  buildEditableAttendeeState(attendeeMessage, configuredDisplayFields.value)
 
 async function ensureEventQuestionsLoaded() {
   if (eventQuestions.value.length > 0 || !organizer.value || !eventSlug.value) {
@@ -717,7 +721,7 @@ const getModifiedAttendeeFields = () =>
   buildAttendeePatchPayload(
     editableAttendee.value,
     originalAttendee.value,
-    displayPopupFields.value,
+    configuredDisplayFields.value,
     questionsById.value
   )
 
@@ -1147,27 +1151,30 @@ const openAttendeeFromSearch = async (order) => {
     return
   }
   cameraStore.isProcessing = true
-  const response = await processEventyayCheckInStore.checkInBySecret(order.secret, {
-    attendeeHints: {
-      attendee_name: order.attendee_name,
-      attendee_email: order.attendee_email,
-      company: order.company,
-      job_title: order.job_title
-    }
-  })
-  if (!response || (response.status !== 'ok' && response.status !== 'redeemed')) {
-    if (!showSuccess.value && !showError.value) {
-      notificationStore.addNotification(['Error', 'Unable to open attendee details'], 'error')
-    }
-    cameraStore.isProcessing = false
-    return
-  }
-
-  if (response.position) {
-    updateOrderInSearchResults(response.position, {
-      action: 'entry',
-      status: response.status
+  try {
+    const response = await processEventyayCheckInStore.checkInBySecret(order.secret, {
+      attendeeHints: {
+        attendee_name: order.attendee_name,
+        attendee_email: order.attendee_email,
+        company: order.company,
+        job_title: order.job_title
+      }
     })
+    if (!response || (response.status !== 'ok' && response.status !== 'redeemed')) {
+      if (!showSuccess.value && !showError.value) {
+        notificationStore.addNotification(['Error', 'Unable to open attendee details'], 'error')
+      }
+      return
+    }
+
+    if (response.position) {
+      updateOrderInSearchResults(response.position, {
+        action: 'entry',
+        status: response.status
+      })
+    }
+  } finally {
+    cameraStore.isProcessing = false
   }
 }
 </script>
@@ -1498,9 +1505,9 @@ const openAttendeeFromSearch = async (order) => {
                 <option
                   v-for="option in choiceOptionsForField(fieldKey)"
                   :key="option.id"
-                  :value="option.answer"
+                  :value="choiceOptionLabel(option)"
                 >
-                  {{ option.answer }}
+                  {{ choiceOptionLabel(option) }}
                 </option>
               </select>
               <input

@@ -7,7 +7,11 @@ export function paintQrScannerTrack(detectedCodes, ctx) {
   }
 
   for (const detected of detectedCodes) {
-    const { x, y, width, height } = detected.boundingBox
+    const box = detected?.boundingBox
+    if (!box) {
+      continue
+    }
+    const { x, y, width, height } = box
     ctx.lineWidth = 2.5
     ctx.strokeStyle = BOX_DETECTED
     ctx.strokeRect(x, y, width, height)

@@ -1,6 +1,8 @@
 const POSITION_FIELD_KEYS = new Set(['attendee_email', 'company', 'job_title'])
 
-const STANDARD_POPUP_FIELD_KEYS = new Set(['company', 'job_title', 'attendee_email', 'seat'])
+const STANDARD_POPUP_FIELD_KEYS = new Set(['company', 'job_title'])
+
+const STANDARD_EDIT_FIELD_KEYS = new Set(['company', 'job_title', 'attendee_email'])
 
 const CHOICE_QUESTION_TYPES = new Set(['C', 'L', 'M'])
 
@@ -18,7 +20,7 @@ export function questionIdFromFieldKey(fieldKey) {
 
 export function normalizeDisplayPopupFieldKey(fieldKey) {
   const key = String(fieldKey || '').trim()
-  if (!key || key === 'attendee_name') {
+  if (!key || key === 'attendee_name' || key === 'attendee_email') {
     return null
   }
   if (STANDARD_POPUP_FIELD_KEYS.has(key)) {
@@ -31,6 +33,34 @@ export function normalizeDisplayPopupFieldKey(fieldKey) {
     return `question_${key}`
   }
   return null
+}
+
+export function normalizeEditFieldKey(fieldKey) {
+  const key = String(fieldKey || '').trim()
+  if (!key || key === 'attendee_name') {
+    return null
+  }
+  if (STANDARD_EDIT_FIELD_KEYS.has(key)) {
+    return key
+  }
+  if (key.startsWith('question_')) {
+    return key
+  }
+  if (/^\d+$/.test(key)) {
+    return `question_${key}`
+  }
+  return null
+}
+
+export function normalizeEditFieldKeys(displayFieldKeys = []) {
+  const normalized = []
+  for (const fieldKey of displayFieldKeys) {
+    const key = normalizeEditFieldKey(fieldKey)
+    if (key && !normalized.includes(key)) {
+      normalized.push(key)
+    }
+  }
+  return normalized
 }
 
 export function normalizeDisplayPopupFields(displayFieldKeys = []) {
@@ -79,7 +109,41 @@ function readQuestionFieldValue(fieldKey, message = {}) {
     return ''
   }
   const answer = findAnswerByQuestionId(message.answers, questionId)
-  return answer?.answer || ''
+  return readLocalizedText(answer?.answer, '')
+}
+
+export function readLocalizedText(value, fallback = '') {
+  if (!value) {
+    return fallback
+  }
+  if (typeof value === 'string') {
+    return value
+  }
+  if (typeof value === 'object') {
+    return value.en || value[Object.keys(value)[0]] || fallback
+  }
+  return String(value)
+}
+
+export function choiceOptionLabel(option) {
+  return readLocalizedText(option?.answer, '')
+}
+
+function findChoiceOption(options, value) {
+  const normalizedValue = String(value ?? '')
+  return (options || []).find((entry) => {
+    if (String(entry.id) === normalizedValue) {
+      return true
+    }
+    const label = choiceOptionLabel(entry)
+    if (label === normalizedValue) {
+      return true
+    }
+    if (typeof entry.answer === 'object' && entry.answer !== null) {
+      return JSON.stringify(entry.answer) === normalizedValue
+    }
+    return String(entry.answer ?? '') === normalizedValue
+  })
 }
 
 export function buildEditableAttendeeState(message = {}, displayFieldKeys = []) {
@@ -102,7 +166,7 @@ export function buildEditableAttendeeState(message = {}, displayFieldKeys = []) 
 
 export function getAttendeeEditFieldKeys(displayFieldKeys = []) {
   const keys = ['attendee_name']
-  for (const fieldKey of normalizeDisplayPopupFields(displayFieldKeys)) {
+  for (const fieldKey of normalizeEditFieldKeys(displayFieldKeys)) {
     if (!keys.includes(fieldKey)) {
       keys.push(fieldKey)
     }
@@ -123,15 +187,13 @@ function buildAnswerPatchEntry(fieldKey, value, questionsById, answers = []) {
       return null
     }
     if (isChoiceQuestion(question)) {
-      const option = (question.options || []).find(
-        (entry) => String(entry.answer) === String(value) || String(entry.id) === String(value)
-      )
+      const option = findChoiceOption(question.options, value)
       if (!option) {
         return null
       }
       return {
         question: questionId,
-        answer: option.answer,
+        answer: choiceOptionLabel(option),
         options: [option.id]
       }
     }
@@ -186,13 +248,11 @@ export function buildAttendeePatchPayload(editable, original, displayFieldKeys, 
         const question = questionsById[questionId]
         if (questionId && question) {
           if (isChoiceQuestion(question)) {
-            const option = (question.options || []).find(
-              (entry) => String(entry.answer) === String(nextValue) || String(entry.id) === String(nextValue)
-            )
+            const option = findChoiceOption(question.options, nextValue)
             if (option) {
               answerUpdates.push({
                 question: questionId,
-                answer: option.answer,
+                answer: choiceOptionLabel(option),
                 options: [option.id]
               })
             }
@@ -230,19 +290,6 @@ export function indexQuestionsById(questions = []) {
   return byId
 }
 
-function readLocalizedText(value, fallback = '') {
-  if (!value) {
-    return fallback
-  }
-  if (typeof value === 'string') {
-    return value
-  }
-  if (typeof value === 'object') {
-    return value.en || value[Object.keys(value)[0]] || fallback
-  }
-  return String(value)
-}
-
 export function questionLabelForField(fieldKey, questionsById, fallbackLabels = {}) {
   const normalizedKey = normalizeDisplayPopupFieldKey(fieldKey) || fieldKey
   if (fallbackLabels[normalizedKey]) {
@@ -256,8 +303,7 @@ export function questionLabelForField(fieldKey, questionsById, fallbackLabels = 
   const labels = {
     attendee_email: 'Email',
     company: 'Company',
-    job_title: 'Job title',
-    seat: 'Seat'
+    job_title: 'Job title'
   }
   return labels[normalizedKey] || normalizedKey
 }
@@ -272,12 +318,6 @@ export function readPopupFieldValue(fieldKey, message = {}) {
   }
   if (key === 'job_title') {
     return readStandardFieldValue('job_title', message)
-  }
-  if (key === 'attendee_email') {
-    return readStandardFieldValue('attendee_email', message)
-  }
-  if (key === 'seat') {
-    return message.seat || ''
   }
   if (isQuestionFieldKey(key)) {
     return readQuestionFieldValue(key, message)

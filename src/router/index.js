@@ -66,8 +66,8 @@ router.beforeEach(async (to, from, next) => {
     if (to.name === 'userAuth' && processApi.apitoken && processApi.selectedRole) {
       const isValid = await validateDeviceSession(processApi)
       if (!isValid) {
-        processApi.handleAuthError()
-        next()
+        processApi.logout({ clearRole: false, redirect: false })
+        next({ name: 'userAuth' })
         return
       }
 
@@ -101,7 +101,7 @@ router.beforeEach(async (to, from, next) => {
 
   const isValid = await validateDeviceSession(processApi)
   if (!isValid) {
-    processApi.handleAuthError()
+    processApi.logout({ clearRole: false, redirect: false })
     next({ name: 'userAuth' })
     return
   }

@@ -82,14 +82,23 @@ export async function fetchBadgePdfWithRetry(
     if (result.status === 'ready') {
       return result
     }
-    if (result.status === 'generating' && attempt < maxAttempts - 1) {
-      const waitMs = attempt < 3 ? initialDelayMs : delayMs
-      await new Promise((resolve) => setTimeout(resolve, waitMs))
-      continue
+    if (result.status === 'generating') {
+      if (attempt < maxAttempts - 1) {
+        const waitMs = attempt < 3 ? initialDelayMs : delayMs
+        await new Promise((resolve) => setTimeout(resolve, waitMs))
+        continue
+      }
+      return {
+        status: 'error',
+        detail: 'Badge generation timed out.'
+      }
     }
     return result
   }
-  return { status: 'error', detail: 'Badge generation timed out. Ensure a Celery worker is running and try again.' }
+  return {
+    status: 'error',
+    detail: 'Badge generation timed out.'
+  }
 }
 
 const PDF_PRINT_RENDER_DELAY_MS = 600

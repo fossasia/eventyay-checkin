@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import router from '@/router'
+import { redirectToUserAuth } from '@/utils/authRedirect'
 import { deviceApi, createAuthorizedDeviceApi, resolveServerUrl } from '@/utils/serverUrl'
 
 export const useEventyayApi = defineStore(
@@ -158,7 +158,7 @@ export const useEventyayApi = defineStore(
       }
     }
 
-    function logout({ clearRole = true } = {}) {
+    function logout({ clearRole = true, redirect = true } = {}) {
       const preservedRole = selectedRole.value
 
       apitoken.value = ''
@@ -182,8 +182,8 @@ export const useEventyayApi = defineStore(
         selectedRole.value = ''
       }
 
-      if (router) {
-        router.push({ name: 'userAuth' })
+      if (redirect) {
+        redirectToUserAuth()
       }
     }
 

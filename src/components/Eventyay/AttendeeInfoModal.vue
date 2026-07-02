@@ -61,9 +61,7 @@ const props = defineProps({
 
 const POPUP_FIELD_LABELS = {
   company: 'Company',
-  job_title: 'Job title',
-  attendee_email: 'Email',
-  seat: 'Seat'
+  job_title: 'Job title'
 }
 
 function formatDateTime(value) {

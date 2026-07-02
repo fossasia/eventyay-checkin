@@ -367,7 +367,7 @@ loadingStore.contentLoaded()
               <component :is="role.icon" class="h-5 w-5" width="20" height="20" style="width: 20px; height: 20px;" />
             </div>
             <div>
-              <p class="font-semibold text-body">{{ role.title }}</p>
+              <p class="font-semibold text-body">{{ role.buttonLabel }}</p>
               <p class="mt-0.5 text-sm text-body-muted">{{ role.description }}</p>
             </div>
           </button>

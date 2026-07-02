@@ -278,7 +278,6 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       variation: position?.variation || null,
       company: position?.company || hints.company || '',
       job_title: position?.job_title || hints.job_title || '',
-      seat: position?.seat?.name || position?.seat || hints.seat || '',
       answers: position?.answers || hints.answers || [],
       orderPositionId: position?.id || null,
       secret,
@@ -737,13 +736,19 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         return null
       }
 
-      // Use the list the operator picked in event setup / Configure, not whatever happens to be first in cache.
-      const selectedListId = processApi.selectedCheckInListId
-      const listsToUse = selectedListId
-        ? [String(selectedListId)]
-        : checkInLists.length
-          ? [checkInLists[0]]
-          : []
+      const selectedList = getSelectedCheckInList()
+      if (!selectedList?.id) {
+        showErrorMsg(
+          buildAttendeeMessage('No check-in lists are configured for this event.', null, normalizedSecret)
+        )
+        return null
+      }
+
+      if (String(processApi.selectedCheckInListId) !== String(selectedList.id)) {
+        processApi.setSelectedCheckInListId(selectedList.id)
+      }
+
+      const listsToUse = [Number(selectedList.id)]
       const api = createAuthorizedDeviceApi(url, apitoken, { Accept: 'application/json' })
       const checkInNonce = generateNonce()
 
@@ -839,11 +844,16 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         return redeemError
       }
 
+      const status = error?.response?.status ?? error?.status
       const fallbackMessage = isRedeemNetworkError(error)
         ? 'Check-in failed. Check your connection and try again.'
-        : getDeviceErrorMessage(error, 'This code is not valid for this event.', {
-            hideHttpStatusText: true
-          })
+        : getDeviceErrorMessage(
+            error,
+            status === 400
+              ? 'Check-in failed. Verify the active check-in list in Configure and try again.'
+              : 'This code is not valid for this event.',
+            { hideHttpStatusText: true }
+          )
       showSimpleScanError(fallbackMessage, normalizedSecret, {
         ...hints,
         errorReason: 'invalid'

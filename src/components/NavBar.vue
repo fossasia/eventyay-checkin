@@ -1,6 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import EventyayConfigurePanel from '@/components/Eventyay/EventyayConfigurePanel.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useLoadingStore } from '@/stores/loading'
@@ -8,7 +8,6 @@ import { getEventyayLogoProps, getRoleLabel } from '@/utils/session'
 import { isKioskEnvironment } from '@/utils/kioskLauncher'
 
 const route = useRoute()
-const router = useRouter()
 const processApi = useEventyayApi()
 const loadingStore = useLoadingStore()
 
@@ -56,7 +55,6 @@ const contextLabel = computed(() => {
 
 function logout() {
   processApi.logout()
-  router.push({ name: 'userAuth' })
 }
 
 function openConfigure() {
