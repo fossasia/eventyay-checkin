@@ -171,8 +171,8 @@ const submitForm = () => {
 
   const routeMap = {
     'Exhibitor': 'eventyayleedlogin',
-    'Badge Station': 'eventyaycheckin',
-    'CheckIn': 'eventyaysearchcheckin'
+    'Badge Station': 'eventyaysearchcheckin',
+    'CheckIn': 'eventyaycheckin'
   }
 
   const routeName = routeMap[selectedRole]

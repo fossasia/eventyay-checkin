@@ -5,6 +5,7 @@ import { mande } from 'mande'
 import QRCamera from '@/components/Common/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import BadgePrintPreview from '@/components/Common/BadgePrintPreview.vue'
+import CheckInResultPopup from '@/components/Common/CheckInResultPopup.vue'
 import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
@@ -649,54 +650,18 @@ const checkIn = async (order) => {
       </div>
     </div>
 
-    <div
+    <CheckInResultPopup
       v-if="(showSuccess || showError) && message?.attendee"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
-    >
-      <div class="relative w-96 rounded bg-white p-5 shadow-lg">
-        <div
-          class="bg-gray-200 text-gray-600 absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full font-medium"
-        >
-          {{ countdown }}
-        </div>
-        <h2 :class="showError ? 'text-red-600 mb-2 text-xl' : 'text-green-600 mb-2 text-xl'">
-          {{ message.message }}
-        </h2>
-        <div>
-          <p><b>Name:</b> {{ message.attendee_name || message.attendee }}</p>
-          <p><b>Email:</b> {{ message.attendee_email || 'Not provided' }}</p>
-          <p v-if="message.product_id"><b>Product:</b> {{ getCheckedInProductName(message.product_id) }}</p>
-          <p v-if="message.company"><b>Company:</b> {{ message.company }}</p>
-          <p v-if="message.job_title"><b>Job Title:</b> {{ message.job_title }}</p>
-          <div class="mt-4 flex flex-col space-y-3">
-            <StandardButton
-              v-if="badgeUrl && showSuccess"
-              type="button"
-              text="Generate Badge"
-              class="btn-primary w-full justify-center"
-              @click="openBadgePreview"
-            />
-            <div class="mt-6 flex items-center gap-2">
-              <button
-                v-if="message?.secret || message?.orderPositionId"
-                type="button"
-                class="inline-flex items-center rounded bg-success px-3 py-2 text-white hover:opacity-90"
-                aria-label="Edit attendee details"
-                @click="openEditDialog"
-              >
-                <PencilSquareIcon class="h-5 w-5" />
-              </button>
-              <StandardButton
-                type="button"
-                text="Done"
-                class="btn-info justify-center"
-                @click="closePopup"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+      :message="message"
+      :show-success="showSuccess"
+      :show-error="showError"
+      :badge-url="badgeUrl"
+      :countdown="countdown"
+      :show-edit-button="true"
+      @close="closePopup"
+      @print="openBadgePreview"
+      @edit="openEditDialog"
+    />
 
     <div
       v-if="isEditDialogOpen"
