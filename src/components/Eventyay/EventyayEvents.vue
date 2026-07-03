@@ -171,11 +171,11 @@ const submitForm = () => {
 
   const routeMap = {
     'Exhibitor': 'eventyayleedlogin',
-    'Badge Station': 'eventyaysearchcheckin',
-    'CheckIn': 'eventyaycheckin'
+    'Badge Station': 'eventyaycheckin',
+    'CheckIn': 'eventyaysearchcheckin'
   }
 
-  const routeName = routeMap[selectedRole]
+  const routeName = routeMap[processApi.selectedRole]
   if (routeName) {
     router.push({ name: routeName })
   } else {

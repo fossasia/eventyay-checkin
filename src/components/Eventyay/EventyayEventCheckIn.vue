@@ -1,5 +1,4 @@
 <script setup>
-import StandardButton from '@/components/Common/StandardButton.vue'
 import QRCamera from '@/components/Common/QRCamera.vue'
 import BadgePrintPreview from '@/components/Common/BadgePrintPreview.vue'
 import CheckInResultPopup from '@/components/Common/CheckInResultPopup.vue'
@@ -7,22 +6,27 @@ import { useLoadingStore } from '@/stores/loading'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { storeToRefs } from 'pinia'
-import { watch, ref, onUnmounted } from 'vue'
+import { watch, ref, onUnmounted, computed } from 'vue'
 
 const loadingStore = useLoadingStore()
 loadingStore.contentLoaded()
 const showPrintPreview = ref(false)
 const processEventyayCheckInStore = useProcessEventyayCheckInStore()
-const { message, showSuccess, showError, badgeUrl, isGeneratingBadge } = storeToRefs(
+const { message, showSuccess, showError, badgeUrl, isGeneratingBadge, alreadyCheckedIn } = storeToRefs(
   processEventyayCheckInStore
 )
 const processApi = useEventyayApi()
-const { apitoken, url, organizer, eventSlug, eventname, selectedRole } = processApi
+const { url, eventname } = processApi
 const AUTO_CLOSE_SECONDS = 20
+const KIOSK_OVERLAY_MS = 2500
 const countdown = ref(5)
 const timerInstance = ref(null)
 const timeoutInstance = ref(null)
 const notes = ref('')
+const kioskOverlay = ref(null)
+const kioskResetTimer = ref(null)
+
+const isBadgeStation = computed(() => processApi.selectedRole === 'Badge Station')
 
 function joinUrl(base, path) {
   return `${base.replace(/\/+$/, '')}/${String(path).replace(/^\/+/, '')}`
@@ -46,17 +50,15 @@ function stopTimer() {
   if (timeoutInstance.value) {
     clearTimeout(timeoutInstance.value)
   }
+  if (kioskResetTimer.value) {
+    clearTimeout(kioskResetTimer.value)
+    kioskResetTimer.value = null
+  }
 }
 
 function handleNotesInput() {
   stopTimer()
   countdown.value = '...'
-}
-
-function handleSave() {
-  console.log('Saving notes:', notes.value)
-  processEventyayCheckInStore.$reset()
-  stopTimer()
 }
 
 function handleCancel() {
@@ -65,7 +67,6 @@ function handleCancel() {
 }
 
 function handlePrintBadge() {
-  console.log('Printing badge...')
   if (badgeUrl.value) {
     showPrintPreview.value = true
   }
@@ -73,15 +74,27 @@ function handlePrintBadge() {
 
 function handlePrintClose() {
   showPrintPreview.value = false
+  if (isBadgeStation.value) {
+    resetKioskFlow()
+    return
+  }
   startCountdown()
 }
 
 async function handlePrint() {
   stopTimer()
-  if (badgeUrl.value) {
-    await processEventyayCheckInStore.printBadge(badgeUrl.value)
-  }
   handlePrintBadge()
+}
+
+function resetKioskFlow() {
+  stopTimer()
+  kioskOverlay.value = null
+  showPrintPreview.value = false
+  processEventyayCheckInStore.$reset()
+}
+
+function scheduleKioskReset(delay = KIOSK_OVERLAY_MS) {
+  kioskResetTimer.value = setTimeout(resetKioskFlow, delay)
 }
 
 watch([showSuccess, showError], ([newSuccess, newError], [oldSuccess, oldError]) => {
@@ -91,15 +104,38 @@ watch([showSuccess, showError], ([newSuccess, newError], [oldSuccess, oldError])
 })
 
 function showPopup() {
+  if (isBadgeStation.value) {
+    if (showError.value) {
+      kioskOverlay.value = 'error'
+      scheduleKioskReset()
+      return
+    }
+
+    if (alreadyCheckedIn.value) {
+      kioskOverlay.value = 'already'
+      scheduleKioskReset()
+      return
+    }
+
+    if (showSuccess.value) {
+      if (badgeUrl.value) {
+        kioskOverlay.value = 'printing'
+        handlePrintBadge()
+      } else {
+        kioskOverlay.value = 'error'
+        scheduleKioskReset()
+      }
+      return
+    }
+  }
+
   notes.value = ''
   startCountdown()
-  if (selectedRole === "Badge Station") { handlePrint() }
   timeoutInstance.value = setTimeout(() => {
     processEventyayCheckInStore.$reset()
   }, AUTO_CLOSE_SECONDS * 1000)
 }
 
-// Cleanup timers when component is destroyed
 onUnmounted(() => {
   stopTimer()
 })
@@ -112,9 +148,36 @@ onUnmounted(() => {
       <p name="date" class="text-gray-600 text-lg font-semibold">{{ new Date().toDateString() }}</p>
     </div>
     <QRCamera qr-type="eventyaycheckin" scan-type="Check-In" />
-    <!-- Attendee Info Popup Modal -->
+
+    <div
+      v-if="isBadgeStation && kioskOverlay"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/75"
+    >
+      <div class="max-w-md px-6 text-center text-white">
+        <template v-if="kioskOverlay === 'printing'">
+          <div
+            class="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-white/30 border-t-white"
+          ></div>
+          <p class="mt-6 text-2xl font-semibold">
+            {{ message?.attendee_name || message?.attendee }}
+          </p>
+          <p class="mt-2 text-lg">Printing badge...</p>
+        </template>
+        <template v-else-if="kioskOverlay === 'already'">
+          <p class="text-2xl font-semibold">Already checked in</p>
+          <p class="mt-3 text-lg">{{ message?.attendee_name || message?.attendee }}</p>
+          <p class="mt-2 text-sm text-white/80">Badge will not be printed again.</p>
+        </template>
+        <template v-else-if="kioskOverlay === 'error'">
+          <p class="text-2xl font-semibold text-red-300">Check-in failed</p>
+          <p v-if="message?.errorReason" class="mt-3 text-lg">{{ message.errorReason }}</p>
+          <p v-else class="mt-3 text-lg">{{ message?.message }}</p>
+        </template>
+      </div>
+    </div>
+
     <CheckInResultPopup
-      v-if="(showSuccess || showError) && message?.attendee"
+      v-if="!isBadgeStation && (showSuccess || showError) && message?.attendee"
       :message="message"
       :show-success="showSuccess"
       :show-error="showError"
@@ -128,6 +191,7 @@ onUnmounted(() => {
     <BadgePrintPreview
       v-if="showPrintPreview"
       :url="joinUrl(url, badgeUrl)"
+      :kiosk="isBadgeStation"
       @close="handlePrintClose"
     />
   </div>

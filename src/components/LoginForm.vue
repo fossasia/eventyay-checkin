@@ -26,11 +26,11 @@ if(processApi.apitoken) {
 		})
 	} else if(processApi.selectedRole === "CheckIn") {
 		router.push({
-			name: 'eventyaycheckin'
+			name: 'eventyaysearchcheckin'
 		})
 	} else if(processApi.selectedRole === "Badge Station") {
 		router.push({
-			name: 'eventyaysearchcheckin'
+			name: 'eventyaycheckin'
 		})
 	}
 }

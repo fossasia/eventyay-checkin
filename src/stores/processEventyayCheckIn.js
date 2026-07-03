@@ -12,6 +12,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   const showError = ref(false)
   const badgeUrl = ref('')
   const isGeneratingBadge = ref(false)
+  const alreadyCheckedIn = ref(false)
 
   function $reset() {
     message.value = ''
@@ -19,6 +20,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showError.value = false
     badgeUrl.value = ''
     isGeneratingBadge.value = false
+    alreadyCheckedIn.value = false
     cameraStore.qrCodeValue = ''
   }
 
@@ -203,6 +205,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           (download) => download.output === 'badge'
         )
 
+        alreadyCheckedIn.value = response.status === 'redeemed'
         badgeUrl.value = badgeDownload?.url || ''
         if (response.status === 'ok') {
           showSuccessMsg(
@@ -259,6 +262,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showError,
     badgeUrl,
     isGeneratingBadge,
+    alreadyCheckedIn,
     checkIn,
     checkInBySecret,
     printBadge,
