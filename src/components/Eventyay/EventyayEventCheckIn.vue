@@ -2,6 +2,7 @@
 import StandardButton from '@/components/Common/StandardButton.vue'
 import QRCamera from '@/components/Common/QRCamera.vue'
 import BadgePrintPreview from '@/components/Common/BadgePrintPreview.vue'
+import CheckInResultPopup from '@/components/Common/CheckInResultPopup.vue'
 import { useLoadingStore } from '@/stores/loading'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { useEventyayApi } from '@/stores/eventyayapi'
@@ -112,42 +113,18 @@ onUnmounted(() => {
     </div>
     <QRCamera qr-type="eventyaycheckin" scan-type="Check-In" />
     <!-- Attendee Info Popup Modal -->
-    <div
+    <CheckInResultPopup
       v-if="(showSuccess || showError) && message?.attendee"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
-    >
-      <div class="relative w-96 rounded bg-white p-5 shadow-lg">
-        <!-- Countdown display -->
-        <div
-          class="bg-gray-200 text-gray-600 absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full font-medium"
-        >
-          {{ countdown }}
-        </div>
-
-        <h2 :class="showError ? 'text-red-600 mb-2 text-xl' : 'text-green-600 mb-2 text-xl'">
-          {{ message.message }}
-        </h2>
-        <div>
-          <p><b>Name:</b> {{ message.attendee }}</p>
-          <div class="mt-4 flex flex-col space-y-3" @click="handleNotesInput">
-            <StandardButton
-              v-if="badgeUrl && showSuccess"
-              type="button"
-              :text="isGeneratingBadge ? 'Generating Badge...' : 'Generate Badge'"
-              :disabled="isGeneratingBadge"
-              class="btn-primary w-full justify-center"
-              @click="handlePrint"
-            />
-            <StandardButton
-              type="submit"
-              text="Done"
-              class="btn-info mt-6 w-1/4 justify-center"
-              @click="handleCancel"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+      :message="message"
+      :show-success="showSuccess"
+      :show-error="showError"
+      :badge-url="badgeUrl"
+      :countdown="countdown"
+      :is-generating-badge="isGeneratingBadge"
+      @close="handleCancel"
+      @print="handlePrint"
+      @interact="handleNotesInput"
+    />
     <BadgePrintPreview
       v-if="showPrintPreview"
       :url="joinUrl(url, badgeUrl)"
