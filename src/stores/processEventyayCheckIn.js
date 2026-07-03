@@ -19,6 +19,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showError.value = false
     badgeUrl.value = ''
     isGeneratingBadge.value = false
+    cameraStore.qrCodeValue = ''
   }
 
   function showErrorMsg(msg) {
