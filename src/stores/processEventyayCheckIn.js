@@ -141,7 +141,6 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         printFrame.style.width = '1px'
         printFrame.style.height = '1px'
         printFrame.style.opacity = '0.01'
-        printFrame.style.pointerEvents = 'none'
         document.body.appendChild(printFrame)
       }
 
@@ -149,26 +148,29 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
       return new Promise((resolve) => {
         printFrame.onload = function () {
-          try {
-            printFrame.contentWindow.print()
-            resolve(true)
-          } catch (error) {
-            console.error('Silent print failed, falling back to window.open:', error)
-            const printWindow = window.open(blobUrl, '_blank')
-            if (printWindow) {
-              printWindow.onload = () => {
-                printWindow.print()
-                resolve(true)
+          setTimeout(() => {
+            try {
+              printFrame.contentWindow.focus()
+              printFrame.contentWindow.print()
+              resolve(true)
+            } catch (error) {
+              console.error('Silent print failed, falling back to window.open:', error)
+              const printWindow = window.open(blobUrl, '_blank')
+              if (printWindow) {
+                printWindow.onload = () => {
+                  printWindow.print()
+                  resolve(true)
+                }
+              } else {
+                resolve(false)
               }
-            } else {
-              resolve(false)
+            } finally {
+              // Revoke the Object URL after a timeout to ensure printing has started
+              setTimeout(() => {
+                URL.revokeObjectURL(blobUrl)
+              }, 60000)
             }
-          } finally {
-            // Revoke the Object URL after a timeout to ensure printing has started
-            setTimeout(() => {
-              URL.revokeObjectURL(blobUrl)
-            }, 60000)
-          }
+          }, 500) // Small delay to ensure PDF is fully rendered in the iframe before printing
         }
       })
     } catch (error) {
