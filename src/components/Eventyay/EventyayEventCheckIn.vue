@@ -77,9 +77,6 @@ function handlePrintClose() {
 
 async function handlePrint() {
   stopTimer()
-  if (badgeUrl.value) {
-    await processEventyayCheckInStore.printBadge(badgeUrl.value)
-  }
   handlePrintBadge()
 }
 
@@ -92,7 +89,7 @@ watch([showSuccess, showError], ([newSuccess, newError], [oldSuccess, oldError])
 function showPopup() {
   notes.value = ''
   startCountdown()
-  if (selectedRole === "Badge Station") { handlePrint() }
+  if (processApi.selectedRole === "Badge Station") { handlePrint() }
   timeoutInstance.value = setTimeout(() => {
     processEventyayCheckInStore.$reset()
   }, AUTO_CLOSE_SECONDS * 1000)

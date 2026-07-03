@@ -39,7 +39,7 @@ const fetchPDF = async () => {
     pdfBlob.value = await response.blob()
     pdfUrl.value = URL.createObjectURL(pdfBlob.value)
     isLoading.value = false
-    if (selectedRole === "Badge Station") {
+    if (processApi.selectedRole === "Badge Station") {
       handlePrint()
       setTimeout(() => {
         emit('close')
@@ -87,18 +87,19 @@ const printStrategies = {
       }
 
       hiddenFrame.value.src = pdfUrl.value
+      setTimeout(() => hiddenFrame.value?.contentWindow?.print(), 500)
 
       hiddenFrame.value.onload = () => {
         try {
           hiddenFrame.value.contentWindow.print()
         } catch (error) {
           console.error('Silent print failed:', error)
-          this.standardPrint()
+          printStrategies.standardPrint()
         }
       }
     } catch (error) {
       console.error('Silent print preparation failed:', error)
-      this.standardPrint()
+      printStrategies.standardPrint()
     }
   }
 }

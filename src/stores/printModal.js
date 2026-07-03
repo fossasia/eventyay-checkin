@@ -80,7 +80,11 @@ export const usePrintModalStore = defineStore('printModal', () => {
       // need to use URL from same domain to prevent origin error
       let objFra = document.getElementById('printFrame')
 
-      if (process.env.NODE_ENV !== 'production') {
+      if (
+        typeof import.meta !== 'undefined' && typeof import.meta.env?.DEV === 'boolean'
+          ? import.meta.env.DEV
+          : process.env.NODE_ENV !== 'production'
+      ) {
         objFra.src = '/test-badge.pdf'
       } else {
         const pdf = await apiStore.get(true, url.task_url.substring(4))
