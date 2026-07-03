@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
+import printJS from 'print-js'
 
 const processApi = useEventyayApi()
 const { apitoken, url, organizer, eventSlug, eventname, selectedRole} = processApi
@@ -54,52 +55,28 @@ const fetchPDF = async () => {
 
 // Print Strategies
 const printStrategies = {
-  // Fallback to standard print dialog
-  standardPrint() {
-    if (!pdfUrl.value) return
-
-    const printWindow = window.open(pdfUrl.value)
-    if (printWindow) {
-      printWindow.addEventListener('load', () => {
-        try {
-          printWindow.print()
-        } catch (error) {
-          console.error('Standard print failed:', error)
-          printError.value = true
-        }
-      })
-    }
-  },
-
-  // Hidden iframe print attempt
+  // Use robust print-js library for printing PDFs in both standard and silent modes
   silentPrint() {
     if (!pdfUrl.value) return
 
     try {
-      // Create hidden iframe if it doesn't exist
-      if (!hiddenFrame.value) {
-        hiddenFrame.value = document.createElement('iframe')
-        hiddenFrame.value.style.position = 'fixed'
-        hiddenFrame.value.style.width = '1px'
-        hiddenFrame.value.style.height = '1px'
-        hiddenFrame.value.style.opacity = '0.01'
-        document.body.appendChild(hiddenFrame.value)
-      }
-
-      hiddenFrame.value.src = pdfUrl.value
-
-      hiddenFrame.value.onload = () => {
-        try {
-          hiddenFrame.value.contentWindow.print()
-        } catch (error) {
+      printJS({
+        printable: pdfUrl.value,
+        type: 'pdf',
+        showModal: false,
+        onError: (error) => {
           console.error('Silent print failed:', error)
-          this.standardPrint()
+          printError.value = true
         }
-      }
+      })
     } catch (error) {
       console.error('Silent print preparation failed:', error)
-      this.standardPrint()
+      printError.value = true
     }
+  },
+  
+  standardPrint() {
+    this.silentPrint() // printJS is perfectly suitable for standard prints too
   }
 }
 
@@ -137,9 +114,6 @@ function reload() {
 onBeforeUnmount(() => {
   if (pdfUrl.value) {
     URL.revokeObjectURL(pdfUrl.value)
-  }
-  if (hiddenFrame.value) {
-    document.body.removeChild(hiddenFrame.value)
   }
 })
 </script>

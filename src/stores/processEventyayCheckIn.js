@@ -5,6 +5,8 @@ import { mande } from 'mande'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
+import printJS from 'print-js'
+
 export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckIn', () => {
   const cameraStore = useCameraStore()
   const message = ref('')
@@ -132,45 +134,25 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       const blobUrl = URL.createObjectURL(blob)
       console.log('Opening badge for silent printing:', blobUrl)
 
-      // Create a hidden iframe for silent printing in kiosk mode
-      let printFrame = document.getElementById('silent-print-frame')
-      if (!printFrame) {
-        printFrame = document.createElement('iframe')
-        printFrame.id = 'silent-print-frame'
-        printFrame.style.position = 'fixed'
-        printFrame.style.width = '1px'
-        printFrame.style.height = '1px'
-        printFrame.style.opacity = '0.01'
-        document.body.appendChild(printFrame)
-      }
-
-      printFrame.src = blobUrl
-
       return new Promise((resolve) => {
-        printFrame.onload = function () {
-          setTimeout(() => {
-            try {
-              printFrame.contentWindow.focus()
-              printFrame.contentWindow.print()
-              resolve(true)
-            } catch (error) {
-              console.error('Silent print failed, falling back to window.open:', error)
-              const printWindow = window.open(blobUrl, '_blank')
-              if (printWindow) {
-                printWindow.onload = () => {
-                  printWindow.print()
-                  resolve(true)
-                }
-              } else {
-                resolve(false)
-              }
-            } finally {
-              // Revoke the Object URL after a timeout to ensure printing has started
-              setTimeout(() => {
-                URL.revokeObjectURL(blobUrl)
-              }, 60000)
+        try {
+          printJS({
+            printable: blobUrl,
+            type: 'pdf',
+            showModal: false,
+            onPrintDialogClose: () => resolve(true),
+            onError: (error) => {
+              console.error('Silent print failed:', error)
+              resolve(false)
             }
-          }, 500) // Small delay to ensure PDF is fully rendered in the iframe before printing
+          })
+        } catch (error) {
+          console.error('Print error:', error)
+          resolve(false)
+        } finally {
+          setTimeout(() => {
+            URL.revokeObjectURL(blobUrl)
+          }, 60000)
         }
       })
     } catch (error) {
