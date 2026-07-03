@@ -238,13 +238,10 @@ const filteredAttendees = computed(() => {
               <p class="text-base">
                 {{ attendee.name }}
               </p>
-              <p class="text-base">
-                {{ attendee.email }}
-              </p>
               <div v-if="attendee.info" class="mt-3">
                 <template v-for="(info, key) in attendee.info" :key="key">
                   <span
-                    v-if="info"
+                    v-if="info && key !== 'email'"
                     class="my-1 mr-1 inline-block rounded-full bg-secondary-light px-2 py-1 align-middle text-xs font-medium text-secondary-dark"
                     >{{ info }}</span
                   >

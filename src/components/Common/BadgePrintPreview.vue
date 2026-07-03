@@ -1,14 +1,18 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 
 const processApi = useEventyayApi()
-const { apitoken, url, organizer, eventSlug, eventname, selectedRole} = processApi
+const { apitoken } = processApi
 const props = defineProps({
   url: {
     type: String,
     required: true
+  },
+  kiosk: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -39,11 +43,11 @@ const fetchPDF = async () => {
     pdfBlob.value = await response.blob()
     pdfUrl.value = URL.createObjectURL(pdfBlob.value)
     isLoading.value = false
-    if (processApi.selectedRole === "Badge Station") {
+    if (props.kiosk) {
       handlePrint()
       setTimeout(() => {
         emit('close')
-      }, 5000)
+      }, 1500)
     }
   } catch (error) {
     console.error('Error fetching PDF:', error)
@@ -151,7 +155,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+  <div v-if="!kiosk" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
     <div class="relative rounded-lg bg-white p-4">
       <!-- Loading State -->
       <div v-if="isLoading" class="absolute inset-0 flex items-center justify-center bg-white">

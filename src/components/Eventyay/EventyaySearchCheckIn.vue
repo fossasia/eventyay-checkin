@@ -250,7 +250,7 @@ const closeEditDialog = () => {
 
 const getModifiedAttendeeFields = () => {
   const payload = {}
-  const trackedFields = ['attendee_name', 'attendee_email', 'company', 'job_title']
+  const trackedFields = ['attendee_name', 'company', 'job_title']
 
   trackedFields.forEach((field) => {
     if (editableAttendee.value[field] !== originalAttendee.value[field]) {
@@ -558,7 +558,6 @@ const checkIn = async (order) => {
             <div class="flex items-center justify-between">
               <div>
                 <h3 class="font-bold">{{ order.attendee_name }}</h3>
-                <p class="text-gray-600">{{ order.attendee_email || 'No email provided' }}</p>
                 <p class="text-gray-500 text-sm">Secret: {{ order.secret }}</p>
               </div>
               <div class="space-x-2">
@@ -673,10 +672,6 @@ const checkIn = async (order) => {
           <div>
             <label class="mb-1 block text-sm font-medium">Attendee Name</label>
             <input v-model="editableAttendee.attendee_name" type="text" class="w-full rounded border p-2" />
-          </div>
-          <div>
-            <label class="mb-1 block text-sm font-medium">Attendee Email</label>
-            <input v-model="editableAttendee.attendee_email" type="email" class="w-full rounded border p-2" />
           </div>
           <div>
             <label class="mb-1 block text-sm font-medium">Company</label>
