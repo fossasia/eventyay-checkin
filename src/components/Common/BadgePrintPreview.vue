@@ -86,17 +86,22 @@ const printStrategies = {
         document.body.appendChild(hiddenFrame.value)
       }
 
-      hiddenFrame.value.src = pdfUrl.value
-      setTimeout(() => hiddenFrame.value?.contentWindow?.print(), 500)
+      let hasPrinted = false
+      const triggerPrint = () => {
+        if (hasPrinted) return
 
-      hiddenFrame.value.onload = () => {
         try {
           hiddenFrame.value.contentWindow.print()
+          hasPrinted = true
         } catch (error) {
           console.error('Silent print failed:', error)
           printStrategies.standardPrint()
         }
       }
+
+      hiddenFrame.value.onload = triggerPrint
+      hiddenFrame.value.src = pdfUrl.value
+      setTimeout(triggerPrint, 500)
     } catch (error) {
       console.error('Silent print preparation failed:', error)
       printStrategies.standardPrint()
