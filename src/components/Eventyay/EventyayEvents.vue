@@ -175,7 +175,7 @@ const submitForm = () => {
     'CheckIn': 'eventyaycheckin'
   }
 
-  const routeName = routeMap[selectedRole]
+  const routeName = routeMap[processApi.selectedRole]
   if (routeName) {
     router.push({ name: routeName })
   } else {
