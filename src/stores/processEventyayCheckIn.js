@@ -130,19 +130,47 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       }
 
       const blobUrl = URL.createObjectURL(blob)
-      console.log('Opening badge for printing:', blobUrl)
+      console.log('Opening badge for silent printing:', blobUrl)
 
-      const printWindow = window.open(blobUrl, '_blank')
-      if (printWindow) {
-        printWindow.onload = function () {
-          printWindow.print()
-          URL.revokeObjectURL(blobUrl)
-        }
-      } else {
-        URL.revokeObjectURL(blobUrl)
+      // Create a hidden iframe for silent printing in kiosk mode
+      let printFrame = document.getElementById('silent-print-frame')
+      if (!printFrame) {
+        printFrame = document.createElement('iframe')
+        printFrame.id = 'silent-print-frame'
+        printFrame.style.position = 'fixed'
+        printFrame.style.width = '1px'
+        printFrame.style.height = '1px'
+        printFrame.style.opacity = '0.01'
+        printFrame.style.pointerEvents = 'none'
+        document.body.appendChild(printFrame)
       }
 
-      return true
+      printFrame.src = blobUrl
+
+      return new Promise((resolve) => {
+        printFrame.onload = function () {
+          try {
+            printFrame.contentWindow.print()
+            resolve(true)
+          } catch (error) {
+            console.error('Silent print failed, falling back to window.open:', error)
+            const printWindow = window.open(blobUrl, '_blank')
+            if (printWindow) {
+              printWindow.onload = () => {
+                printWindow.print()
+                resolve(true)
+              }
+            } else {
+              resolve(false)
+            }
+          } finally {
+            // Revoke the Object URL after a timeout to ensure printing has started
+            setTimeout(() => {
+              URL.revokeObjectURL(blobUrl)
+            }, 60000)
+          }
+        }
+      })
     } catch (error) {
       console.error('Error printing badge:', error)
       showErrorMsg({

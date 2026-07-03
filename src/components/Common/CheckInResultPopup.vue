@@ -3,6 +3,7 @@ import { onMounted, computed } from 'vue'
 import { PencilSquareIcon } from '@heroicons/vue/20/solid'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useLiveRegistrationStore } from '@/stores/liveRegistration'
+import { useEventyayApi } from '@/stores/eventyayapi'
 import { storeToRefs } from 'pinia'
 
 const props = defineProps({
@@ -62,6 +63,8 @@ const resolvedProductName = computed(() => {
   return `Product ID ${product_id}`
 })
 
+const processApi = useEventyayApi()
+const isBadgeStation = computed(() => processApi.selectedRole === 'Badge Station')
 const isErrorState = computed(() => props.showError)
 </script>
 
@@ -90,7 +93,7 @@ const isErrorState = computed(() => props.showError)
         <p v-if="message.job_title"><b>Job Title:</b> {{ message.job_title }}</p>
       </div>
 
-      <div class="mt-4 flex flex-col space-y-3">
+      <div v-if="!isBadgeStation" class="mt-4 flex flex-col space-y-3">
         <StandardButton
           v-if="badgeUrl && showSuccess"
           type="button"
@@ -118,6 +121,9 @@ const isErrorState = computed(() => props.showError)
             @click.stop="emit('close')"
           />
         </div>
+      </div>
+      <div v-else-if="!isErrorState && badgeUrl && showSuccess" class="mt-6 text-center text-base font-semibold text-green-600">
+        <span class="inline-block animate-pulse">Printing Badge...</span>
       </div>
     </div>
   </div>

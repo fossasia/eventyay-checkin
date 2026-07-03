@@ -66,7 +66,7 @@ function handleCancel() {
 
 function handlePrintBadge() {
   console.log('Printing badge...')
-  if (badgeUrl.value) {
+  if (badgeUrl.value && selectedRole !== 'Badge Station') {
     showPrintPreview.value = true
   }
 }
@@ -92,11 +92,29 @@ watch([showSuccess, showError], ([newSuccess, newError], [oldSuccess, oldError])
 
 function showPopup() {
   notes.value = ''
-  startCountdown()
-  if (selectedRole === "Badge Station") { handlePrint() }
-  timeoutInstance.value = setTimeout(() => {
-    processEventyayCheckInStore.$reset()
-  }, AUTO_CLOSE_SECONDS * 1000)
+  
+  if (selectedRole === 'Badge Station') {
+    handlePrint()
+    const autoCloseTimeout = showError.value ? 5000 : 2000
+    timeoutInstance.value = setTimeout(() => {
+      processEventyayCheckInStore.$reset()
+    }, autoCloseTimeout)
+    
+    countdown.value = Math.round(autoCloseTimeout / 1000)
+    timerInstance.value = setInterval(() => {
+      if (typeof countdown.value === 'number') {
+        countdown.value--
+        if (countdown.value <= 0) {
+          clearInterval(timerInstance.value)
+        }
+      }
+    }, 1000)
+  } else {
+    startCountdown()
+    timeoutInstance.value = setTimeout(() => {
+      processEventyayCheckInStore.$reset()
+    }, AUTO_CLOSE_SECONDS * 1000)
+  }
 }
 
 // Cleanup timers when component is destroyed
