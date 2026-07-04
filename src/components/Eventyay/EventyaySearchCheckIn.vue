@@ -304,31 +304,18 @@ const updatePopupAttendee = (updatedOrderPosition) => {
 }
 
 const patchAttendeeDetails = async (orderPositionId, payload) => {
-  const endpoint = `${String(url).replace(/\/+$/, '')}/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${orderPositionId}/`
-  const response = await fetch(endpoint, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Device ${apitoken}`,
-      Accept: 'application/json, text/javascript',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  })
-
-  if (!response.ok) {
-    let errorMessage = `Unable to update attendee details (status ${response.status})`
-    try {
-      const errorBody = await response.json()
-      if (errorBody?.detail || errorBody?.message) {
-        errorMessage = errorBody.detail || errorBody.message
-      }
-    } catch (error) {
-      // Keep the default message when error body is not JSON
+  const endpoint = `api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${orderPositionId}/`
+  
+  try {
+    const response = await api.patch(endpoint, payload)
+    return response
+  } catch (error) {
+    let errorMessage = `Unable to update attendee details (status ${error.response?.status || 'unknown'})`
+    if (error.body && (error.body.detail || error.body.message)) {
+      errorMessage = error.body.detail || error.body.message
     }
     throw new Error(errorMessage)
   }
-
-  return response.json()
 }
 
 const resolveOrderPositionId = async (knownOrderPositionId, attendeeSecret) => {
