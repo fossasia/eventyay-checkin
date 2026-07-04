@@ -304,31 +304,20 @@ const updatePopupAttendee = (updatedOrderPosition) => {
 }
 
 const patchAttendeeDetails = async (orderPositionId, payload) => {
-  const endpoint = `${String(url).replace(/\/+$/, '')}/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${orderPositionId}/`
-  const response = await fetch(endpoint, {
-    method: 'PATCH',
-    headers: {
-      Authorization: `Device ${apitoken}`,
-      Accept: 'application/json, text/javascript',
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify(payload)
-  })
-
-  if (!response.ok) {
-    let errorMessage = `Unable to update attendee details (status ${response.status})`
-    try {
-      const errorBody = await response.json()
-      if (errorBody?.detail || errorBody?.message) {
-        errorMessage = errorBody.detail || errorBody.message
-      }
-    } catch (error) {
-      // Keep the default message when error body is not JSON
+  const endpoint = `/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${orderPositionId}/`
+  
+  try {
+    const response = await api.patch(endpoint, payload)
+    return response
+  } catch (error) {
+    const status = error?.response?.status ?? error?.status ?? 'unknown'
+    let errorMessage = `Unable to update attendee details (status ${status})`
+    const errorBody = error?.body
+    if (errorBody?.detail || errorBody?.message) {
+      errorMessage = errorBody.detail || errorBody.message
     }
     throw new Error(errorMessage)
   }
-
-  return response.json()
 }
 
 const resolveOrderPositionId = async (knownOrderPositionId, attendeeSecret) => {
@@ -425,7 +414,7 @@ const buildSearchPath = (query) => {
     search: query,
     page_size: String(SEARCH_RESULTS_LIMIT)
   })
-  return `api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/?${params.toString()}`
+  return `/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/?${params.toString()}`
 }
 
 const searchOrders = async (query, { force = false, requestId = ++activeRequestId } = {}) => {
