@@ -5,6 +5,7 @@ import { mande } from 'mande'
 import QRCamera from '@/components/Common/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import BadgePrintPreview from '@/components/Common/BadgePrintPreview.vue'
+import CheckInResultPopup from '@/components/Common/CheckInResultPopup.vue'
 import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
@@ -249,13 +250,21 @@ const closeEditDialog = () => {
 
 const getModifiedAttendeeFields = () => {
   const payload = {}
-  const trackedFields = ['attendee_name', 'attendee_email', 'company', 'job_title']
+  const trackedFields = ['attendee_name', 'company', 'job_title']
 
   trackedFields.forEach((field) => {
-    if (editableAttendee.value[field] !== originalAttendee.value[field]) {
-      payload[field] = editableAttendee.value[field]
+    const nextValue = String(editableAttendee.value[field] || '').trim()
+    const previousValue = String(originalAttendee.value[field] || '').trim()
+    if (nextValue !== previousValue) {
+      payload[field] = nextValue
     }
   })
+
+  if (Object.keys(payload).length > 0) {
+    payload.attendee_email = String(
+      originalAttendee.value.attendee_email || editableAttendee.value.attendee_email || ''
+    ).trim()
+  }
 
   return payload
 }
@@ -283,6 +292,7 @@ const updatePopupAttendee = (updatedOrderPosition) => {
 
   message.value = {
     ...message.value,
+    secret: message.value?.secret || '',
     attendee: updatedOrderPosition.attendee_name || message.value?.attendee || '',
     attendee_name: updatedOrderPosition.attendee_name || '',
     attendee_email: updatedOrderPosition.attendee_email || '',
@@ -353,6 +363,12 @@ const saveAttendeeAndCheckIn = async () => {
   const attendeeSecret = message.value?.secret
   if (!attendeeSecret) {
     editError.value = 'Attendee details are missing for this scan.'
+    return
+  }
+
+  const attendeeName = String(editableAttendee.value.attendee_name || '').trim()
+  if (!attendeeName) {
+    editError.value = 'Attendee name is required.'
     return
   }
 
@@ -557,8 +573,8 @@ const checkIn = async (order) => {
             <div class="flex items-center justify-between">
               <div>
                 <h3 class="font-bold">{{ order.attendee_name }}</h3>
-                <p class="text-gray-600">{{ order.attendee_email || 'No email provided' }}</p>
-                <p class="text-gray-500 text-sm">Secret: {{ order.secret }}</p>
+                <p v-if="order.company" class="text-gray-600">{{ order.company }}</p>
+                <p v-if="order.job_title" class="text-gray-500 text-sm">{{ order.job_title }}</p>
               </div>
               <div class="space-x-2">
                 <button
@@ -649,54 +665,18 @@ const checkIn = async (order) => {
       </div>
     </div>
 
-    <div
+    <CheckInResultPopup
       v-if="(showSuccess || showError) && message?.attendee"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
-    >
-      <div class="relative w-96 rounded bg-white p-5 shadow-lg">
-        <div
-          class="bg-gray-200 text-gray-600 absolute right-2 top-2 flex h-8 w-8 items-center justify-center rounded-full font-medium"
-        >
-          {{ countdown }}
-        </div>
-        <h2 :class="showError ? 'text-red-600 mb-2 text-xl' : 'text-green-600 mb-2 text-xl'">
-          {{ message.message }}
-        </h2>
-        <div>
-          <p><b>Name:</b> {{ message.attendee_name || message.attendee }}</p>
-          <p><b>Email:</b> {{ message.attendee_email || 'Not provided' }}</p>
-          <p v-if="message.product_id"><b>Product:</b> {{ getCheckedInProductName(message.product_id) }}</p>
-          <p v-if="message.company"><b>Company:</b> {{ message.company }}</p>
-          <p v-if="message.job_title"><b>Job Title:</b> {{ message.job_title }}</p>
-          <div class="mt-4 flex flex-col space-y-3">
-            <StandardButton
-              v-if="badgeUrl && showSuccess"
-              type="button"
-              text="Generate Badge"
-              class="btn-primary w-full justify-center"
-              @click="openBadgePreview"
-            />
-            <div class="mt-6 flex items-center gap-2">
-              <button
-                v-if="message?.secret || message?.orderPositionId"
-                type="button"
-                class="inline-flex items-center rounded bg-success px-3 py-2 text-white hover:opacity-90"
-                aria-label="Edit attendee details"
-                @click="openEditDialog"
-              >
-                <PencilSquareIcon class="h-5 w-5" />
-              </button>
-              <StandardButton
-                type="button"
-                text="Done"
-                class="btn-info justify-center"
-                @click="closePopup"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
+      :message="message"
+      :show-success="showSuccess"
+      :show-error="showError"
+      :badge-url="badgeUrl"
+      :countdown="countdown"
+      :show-edit-button="true"
+      @close="closePopup"
+      @print="openBadgePreview"
+      @edit="openEditDialog"
+    />
 
     <div
       v-if="isEditDialogOpen"
@@ -708,10 +688,6 @@ const checkIn = async (order) => {
           <div>
             <label class="mb-1 block text-sm font-medium">Attendee Name</label>
             <input v-model="editableAttendee.attendee_name" type="text" class="w-full rounded border p-2" />
-          </div>
-          <div>
-            <label class="mb-1 block text-sm font-medium">Attendee Email</label>
-            <input v-model="editableAttendee.attendee_email" type="email" class="w-full rounded border p-2" />
           </div>
           <div>
             <label class="mb-1 block text-sm font-medium">Company</label>

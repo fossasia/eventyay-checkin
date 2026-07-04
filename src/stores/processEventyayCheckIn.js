@@ -12,6 +12,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   const showError = ref(false)
   const badgeUrl = ref('')
   const isGeneratingBadge = ref(false)
+  const alreadyCheckedIn = ref(false)
 
   function $reset() {
     message.value = ''
@@ -19,6 +20,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showError.value = false
     badgeUrl.value = ''
     isGeneratingBadge.value = false
+    alreadyCheckedIn.value = false
+    cameraStore.qrCodeValue = ''
   }
 
   function showErrorMsg(msg) {
@@ -33,13 +36,15 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showError.value = false
   }
 
-  function buildAttendeeMessage(messageText, position, secret = '') {
+  function buildAttendeeMessage(messageText, position, secret = '', errorReason = '') {
     return {
       message: messageText,
+      errorReason: errorReason,
       attendee: position?.attendee_name || 'Unknown Attendee',
       attendee_name: position?.attendee_name || '',
       attendee_email: position?.attendee_email || '',
-      product_id: position?.product || null,
+      product_id: position?.item || position?.product || null,
+      variation_id: position?.variation || null,
       company: position?.company || '',
       job_title: position?.job_title || '',
       orderPositionId: position?.id || null,
@@ -152,13 +157,9 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  function extractTicketFromQrCode(rawValue, servername) {
+  function extractTicketFromQrCode(rawValue) {
     if (!rawValue) {
       return ''
-    }
-
-    if (servername === 'Open-Event') {
-      return rawValue
     }
 
     const parsedValue = JSON.parse(rawValue)
@@ -204,6 +205,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           (download) => download.output === 'badge'
         )
 
+        alreadyCheckedIn.value = response.status === 'redeemed'
         badgeUrl.value = badgeDownload?.url || ''
         if (response.status === 'ok') {
           showSuccessMsg(
@@ -215,13 +217,27 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           )
         }
       } else {
-        showErrorMsg(buildAttendeeMessage('Check-in failed!', response?.position, normalizedSecret))
+        const errorReason = response?.reason_explanation || response?.reason || response?.message || 'Check-in failed'
+        showErrorMsg(buildAttendeeMessage('Check-in failed!', response?.position, normalizedSecret, errorReason))
       }
 
       return response
     } catch (error) {
       console.error('Fetch error:', error)
-      showErrorMsg(buildAttendeeMessage('Check-in Failed!', null, normalizedSecret))
+      const errorBody = error?.body
+      let errorReason = errorBody?.reason_explanation || errorBody?.reason || errorBody?.message || errorBody?.detail
+      
+      if (!errorReason) {
+        if (error?.response?.status === 500 || error?.status === 500) {
+          errorReason = 'This seems as the wrong ticket code'
+        } else if (error?.response?.status === 404 || error?.status === 404) {
+          errorReason = 'Ticket not found for this event.'
+        } else {
+          errorReason = error?.message || 'An unexpected error occurred.'
+        }
+      }
+
+      showErrorMsg(buildAttendeeMessage('Check-in Failed!', null, normalizedSecret, errorReason))
       return null
     }
   }
@@ -229,10 +245,9 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   async function checkIn() {
     console.log('Check-in')
     const processApi = useEventyayApi()
-    const { servername } = processApi
 
     try {
-      const secret = extractTicketFromQrCode(cameraStore.qrCodeValue, servername)
+      const secret = extractTicketFromQrCode(cameraStore.qrCodeValue)
       return await checkInBySecret(secret)
     } catch (error) {
       console.error('Invalid QR payload:', error)
@@ -247,6 +262,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showError,
     badgeUrl,
     isGeneratingBadge,
+    alreadyCheckedIn,
     checkIn,
     checkInBySecret,
     printBadge,
