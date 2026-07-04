@@ -304,15 +304,17 @@ const updatePopupAttendee = (updatedOrderPosition) => {
 }
 
 const patchAttendeeDetails = async (orderPositionId, payload) => {
-  const endpoint = `api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${orderPositionId}/`
+  const endpoint = `/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${orderPositionId}/`
   
   try {
     const response = await api.patch(endpoint, payload)
     return response
   } catch (error) {
-    let errorMessage = `Unable to update attendee details (status ${error.response?.status || 'unknown'})`
-    if (error.body && (error.body.detail || error.body.message)) {
-      errorMessage = error.body.detail || error.body.message
+    const status = error?.response?.status ?? error?.status ?? 'unknown'
+    let errorMessage = `Unable to update attendee details (status ${status})`
+    const errorBody = error?.body
+    if (errorBody?.detail || errorBody?.message) {
+      errorMessage = errorBody.detail || errorBody.message
     }
     throw new Error(errorMessage)
   }
@@ -412,7 +414,7 @@ const buildSearchPath = (query) => {
     search: query,
     page_size: String(SEARCH_RESULTS_LIMIT)
   })
-  return `api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/?${params.toString()}`
+  return `/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/?${params.toString()}`
 }
 
 const searchOrders = async (query, { force = false, requestId = ++activeRequestId } = {}) => {
