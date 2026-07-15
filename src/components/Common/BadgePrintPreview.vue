@@ -33,8 +33,7 @@ const fetchPDF = async () => {
       headers: {
         Authorization: `Device ${apitoken}`,
         Accept: 'application/json'
-      },
-      credentials: 'include'
+      }
     })
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
