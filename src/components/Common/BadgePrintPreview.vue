@@ -3,8 +3,11 @@ import { ref, onMounted, onBeforeUnmount } from 'vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 
+const MAX_RETRIES = 5
+
 const processApi = useEventyayApi()
 const { apitoken } = processApi
+
 const props = defineProps({
   url: {
     type: String,
@@ -18,41 +21,60 @@ const props = defineProps({
 
 const emit = defineEmits(['close'])
 
-// State Management
 const isLoading = ref(true)
 const printError = ref(false)
 const pdfUrl = ref(null)
 const pdfBlob = ref(null)
 const hiddenFrame = ref(null)
+let retryTimer = null
+let closeTimer = null
+let destroyed = false
 
 // PDF Fetching
-const fetchPDF = async () => {
+const fetchPDF = async (attempt = 0) => {
+  isLoading.value = true
+  printError.value = false
+
   try {
     const response = await fetch(props.url, {
       method: 'GET',
       headers: {
         Authorization: `Device ${apitoken}`,
-        Accept: 'application/json'
-      },
-      credentials: 'include'
+        Accept: 'application/pdf, application/json'
+      }
     })
+
+    if ((response.status === 202 || response.status === 409) && attempt < MAX_RETRIES) {
+      retryTimer = setTimeout(() => fetchPDF(attempt + 1), 1000)
+      return
+    }
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`)
     }
 
-    pdfBlob.value = await response.blob()
+    if ((response.headers.get('content-type') || '').includes('application/json')) {
+      const data = await response.json()
+      const base64 = data.pdf_base64 || data.base64_pdf
+      if (!base64) throw new Error('Badge is still generating')
+      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
+      pdfBlob.value = new Blob([bytes], { type: 'application/pdf' })
+    } else {
+      pdfBlob.value = await response.blob()
+    }
+
+    if (destroyed) return
     pdfUrl.value = URL.createObjectURL(pdfBlob.value)
     isLoading.value = false
     if (props.kiosk) {
       handlePrint()
-      setTimeout(() => {
-        emit('close')
-      }, 1500)
+      closeTimer = setTimeout(() => emit('close'), 1500)
     }
   } catch (error) {
+    if (destroyed) return
     console.error('Error fetching PDF:', error)
     printError.value = true
     isLoading.value = false
+    if (props.kiosk) emit('close')
   }
 }
 
@@ -113,15 +135,10 @@ const printStrategies = {
   }
 }
 
-// PDF Viewer Strategies
-// Determine best PDF viewer
-
-// Print handler with multiple strategies
 const handlePrint = () => {
-  // Try silent print first
   printStrategies.silentPrint()
 }
-// Download handler
+
 const handleDownload = () => {
   if (!pdfBlob.value) return
 
@@ -135,21 +152,23 @@ const handleDownload = () => {
   URL.revokeObjectURL(downloadUrl)
 }
 
-// Lifecycle hooks
 onMounted(() => {
   fetchPDF()
 })
 
 function reload() {
-  window.location.reload()
+  fetchPDF()
 }
 
 onBeforeUnmount(() => {
-  if (pdfUrl.value) {
-    URL.revokeObjectURL(pdfUrl.value)
-  }
+  destroyed = true
+  clearTimeout(retryTimer)
+  clearTimeout(closeTimer)
   if (hiddenFrame.value) {
     document.body.removeChild(hiddenFrame.value)
+  }
+  if (pdfUrl.value) {
+    URL.revokeObjectURL(pdfUrl.value)
   }
 })
 </script>
