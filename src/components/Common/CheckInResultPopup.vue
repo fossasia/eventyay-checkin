@@ -45,8 +45,15 @@ const getVariantEnglishName = (variant) => {
 }
 
 const resolvedProductName = computed(() => {
-  const { product_id, variation_id } = props.message
+  const { product_id, variation_id, product_name_obj, variation_name_obj } = props.message
   if (!product_id) return ''
+
+  if (product_name_obj) {
+    if (variation_name_obj) {
+      return getVariantEnglishName(variation_name_obj) || getProductEnglishName(product_name_obj)
+    }
+    return getProductEnglishName(product_name_obj)
+  }
 
   const selectedProduct = products.value.find(p => String(p.id) === String(product_id))
   if (selectedProduct) {
