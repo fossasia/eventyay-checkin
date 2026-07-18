@@ -43,8 +43,10 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       attendee: position?.attendee_name || 'Unknown Attendee',
       attendee_name: position?.attendee_name || '',
       attendee_email: position?.attendee_email || '',
-      product_id: position?.item || position?.product || null,
-      variation_id: position?.variation || null,
+      product_id: typeof (position?.item || position?.product) === 'object' ? (position?.item || position?.product)?.id : (position?.item || position?.product || null),
+      product_name_obj: typeof (position?.item || position?.product) === 'object' ? (position?.item || position?.product) : null,
+      variation_id: typeof position?.variation === 'object' ? position?.variation?.id : (position?.variation || null),
+      variation_name_obj: typeof position?.variation === 'object' ? position?.variation : null,
       company: position?.company || '',
       job_title: position?.job_title || '',
       orderPositionId: position?.id || null,
@@ -197,7 +199,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       }
 
       const api = mande(url, { headers })
-      const response = await api.post(`/api/v1/organizers/${organizer}/checkin/redeem/`, requestBody)
+      const response = await api.post(`/api/v1/organizers/${organizer}/checkin/redeem/?expand=product&expand=variation`, requestBody)
       console.log('Response:', response)
 
       if (response && (response.status === 'ok' || response.status === 'redeemed')) {
