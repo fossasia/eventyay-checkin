@@ -159,9 +159,9 @@ onUnmounted(() => {
             class="mx-auto h-16 w-16 animate-spin rounded-full border-4 border-white/30 border-t-white"
           ></div>
           <p class="mt-6 text-2xl font-semibold">
-            {{ message?.attendee_name || message?.attendee }}
+            Check-in successful.
           </p>
-          <p class="mt-2 text-lg">Printing badge...</p>
+          <p class="mt-2 text-lg">Your QR code has been registered. Your badge is now being printed. Please wait.</p>
         </template>
         <template v-else-if="kioskOverlay === 'already'">
           <p class="text-2xl font-semibold">Already checked in</p>
