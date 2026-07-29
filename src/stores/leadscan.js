@@ -16,6 +16,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
     message.value = ''
     showSuccess.value = false
     showError.value = false
+    cameraStore.qrCodeValue = ''
   }
 
   function showErrorMsg(msg) {
@@ -50,11 +51,14 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         Exhibitor: exikey
       }
 
-      const api = mande(`${url}api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/create`, {
+      const api = mande(url, {
         headers: headers
       })
 
-      const response = await api.post(requestBody)
+      const response = await api.post(
+        `/api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/create`,
+        requestBody
+      )
       if (response.success) {
         showSuccessMsg({
           message: 'Lead Scanned Successfully!',
@@ -159,10 +163,10 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         Accept: 'application/json',
         Exhibitor: exikey
       }
-      const api = mande(`${url}api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/retrieve`, {
+      const api = mande(url, {
         headers: headers
       })
-      const response = await api.get()
+      const response = await api.get(`/api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/retrieve`)
       if (response.success) {
         downloadCSV(response.leads)
       }
