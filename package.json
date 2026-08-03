@@ -36,7 +36,7 @@
     "eslint-plugin-cypress": "^2.13.3",
     "eslint-plugin-vue": "^9.11.0",
     "jsdom": "^28.1.0",
-    "postcss": "^8.5.14",
+    "postcss": "^8.5.25",
     "prettier": "^3.0.3",
     "prettier-plugin-organize-imports": "^3.2.3",
     "prettier-plugin-svelte": "^3.5.0",
