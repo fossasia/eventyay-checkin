@@ -51,19 +51,16 @@ function handleNotesInput() {
 
 async function handleSave() {
   const { url, organizer, eventSlug, apitoken, exikey } = processApi
-  const api = mande(
-    `${url}api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/${currentLeadId.value}/update`,
-    {
-      headers: {
-        Authorization: `Device ${apitoken}`,
-        Accept: 'application/json',
-        Exhibitor: exikey
-      }
+  const api = mande(url, {
+    headers: {
+      Authorization: `Device ${apitoken}`,
+      Accept: 'application/json',
+      Exhibitor: exikey
     }
-  )
+  })
 
   try {
-    await api.post({
+    await api.post(`/api/v1/event/${organizer}/${eventSlug}/exhibitors/lead/${currentLeadId.value}/update`, {
       note: notes.value,
       tags: currentTags.value
     })
@@ -80,9 +77,8 @@ function handleCancel() {
   leadScanStore.$reset()
 }
 
-// Show popup for success or when we have attendee info (409 case)
 watch([showSuccess, showError], ([newSuccess, newError]) => {
-  if (newSuccess || (newError && message.value.attendee)) {
+  if (newSuccess || newError) {
     showPopup()
   }
 })
@@ -114,7 +110,7 @@ function showPopup() {
     />
     <!-- Attendee Info Popup Modal -->
     <div
-      v-if="(showSuccess || showError) && message.attendee"
+      v-if="showSuccess || showError"
       class="fixed inset-0 flex items-center justify-center"
     >
       <div class="relative w-1/3 rounded bg-white p-5 shadow-lg">
@@ -128,7 +124,7 @@ function showPopup() {
         <h2 :class="showError ? 'mb-2 text-xl text-danger' : 'mb-2 text-xl text-success'">
           {{ message.message }}
         </h2>
-        <div>
+        <div v-if="message.attendee">
           <p><b>Name:</b> {{ message.attendee.name || 'No name provided' }}</p>
           <p><b>Email:</b> {{ message.attendee.email || 'No email provided' }}</p>
           <div class="mt-2" @click="handleNotesInput">

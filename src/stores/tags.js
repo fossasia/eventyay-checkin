@@ -13,7 +13,7 @@ export const useTagStore = defineStore('tags', () => {
     const { url, organizer, eventSlug, apitoken, exikey } = processApi
 
     try {
-      const api = mande(`${url}api/v1/event/${organizer}/${eventSlug}/exhibitors/tags`, {
+      const api = mande(url, {
         headers: {
           Authorization: `Device ${apitoken}`,
           Accept: 'application/json',
@@ -21,7 +21,7 @@ export const useTagStore = defineStore('tags', () => {
         }
       })
 
-      const response = await api.get()
+      const response = await api.get(`/api/v1/event/${organizer}/${eventSlug}/exhibitors/tags`)
       if (response.success) {
         availableTags.value = response.tags
       }
