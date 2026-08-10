@@ -8,6 +8,7 @@ export const useCameraStore = defineStore('camera', () => {
   const cameraDevices = ref([])
   const paused = ref(false)
   const qrCodeValue = ref(null)
+  const isProcessing = ref(false)
 
   function $reset() {
     selectedCameraId.value = {
@@ -16,21 +17,29 @@ export const useCameraStore = defineStore('camera', () => {
     paused.value = false
     cameraDevices.value = []
     qrCodeValue.value = null
+    isProcessing.value = false
+  }
+
+  function clearLastScan() {
+    qrCodeValue.value = null
+    isProcessing.value = false
   }
 
   function toggleCameraSide() {
-    // get length of devices
-    // if length is 1, then toggle is not possible
     const qty = cameraDevices.value.length
     if (qty <= 1) {
       return false
     }
 
-    const index = cameraDevices.value.findIndex((device) => {
-      return device.id === selectedCameraId.value.deviceId
-    })
+    const currentId = selectedCameraId.value.deviceId
+    if (currentId === 'environment' || currentId === 'user') {
+      selectedCameraId.value = {
+        deviceId: cameraDevices.value[0].id
+      }
+      return true
+    }
 
-    // selected device is the next index, wrapping to the first camera
+    const index = cameraDevices.value.findIndex((device) => device.id === currentId)
     const currentIndex = index >= 0 ? index : 0
     const nextIndex = (currentIndex + 1) % qty
     selectedCameraId.value = {
@@ -39,33 +48,10 @@ export const useCameraStore = defineStore('camera', () => {
     return true
   }
 
-  function paintOutline(detectedCodes, ctx) {
-    for (const detectedCode of detectedCodes) {
-      qrCodeValue.value = detectedCode.rawValue
-      const [firstPoint, ...otherPoints] = detectedCode.cornerPoints
-      ctx.strokeStyle = 'red'
-      ctx.strokeWidth = 5
-
-      ctx.beginPath()
-      ctx.moveTo(firstPoint.x, firstPoint.y)
-      for (const { x, y } of otherPoints) {
-        ctx.lineTo(x, y)
-      }
-      ctx.lineTo(firstPoint.x, firstPoint.y)
-      ctx.closePath()
-      ctx.stroke()
-    }
-  }
-
-  const selected = {
-    text: 'outline',
-    value: paintOutline
-  }
-
   function logErrors(error) {
     console.error(error)
     if (error.name === 'NotAllowedError') {
-      console.error('You need to grant this page permission to access your camera and microphone.')
+      console.error('You need to grant this page permission to access your camera.')
     }
   }
 
@@ -74,9 +60,10 @@ export const useCameraStore = defineStore('camera', () => {
     paused,
     cameraDevices,
     qrCodeValue,
+    isProcessing,
     $reset,
+    clearLastScan,
     toggleCameraSide,
-    selected,
     logErrors
   }
 })
