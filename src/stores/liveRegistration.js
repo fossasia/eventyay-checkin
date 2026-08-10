@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
-import { mande } from 'mande'
+import { createAuthorizedDeviceApi } from '@/utils/serverUrl'
+import { raiseIfDeviceApiError } from '@/utils/deviceErrors'
 import { ref } from 'vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 
@@ -22,20 +23,16 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
 
   function createApiClient() {
     const processApi = useEventyayApi()
-    const { apitoken, url } = processApi
-    return mande(url, {
-      headers: {
-        Authorization: `Device ${apitoken}`,
-        Accept: 'application/json',
-        'Content-Type': 'application/json'
-      }
+    processApi.refreshServerUrl()
+    return createAuthorizedDeviceApi(processApi.url, processApi.apitoken, {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
     })
   }
 
   function getApiContext() {
     const processApi = useEventyayApi()
-    const { organizer, eventSlug } = processApi
-    return { organizer, eventSlug }
+    return { organizer: processApi.organizer, eventSlug: processApi.eventSlug }
   }
 
   async function fetchProducts({ force = false } = {}) {
@@ -53,9 +50,14 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
       )
 
       const fetchedProducts = Array.isArray(response?.results) ? response.results : []
-      products.value = fetchedProducts.filter((product) => product?.active !== false)
+      products.value = fetchedProducts.filter(
+        (product) => product?.active !== false && product?.admission !== false
+      )
       productsLoaded.value = true
       return products.value
+    } catch (err) {
+      raiseIfDeviceApiError(err, useEventyayApi())
+      throw err
     } finally {
       isLoadingProducts.value = false
     }
@@ -66,51 +68,89 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
     const attendeeEmail = String(attendee.attendee_email || '').trim()
     const attendeeCompany = String(attendee.company || '').trim()
     const attendeeJobTitle = String(attendee.job_title || '').trim()
+    const product = products.value.find((entry) => String(entry.id) === String(productId))
+    const variationId =
+      product?.has_variations && product?.variations?.length
+        ? Number(product.variations[0].id)
+        : null
+
+    if (product?.has_variations && !variationId) {
+      throw new Error('Selected product requires a variation, but none are available.')
+    }
 
     return {
       email: attendeeEmail,
       locale: 'en',
       sales_channel: 'web',
-      payment_provider: 'banktransfer',
+      payment_provider: 'manual',
+      send_email: false,
       invoice_address: {
         ...DEFAULT_INVOICE_ADDRESS,
         company: attendeeCompany,
         name_parts: {
-          full_name: attendeeName
-        }
+          full_name: attendeeName,
+        },
       },
       positions: [
         {
           positionid: 1,
           product: Number(productId),
-          variation: null,
-          attendee_name: attendeeName,
+          variation: variationId,
+          attendee_name_parts: {
+            full_name: attendeeName,
+          },
           company: attendeeCompany,
           job_title: attendeeJobTitle,
           attendee_email: attendeeEmail,
           addon_to: null,
-          subevent: null
-        }
-      ]
+          subevent: null,
+        },
+      ],
     }
   }
 
   async function createOrder(attendee, productId) {
     const { organizer, eventSlug } = getApiContext()
     const api = createApiClient()
-    return api.post(
-      `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/`,
-      buildOrderPayload(attendee, productId)
-    )
+    try {
+      return await api.post(
+        `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/`,
+        buildOrderPayload(attendee, productId)
+      )
+    } catch (err) {
+      raiseIfDeviceApiError(err, useEventyayApi())
+      throw err
+    }
   }
 
   async function markOrderPaid(orderCode) {
     const { organizer, eventSlug } = getApiContext()
     const api = createApiClient()
-    return api.post(
-      `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/${orderCode}/mark_paid/`,
-      {}
-    )
+    try {
+      return await api.post(
+        `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/${orderCode}/mark_paid/`,
+        { send_email: false }
+      )
+    } catch (err) {
+      raiseIfDeviceApiError(err, useEventyayApi())
+      throw err
+    }
+  }
+
+  function pickTicketDownloadUrl(orderPosition) {
+    return (orderPosition?.downloads || []).find((entry) => entry.output === 'pdf')?.url || ''
+  }
+
+  function resolveTicketDownload(orderPosition) {
+    const positionId = orderPosition?.id || null
+    const ticketDownloadUrl = pickTicketDownloadUrl(orderPosition)
+
+    return {
+      orderPosition,
+      orderPositionId: positionId,
+      ticketDownloadUrl,
+      ticketDownloadAvailable: Boolean(ticketDownloadUrl)
+    }
   }
 
   async function registerAndMarkPaid(attendee, productId) {
@@ -123,7 +163,10 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
         throw new Error('Order was created without a valid code.')
       }
 
-      const paidOrder = await markOrderPaid(orderCode)
+      const paidOrder =
+        createdOrder?.status === 'p'
+          ? createdOrder
+          : await markOrderPaid(orderCode)
       if (!paidOrder || paidOrder.code !== orderCode || paidOrder.status !== 'p') {
         throw new Error('Order was created, but mark paid did not complete successfully.')
       }
@@ -135,11 +178,22 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
         throw new Error('Order marked paid, but ticket secret is missing.')
       }
 
+      const {
+        orderPosition: resolvedPosition,
+        orderPositionId,
+        ticketDownloadUrl,
+        ticketDownloadAvailable
+      } = resolveTicketDownload(orderPosition)
+
       return {
         createdOrder,
         paidOrder,
         secret,
-        orderCode
+        orderCode,
+        orderPosition: resolvedPosition,
+        orderPositionId,
+        ticketDownloadUrl,
+        ticketDownloadAvailable
       }
     } finally {
       isRegistering.value = false
