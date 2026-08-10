@@ -3,7 +3,6 @@ import { useCameraStore } from '@/stores/camera'
 import { useEventsStore } from '@/stores/events'
 import { usePasswordModalStore } from '@/stores/passwordModal'
 import { usePrintModalStore } from '@/stores/printModal'
-import { useProcessCheckInStore } from '@/stores/processCheckIn'
 import { useSessionsStore } from '@/stores/sessions'
 import { useStationsStore } from '@/stores/stations'
 import { useStationSelectorStore } from '@/stores/stationSelector'
@@ -16,7 +15,6 @@ export default function clearStores() {
   const eventsStore = useEventsStore()
   const passwordModalStore = usePasswordModalStore()
   const printModalStore = usePrintModalStore()
-  const processCheckInStore = useProcessCheckInStore()
   const sessionsStore = useSessionsStore()
   const stationsStore = useStationsStore()
   const stationSelectorStore = useStationSelectorStore()
@@ -28,7 +26,6 @@ export default function clearStores() {
   eventsStore.$reset()
   passwordModalStore.$reset()
   printModalStore.$reset()
-  processCheckInStore.$reset()
   sessionsStore.$reset()
   stationsStore.$reset()
   stationSelectorStore.$reset()
