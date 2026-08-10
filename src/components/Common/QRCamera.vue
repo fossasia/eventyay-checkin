@@ -1,13 +1,8 @@
 <script setup>
-import { useRoute } from 'vue-router'
 import QRCamera from '@/components/Utilities/QRCamera.vue'
 import { useCameraStore } from '@/stores/camera'
-import { useProcessRegistrationStore } from '@/stores/processRegistration'
-import { useProcessCheckInStore } from '@/stores/processCheckIn'
-import { useProcessDeviceStore } from '@/stores/processDevice'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { useLeadScanStore } from '@/stores/leadscan'
-import { storeToRefs } from 'pinia'
 
 const props = defineProps({
   qrType: {
@@ -25,44 +20,30 @@ const props = defineProps({
 })
 
 const cameraStore = useCameraStore()
-const processRegistrationStore = useProcessRegistrationStore()
-const processCheckInStore = useProcessCheckInStore()
-const processDeviceStore = useProcessDeviceStore()
 const processEventyayCheckIn = useProcessEventyayCheckInStore()
 const processLeadScan = useLeadScanStore()
 
-const route = useRoute()
-const stationId = route.params.stationId
-const scannerType = route.params.scannerType
-
 async function processQR() {
-  cameraStore.paused = true
-  if (props.qrType === 'registration') {
-    await processRegistrationStore.registerAttendeeScanner(stationId)
+  try {
+    if (props.qrType === 'eventyaycheckin') {
+      await processEventyayCheckIn.checkIn()
+    } else if (props.qrType === 'eventyaylead') {
+      await processLeadScan.scanLead()
+    }
+  } finally {
+    if (props.qrType === 'eventyaylead') {
+      cameraStore.clearLastScan()
+    }
   }
-
-  if (props.qrType === 'checkIn') {
-    await processCheckInStore.checkInAttendeeScannerToRoom(stationId, scannerType)
-  }
-  if (props.qrType === 'device') {
-    await processDeviceStore.authDevice()
-  }
-  if (props.qrType === 'eventyaycheckin') {
-    await processEventyayCheckIn.checkIn()
-  }
-  if (props.qrType === 'eventyaylead') {
-    await processLeadScan.scanLead()
-  }
-  cameraStore.paused = false
 }
 </script>
+
 <template>
-  <!-- padding to counter camera in mobile view -->
-  <div class="pt-2 text-center">
-    <h2 class="mb-3">
-      Scan QR<span v-if="scanType" class="capitalize"> - {{ scanType }}</span>
-    </h2>
-    <h3 v-if="details" class="mb-3">{{ details }}</h3>
-    <QRCamera @scanned="processQR"></QRCamera>
+  <div class="text-center">
+    <h3 v-if="scanType" class="mb-3 text-sm font-medium text-body-muted">
+      Scan QR · {{ scanType }}
+    </h3>
+    <p v-if="details" class="mb-3 text-sm text-body-muted">{{ details }}</p>
+    <QRCamera @scanned="processQR" />
   </div>
 </template>

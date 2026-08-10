@@ -2,6 +2,8 @@
 import { useNotificationStore } from '@/stores/notification'
 import SuccessNotification from '@/components/Notifications/SuccessNotification.vue'
 import ErrorNotification from '@/components/Notifications/ErrorNotification.vue'
+import WarningNotification from '@/components/Notifications/WarningNotification.vue'
+import InfoNotification from '@/components/Notifications/InfoNotification.vue'
 
 const notificationStore = useNotificationStore()
 </script>
@@ -15,10 +17,19 @@ const notificationStore = useNotificationStore()
         <SuccessNotification
           v-if="notification.type === 'success'"
           :messages="notification.messages"
-        >
-        </SuccessNotification>
-        <ErrorNotification v-if="notification.type === 'error'" :messages="notification.messages">
-        </ErrorNotification>
+        />
+        <ErrorNotification
+          v-else-if="notification.type === 'error'"
+          :messages="notification.messages"
+        />
+        <WarningNotification
+          v-else-if="notification.type === 'warning'"
+          :messages="notification.messages"
+        />
+        <InfoNotification
+          v-else-if="notification.type === 'info'"
+          :messages="notification.messages"
+        />
       </template>
     </div>
   </div>
