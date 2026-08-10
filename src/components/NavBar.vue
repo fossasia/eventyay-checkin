@@ -1,6 +1,7 @@
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
+import EventyayConfigurePanel from '@/components/Eventyay/EventyayConfigurePanel.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useLoadingStore } from '@/stores/loading'
 import { getEventyayLogoProps, getRoleLabel } from '@/utils/session'
@@ -12,9 +13,14 @@ const loadingStore = useLoadingStore()
 
 loadingStore.navbarLoaded()
 
+const showConfigurePanel = ref(false)
+
 const isAuthenticated = computed(() => Boolean(processApi.apitoken))
 const isKioskShell = computed(() => isKioskEnvironment(route))
-const showConfigure = computed(() => false)
+const showConfigure = computed(() => {
+  const role = processApi.selectedRole
+  return (role === 'CheckIn' || role === 'Badge Station') && route.name === 'eventyaycheckin'
+})
 
 const showBar = computed(() => {
   if (!isAuthenticated.value || route.name === 'userAuth') {
@@ -51,6 +57,13 @@ function logout() {
   processApi.logout()
 }
 
+function openConfigure() {
+  showConfigurePanel.value = true
+}
+
+function closeConfigure() {
+  showConfigurePanel.value = false
+}
 </script>
 
 <template>
@@ -71,6 +84,14 @@ function logout() {
 
       <div class="flex shrink-0 items-center gap-4">
         <button
+          v-if="showConfigure"
+          type="button"
+          class="text-sm font-medium text-primary transition hover:text-primary/80"
+          @click="openConfigure"
+        >
+          Configure
+        </button>
+        <button
           v-if="!isKioskShell"
           type="button"
           class="text-sm text-body-muted transition hover:text-body"
@@ -82,4 +103,5 @@ function logout() {
     </div>
   </header>
 
+  <EventyayConfigurePanel v-if="showConfigurePanel" @close="closeConfigure" />
 </template>

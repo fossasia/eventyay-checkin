@@ -20,6 +20,7 @@ import QRCamera from '@/components/Common/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import BadgePrintPreview from '@/components/Common/BadgePrintPreview.vue'
 import AttendeeInfoModal from '@/components/Eventyay/AttendeeInfoModal.vue'
+import BadgeCustomizeModal from '@/components/Eventyay/BadgeCustomizeModal.vue'
 import { useCheckinSettingsStore } from '@/stores/checkinSettings'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useEventyayEventStore } from '@/stores/eventyayEvent'
@@ -28,6 +29,7 @@ import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { useCameraStore } from '@/stores/camera'
+import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
 import { downloadPdfBlob, fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME } from '@/utils/badgePdf'
 import { waitForDesignAssets } from '@/utils/waitForDesignAssets'
 import { enterKioskShell, isKioskEnvironment } from '@/utils/kioskLauncher'
@@ -38,7 +40,7 @@ const { apitoken, url, organizer, eventSlug, selectedRole, selectedCheckInListId
 const processEventyayCheckInStore = useProcessEventyayCheckInStore()
 const checkinSettings = useCheckinSettingsStore()
 const { autoPrintEnabled } = storeToRefs(checkinSettings)
-const { message, showSuccess, showError, badgeUrl, isGeneratingBadge, availableCheckInLists, autoPrintFeedback } = storeToRefs(
+const { message, showSuccess, showError, badgeUrl, isGeneratingBadge, availableCheckInLists, autoPrintFeedback, badgeCustomizeRequest, autoPrintCustomizeOnce } = storeToRefs(
   processEventyayCheckInStore
 )
 const {
@@ -48,6 +50,10 @@ const {
   showCanceledAttendeeFromSearch,
   buildAttendeeMessage,
   getSelectedCheckInList,
+  resolveBadgeCustomization,
+  cancelBadgeCustomization,
+  openBadgeCustomization,
+  printBadgeWithOptionalCustomization
 } = processEventyayCheckInStore
 const liveRegistrationStore = useLiveRegistrationStore()
 const { products, isLoadingProducts, isRegistering } = storeToRefs(liveRegistrationStore)
@@ -97,7 +103,8 @@ const attendeeModalPaused = computed(
   () =>
     isEditDialogOpen.value ||
     showPrintPreview.value ||
-    isCheckoutConfirmOpen.value
+    isCheckoutConfirmOpen.value ||
+    Boolean(badgeCustomizeRequest.value)
 )
 
 const showAttendeeModal = computed(() => {
@@ -259,8 +266,53 @@ const openBadgePreviewFromModal = () => {
   openBadgePreview()
 }
 
+function applyBadgeCustomizationResult(customization, customizationResult) {
+  if (!message.value || !customizationResult) {
+    return
+  }
+
+  const hiddenFields = Array.isArray(customizationResult)
+    ? customizationResult
+    : customizationResult.hiddenFields
+  const fieldOverrides = Array.isArray(customizationResult)
+    ? customization?.field_overrides || {}
+    : customizationResult.fieldOverrides || {}
+
+  message.value = {
+    ...message.value,
+    badge_customization: {
+      ...customization,
+      hidden_fields: hiddenFields,
+      field_overrides: fieldOverrides
+    }
+  }
+  badgePreviewKey.value += 1
+}
+
 const openBadgeEditDialog = async () => {
-  // Badge customization lands in follow-up PR
+  const customization = message.value?.badge_customization
+  const positionId = message.value?.orderPositionId
+
+  if (!customization?.allow_customization || !customization.fields?.length) {
+    return
+  }
+
+  try {
+    const customizationResult = await openBadgeCustomization(customization, positionId, {
+      badgeUrlPath: badgeUrl.value,
+      editMode: true
+    })
+    if (!customizationResult) {
+      return
+    }
+    applyBadgeCustomizationResult(customization, customizationResult)
+    if (!isBadgeCustomizationUnchanged(customization, customizationResult)) {
+      notificationStore.addNotification(['Badge', 'Badge updated'], 'success')
+    }
+  } catch (error) {
+    console.error('Error editing badge:', error)
+    notificationStore.addNotification(['Badge', 'Unable to update badge'], 'error')
+  }
 }
 
 const handleModalPrint = async () => {
@@ -273,7 +325,9 @@ const handleModalPrint = async () => {
   }
 
   if (isBadgeStation.value) {
-    const outcome = await processEventyayCheckInStore.printBadge(badgeUrl.value)
+    const outcome = await printBadgeWithOptionalCustomization(badgeUrl.value, position, {
+      customize: false
+    })
     if (outcome === PRINT_OUTCOME.PRINTED && message.value?.orderPositionId) {
       processEventyayCheckInStore.markPrintedBadge(message.value.orderPositionId)
     }
@@ -286,6 +340,16 @@ const handleModalPrint = async () => {
       )
     }
     return
+  }
+
+  if (position.badge_customization?.allow_customization) {
+    const customizationResult = await openBadgeCustomization(position.badge_customization, position.id)
+    if (!customizationResult) {
+      return
+    }
+    if (!isBadgeCustomizationUnchanged(position.badge_customization, customizationResult)) {
+      applyBadgeCustomizationResult(position.badge_customization, customizationResult)
+    }
   }
 
   openBadgePreviewFromModal()
@@ -370,6 +434,20 @@ const openBadgePreview = () => {
     return
   }
   showPrintPreview.value = true
+}
+
+const handleBadgeCustomizePreview = async (result) => {
+  try {
+    await processEventyayCheckInStore.previewBadgeCustomization(result)
+    badgePreviewKey.value += 1
+    openBadgePreview()
+  } catch (error) {
+    console.error('Badge preview failed:', error)
+    notificationStore.addNotification(
+      ['Preview failed', error?.message || 'Could not load the badge preview.'],
+      'error'
+    )
+  }
 }
 
 const handlePrintClose = () => {
@@ -1485,6 +1563,19 @@ const openAttendeeFromSearch = async (order) => {
       @checkout-confirm="isCheckoutConfirmOpen = $event"
       @close="closePopup"
       @timeout="closePopup"
+    />
+
+    <BadgeCustomizeModal
+      v-if="badgeCustomizeRequest"
+      :fields="badgeCustomizeRequest.customization.fields"
+      :hidden-fields="badgeCustomizeRequest.customization.hidden_fields || []"
+      :field-overrides="badgeCustomizeRequest.customization.field_overrides || {}"
+      :allow-badge-editing="Boolean(badgeCustomizeRequest.customization.allow_badge_editing)"
+      :show-preview="Boolean(badgeCustomizeRequest.badgeUrlPath || badgeUrl)"
+      :mode="badgeCustomizeRequest.editMode ? 'edit' : 'print'"
+      @preview="handleBadgeCustomizePreview"
+      @confirm="resolveBadgeCustomization"
+      @cancel="cancelBadgeCustomization"
     />
 
     <BadgePrintPreview

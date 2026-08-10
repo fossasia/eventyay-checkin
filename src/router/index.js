@@ -2,6 +2,7 @@ import EventyayEvents from '@/components/Eventyay/EventyayEvents.vue'
 import EventyayLeedLogin from '@/components/Eventyay/EventyayLeedLogin.vue'
 import EventyayUnifiedCheckIn from '@/components/Eventyay/EventyayUnifiedCheckIn.vue'
 import LeadScanning from '@/components/Eventyay/LeadScanning.vue'
+import ProfileMismatch from '@/components/Eventyay/ProfileMismatch.vue'
 import { useLoadingStore } from '@/stores/loading'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import NotFound from '@/views/NotFound.vue'
@@ -41,6 +42,11 @@ const router = createRouter({
       path: '/leadscan',
       name: 'leadscan',
       component: LeadScanning
+    },
+    {
+      path: '/profilemismatch',
+      name: 'profileMismatch',
+      component: ProfileMismatch
     },
     { path: '/:pathMatch(.*)*', name: 'NotFound', component: NotFound }
   ]
