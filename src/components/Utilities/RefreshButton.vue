@@ -7,5 +7,11 @@ function reload() {
 }
 </script>
 <template>
-  <StandardButton :text="'Refresh'" :icon="ArrowPathIcon" class="bg-primary" @click="reload" />
+  <StandardButton
+    text="Refresh"
+    :icon="ArrowPathIcon"
+    variant="white"
+    size="sm"
+    @click="reload"
+  />
 </template>
