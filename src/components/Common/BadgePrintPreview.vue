@@ -1,21 +1,21 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useRoute } from 'vue-router'
+import { XMarkIcon } from '@heroicons/vue/20/solid'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
+import { fetchBadgePdfWithRetry, printPdfBlob, cancelActivePrint } from '@/utils/badgePdf'
+import { isKioskEnvironment } from '@/utils/kioskLauncher'
 
-const MAX_RETRIES = 5
-
+const route = useRoute()
 const processApi = useEventyayApi()
-const { apitoken } = processApi
+const { apitoken: deviceApiToken, url: deviceApiUrl } = storeToRefs(processApi)
 
 const props = defineProps({
-  url: {
+  badgePath: {
     type: String,
     required: true
-  },
-  kiosk: {
-    type: Boolean,
-    default: false
   }
 })
 
@@ -25,130 +25,62 @@ const isLoading = ref(true)
 const printError = ref(false)
 const pdfUrl = ref(null)
 const pdfBlob = ref(null)
-const hiddenFrame = ref(null)
-let retryTimer = null
-let closeTimer = null
-let destroyed = false
 
-// PDF Fetching
-const fetchPDF = async (attempt = 0) => {
+const loadError = ref('')
+
+const fetchPDF = async () => {
   isLoading.value = true
   printError.value = false
+  loadError.value = ''
 
   try {
-    const response = await fetch(props.url, {
-      method: 'GET',
-      headers: {
-        Authorization: `Device ${apitoken}`,
-        Accept: 'application/pdf, application/json'
-      }
+    const result = await fetchBadgePdfWithRetry(props.badgePath, {
+      apitoken: deviceApiToken.value,
+      baseUrl: deviceApiUrl.value
     })
-
-    if ((response.status === 202 || response.status === 409) && attempt < MAX_RETRIES) {
-      retryTimer = setTimeout(() => fetchPDF(attempt + 1), 1000)
+    if (result.status !== 'ready' || !result.blob) {
+      printError.value = true
+      if (result.status === 'generating') {
+        loadError.value = 'Badge is still generating. Try Print again in a moment.'
+      } else if (result.detail) {
+        loadError.value = result.detail
+      } else {
+        loadError.value = 'Could not load the badge PDF. Check your connection and try Print again.'
+      }
       return
     }
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
 
-    if ((response.headers.get('content-type') || '').includes('application/json')) {
-      const data = await response.json()
-      const base64 = data.pdf_base64 || data.base64_pdf
-      if (!base64) throw new Error('Badge is still generating')
-      const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0))
-      pdfBlob.value = new Blob([bytes], { type: 'application/pdf' })
-    } else {
-      pdfBlob.value = await response.blob()
-    }
-
-    if (destroyed) return
-    pdfUrl.value = URL.createObjectURL(pdfBlob.value)
-    isLoading.value = false
-    if (props.kiosk) {
-      handlePrint()
-      closeTimer = setTimeout(() => emit('close'), 1500)
-    }
+    pdfBlob.value = result.blob
+    pdfUrl.value = URL.createObjectURL(result.blob)
   } catch (error) {
-    if (destroyed) return
     console.error('Error fetching PDF:', error)
     printError.value = true
+    loadError.value = 'Could not load the badge PDF. Check your connection and try Print again.'
+  } finally {
     isLoading.value = false
-    if (props.kiosk) emit('close')
   }
 }
 
-// Print Strategies
-const printStrategies = {
-  // Fallback to standard print dialog
-  standardPrint() {
-    if (!pdfUrl.value) return
-
-    const printWindow = window.open(pdfUrl.value)
-    if (printWindow) {
-      printWindow.addEventListener('load', () => {
-        try {
-          printWindow.print()
-        } catch (error) {
-          console.error('Standard print failed:', error)
-          printError.value = true
-        }
-      })
-    }
-  },
-
-  // Hidden iframe print attempt
-  silentPrint() {
-    if (!pdfUrl.value) return
-
-    try {
-      // Create hidden iframe if it doesn't exist
-      if (!hiddenFrame.value) {
-        hiddenFrame.value = document.createElement('iframe')
-        hiddenFrame.value.style.position = 'fixed'
-        hiddenFrame.value.style.width = '1px'
-        hiddenFrame.value.style.height = '1px'
-        hiddenFrame.value.style.opacity = '0.01'
-        document.body.appendChild(hiddenFrame.value)
-      }
-
-      let hasPrinted = false
-      const triggerPrint = () => {
-        if (hasPrinted) return
-
-        try {
-          hiddenFrame.value.contentWindow.print()
-          hasPrinted = true
-        } catch (error) {
-          console.error('Silent print failed:', error)
-          printStrategies.standardPrint()
-        }
-      }
-
-      hiddenFrame.value.onload = triggerPrint
-      hiddenFrame.value.src = pdfUrl.value
-      setTimeout(triggerPrint, 500)
-    } catch (error) {
-      console.error('Silent print preparation failed:', error)
-      printStrategies.standardPrint()
-    }
+const handlePrint = async () => {
+  if (!pdfBlob.value) {
+    return
   }
-}
 
-const handlePrint = () => {
-  printStrategies.silentPrint()
+  await printPdfBlob(pdfBlob.value, { silent: isKioskEnvironment(route) })
 }
 
 const handleDownload = () => {
-  if (!pdfBlob.value) return
+  if (!pdfBlob.value) {
+    return
+  }
 
   const downloadUrl = URL.createObjectURL(pdfBlob.value)
-  const a = document.createElement('a')
-  a.href = downloadUrl
-  a.download = 'badge.pdf'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
+  const anchor = document.createElement('a')
+  anchor.href = downloadUrl
+  anchor.download = 'badge.pdf'
+  document.body.appendChild(anchor)
+  anchor.click()
+  document.body.removeChild(anchor)
   URL.revokeObjectURL(downloadUrl)
 }
 
@@ -156,17 +88,8 @@ onMounted(() => {
   fetchPDF()
 })
 
-function reload() {
-  fetchPDF()
-}
-
 onBeforeUnmount(() => {
-  destroyed = true
-  clearTimeout(retryTimer)
-  clearTimeout(closeTimer)
-  if (hiddenFrame.value) {
-    document.body.removeChild(hiddenFrame.value)
-  }
+  cancelActivePrint()
   if (pdfUrl.value) {
     URL.revokeObjectURL(pdfUrl.value)
   }
@@ -174,26 +97,36 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="!kiosk" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-    <div class="relative rounded-lg bg-white p-4">
-      <!-- Loading State -->
-      <div v-if="isLoading" class="absolute inset-0 flex items-center justify-center bg-white">
-        <div class="text-center">
-          <div class="border-gray-900 h-12 w-12 animate-spin rounded-full border-b-2"></div>
-          <p class="mt-2">Loading badge preview...</p>
-        </div>
+  <div class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4">
+    <div class="card relative w-full max-w-lg p-5 pt-14">
+      <button
+        type="button"
+        class="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-surface-muted text-body transition hover:bg-surface-border hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+        aria-label="Close preview"
+        @click="emit('close')"
+      >
+        <XMarkIcon class="h-7 w-7" />
+      </button>
+      <h2 class="mb-4">Badge preview</h2>
+
+      <div v-if="isLoading" class="py-10 text-center text-sm text-body-muted">Loading badge...</div>
+
+      <div
+        v-else-if="printError"
+        class="rounded-xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger"
+      >
+        {{ loadError }}
       </div>
 
-      <!-- Error State -->
-      <div v-if="printError" class="bg-red-100 mb-4 rounded-lg p-4">
-        <p class="text-red-700">
-          Badge Might Not be ready yet, please
-          <span class="text-primary" @click="reload">refresh</span> and Try Again
-        </p>
-      </div>
+      <embed
+        v-else-if="pdfUrl"
+        :src="pdfUrl"
+        type="application/pdf"
+        title="Badge preview"
+        class="mb-4 h-[28rem] w-full rounded-xl border border-surface-border"
+      />
 
-      <!-- Action Buttons -->
-      <div class="mb-4 flex gap-2">
+      <div class="flex flex-wrap gap-2">
         <StandardButton
           type="button"
           text="Print"
@@ -204,24 +137,12 @@ onBeforeUnmount(() => {
         <StandardButton
           type="button"
           text="Download"
-          class="btn-secondary"
+          class="btn-white"
           :disabled="isLoading || !pdfBlob"
           @click="handleDownload"
         />
         <StandardButton type="button" text="Close" class="btn-white" @click="emit('close')" />
       </div>
-
-      <!-- PDF Preview -->
     </div>
   </div>
 </template>
-
-<style scoped>
-/* Ensure full visibility of PDF viewer */
-iframe,
-object {
-  width: 100%;
-  height: 100%;
-  border: none;
-}
-</style>
