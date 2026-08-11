@@ -1,22 +1,17 @@
-# Exhibitor Workflow
+# Exhibitor workflow
 
-**Step 1:** In the Login page Select Server and role `I am a Exhibitor`
-<img src="./images/login.png" alt="Login Page">
+**Step 1:** Choose **Lead Scanner** on the login page.
 
-**Step 2:** Turn on the camera and scan the QR to authenticate the device, the QR can be obtained from the eventyay organiser dashboard
-<img src="./images/deviceauth1.png" alt="Device Authentication">
+**Step 2:** Register the device with the organizer QR code or manual URL/token entry (same flow as checkin).
 
-**Step 3:** Select the event from the list of events that support exhibitors
-<img src="./images/eventselect.png" alt="Event Selection">
+**Step 3:** On **Exhibitor Events**, switch between **Current / Upcoming** and **Past** tabs, then select your event.
 
-> **Note:** Leads for past events can be downloaded even after the event ends
+<img src="./images/eventselect2.png" alt="Exhibitor event selection">
 
-**Step 4:** Enter the Auth Key provided by the organiser
-<img src="./images/exhiauth.png" alt="Exhibitor Authentication">
+**Step 4:** Complete exhibitor login for your booth.
 
-**Step 5:** Once authenticated turn on camera to perform lead scanning
-<img src="./images/leadscan.png" alt="Lead Scanning">
-The Scanned Leads can be downloaded as a CSV file by clicking the `Download Leads` button
+<img src="./images/exhiauth.png" alt="Exhibitor login">
 
-**Step 6:** Once a lead is scanned a popup will appear to show the details of the scanned lead to which Tags and Notes can be added
-<img src="./images/leadpop.png" alt="Lead Popup">
+**Step 5:** Scan attendee badges at your booth.
+
+<img src="./images/leadscan.png" alt="Lead scanning">
