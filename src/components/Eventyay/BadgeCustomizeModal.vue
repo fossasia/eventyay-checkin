@@ -27,6 +27,14 @@ const props = defineProps({
     type: String,
     default: 'print',
     validator: (value) => ['print', 'edit'].includes(value)
+  },
+  layouts: {
+    type: Array,
+    default: () => []
+  },
+  initialLayoutId: {
+    type: [Number, String],
+    default: null
   }
 })
 
@@ -34,6 +42,11 @@ const emit = defineEmits(['confirm', 'cancel', 'preview'])
 
 const selectedHidden = ref([...props.hiddenFields])
 const fieldValues = ref({})
+const selectedLayoutId = ref(
+  props.initialLayoutId != null && props.initialLayoutId !== ''
+    ? String(props.initialLayoutId)
+    : ''
+)
 
 function buildFieldValues(sourceFields, overrides) {
   const values = {}
@@ -56,11 +69,42 @@ watch(
   { immediate: true, deep: true }
 )
 
+watch(
+  () => [props.initialLayoutId, props.layouts],
+  () => {
+    if (props.initialLayoutId != null && props.initialLayoutId !== '') {
+      selectedLayoutId.value = String(props.initialLayoutId)
+      return
+    }
+    const defaultLayout = (props.layouts || []).find((layout) => layout.default)
+    if (defaultLayout) {
+      selectedLayoutId.value = String(defaultLayout.id)
+    } else if (props.layouts?.length) {
+      selectedLayoutId.value = String(props.layouts[0].id)
+    } else {
+      selectedLayoutId.value = ''
+    }
+  },
+  { immediate: true }
+)
+
 const isEditMode = computed(() => props.mode === 'edit')
 
-const headingText = computed(() =>
-  isEditMode.value ? 'Edit badge' : 'Customize your badge before printing'
+const showLayoutSelect = computed(
+  () => !isEditMode.value && Array.isArray(props.layouts) && props.layouts.length > 0
 )
+
+const hasFieldCustomization = computed(() => props.fields.length > 0)
+
+const headingText = computed(() => {
+  if (isEditMode.value) {
+    return 'Edit badge'
+  }
+  if (hasFieldCustomization.value) {
+    return 'Customize your badge before printing'
+  }
+  return 'Print badge'
+})
 
 const helperText = computed(() => {
   if (isEditMode.value) {
@@ -68,6 +112,15 @@ const helperText = computed(() => {
       return 'Choose which fields to show on the badge and edit the printed text.'
     }
     return 'Uncheck fields if you want to hide them on the badge.'
+  }
+  if (showLayoutSelect.value && hasFieldCustomization.value) {
+    if (props.allowBadgeEditing) {
+      return 'Choose a badge layout, then select fields and edit the printed text.'
+    }
+    return 'Choose a badge layout, then uncheck fields you want to hide on the printed badge.'
+  }
+  if (showLayoutSelect.value) {
+    return 'Choose which badge layout to print for this attendee.'
   }
   if (props.allowBadgeEditing) {
     return 'Choose which fields to show and edit the text that will appear on the printed badge.'
@@ -81,6 +134,16 @@ const visibleFields = computed(() =>
   props.fields.filter((field) => !selectedHidden.value.includes(field.key))
 )
 
+const canContinue = computed(() => {
+  if (hasFieldCustomization.value && visibleFields.value.length === 0) {
+    return false
+  }
+  if (showLayoutSelect.value && !selectedLayoutId.value) {
+    return false
+  }
+  return true
+})
+
 function toggleField(key) {
   if (selectedHidden.value.includes(key)) {
     selectedHidden.value = selectedHidden.value.filter((item) => item !== key)
@@ -90,9 +153,10 @@ function toggleField(key) {
 }
 
 function buildCustomizationResult() {
+  const layoutId = selectedLayoutId.value ? Number(selectedLayoutId.value) : null
   const hiddenFields = [...selectedHidden.value]
   if (!props.allowBadgeEditing) {
-    return hiddenFields
+    return { hiddenFields, layoutId }
   }
 
   const fieldOverrides = {}
@@ -108,7 +172,7 @@ function buildCustomizationResult() {
     }
   }
 
-  return { hiddenFields, fieldOverrides }
+  return { hiddenFields, fieldOverrides, layoutId }
 }
 
 function handleConfirm() {
@@ -132,7 +196,25 @@ function handleCancel() {
         {{ helperText }}
       </p>
 
-      <ul class="mt-4 space-y-3">
+      <div v-if="showLayoutSelect" class="mt-4">
+        <label for="badge-layout-select" class="text-sm font-medium text-body">Badge layout</label>
+        <select
+          id="badge-layout-select"
+          v-model="selectedLayoutId"
+          class="mt-1 w-full"
+          aria-label="Badge layout"
+        >
+          <option
+            v-for="layout in layouts"
+            :key="layout.id"
+            :value="String(layout.id)"
+          >
+            {{ layout.name }}{{ layout.default ? ' (default)' : '' }}
+          </option>
+        </select>
+      </div>
+
+      <ul v-if="hasFieldCustomization" class="mt-4 space-y-3">
         <li v-for="field in fields" :key="field.key" class="space-y-2">
           <label class="flex items-center gap-3 text-sm text-body">
             <input
@@ -153,7 +235,10 @@ function handleCancel() {
         </li>
       </ul>
 
-      <p v-if="visibleFields.length === 0" class="mt-4 text-sm text-warning-dark">
+      <p
+        v-if="hasFieldCustomization && visibleFields.length === 0"
+        class="mt-4 text-sm text-warning-dark"
+      >
         At least one field should remain visible on the badge.
       </p>
 
@@ -164,7 +249,7 @@ function handleCancel() {
           text="Preview badge"
           variant="white"
           block
-          :disabled="visibleFields.length === 0"
+          :disabled="!canContinue"
           @click="handlePreview"
         />
         <StandardButton
@@ -172,7 +257,7 @@ function handleCancel() {
           :text="confirmButtonText"
           variant="primary"
           block
-          :disabled="visibleFields.length === 0"
+          :disabled="!canContinue"
           @click="handleConfirm"
         />
         <StandardButton type="button" text="Cancel" variant="white" block @click="handleCancel" />

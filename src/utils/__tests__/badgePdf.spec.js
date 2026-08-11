@@ -1,5 +1,25 @@
-import { fetchBadgePdfWithRetry } from '@/utils/badgePdf'
+import { fetchBadgePdfWithRetry, withBadgeLayoutParam } from '@/utils/badgePdf'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+describe('withBadgeLayoutParam', () => {
+  it('appends a layout query param', () => {
+    expect(withBadgeLayoutParam('/positions/1/download/badge/', 42)).toBe(
+      '/positions/1/download/badge/?layout=42'
+    )
+  })
+
+  it('replaces an existing layout query param', () => {
+    expect(withBadgeLayoutParam('/positions/1/download/badge/?layout=1&x=2', 9)).toBe(
+      '/positions/1/download/badge/?layout=9&x=2'
+    )
+  })
+
+  it('returns the original path when layout is empty', () => {
+    expect(withBadgeLayoutParam('/positions/1/download/badge/', null)).toBe(
+      '/positions/1/download/badge/'
+    )
+  })
+})
 
 describe('fetchBadgePdfWithRetry', () => {
   afterEach(() => {

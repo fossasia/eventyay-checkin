@@ -29,8 +29,8 @@ import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { useCameraStore } from '@/stores/camera'
-import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
-import { downloadPdfBlob, fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME } from '@/utils/badgePdf'
+import { isBadgeCustomizationUnchanged, parseBadgeCustomizationResult } from '@/utils/badgeCustomization'
+import { downloadPdfBlob, fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME, withBadgeLayoutParam } from '@/utils/badgePdf'
 import { waitForDesignAssets } from '@/utils/waitForDesignAssets'
 import { enterKioskShell, isKioskEnvironment } from '@/utils/kioskLauncher'
 
@@ -40,7 +40,7 @@ const { apitoken, url, organizer, eventSlug, selectedRole, selectedCheckInListId
 const processEventyayCheckInStore = useProcessEventyayCheckInStore()
 const checkinSettings = useCheckinSettingsStore()
 const { autoPrintEnabled } = storeToRefs(checkinSettings)
-const { message, showSuccess, showError, badgeUrl, isGeneratingBadge, availableCheckInLists, autoPrintFeedback, badgeCustomizeRequest, autoPrintCustomizeOnce } = storeToRefs(
+const { message, showSuccess, showError, badgeUrl, badgeAssignedLayoutId, isGeneratingBadge, availableCheckInLists, autoPrintFeedback, badgeCustomizeRequest, autoPrintCustomizeOnce } = storeToRefs(
   processEventyayCheckInStore
 )
 const {
@@ -53,7 +53,8 @@ const {
   resolveBadgeCustomization,
   cancelBadgeCustomization,
   openBadgeCustomization,
-  printBadgeWithOptionalCustomization
+  printBadgeWithOptionalCustomization,
+  fetchBadgeLayouts
 } = processEventyayCheckInStore
 const liveRegistrationStore = useLiveRegistrationStore()
 const { products, isLoadingProducts, isRegistering } = storeToRefs(liveRegistrationStore)
@@ -80,6 +81,7 @@ const searchQuery = ref('')
 const orders = ref([])
 const loading = ref(false)
 const showPrintPreview = ref(false)
+const previewBadgePath = ref('')
 const badgePreviewKey = ref(0)
 const isEditDialogOpen = ref(false)
 const isCheckoutConfirmOpen = ref(false)
@@ -342,16 +344,41 @@ const handleModalPrint = async () => {
     return
   }
 
-  if (position.badge_customization?.allow_customization) {
-    const customizationResult = await openBadgeCustomization(position.badge_customization, position.id)
-    if (!customizationResult) {
-      return
+  const layouts = await fetchBadgeLayouts()
+  const promptResult = await openBadgeCustomization(
+    position.badge_customization || {
+      allow_customization: false,
+      allow_badge_editing: false,
+      fields: [],
+      hidden_fields: [],
+      field_overrides: {}
+    },
+    position.id,
+    {
+      badgeUrlPath: badgeUrl.value,
+      layouts,
+      initialLayoutId: badgeAssignedLayoutId.value,
+      requirePrompt: layouts.length > 0
     }
-    if (!isBadgeCustomizationUnchanged(position.badge_customization, customizationResult)) {
-      applyBadgeCustomizationResult(position.badge_customization, customizationResult)
-    }
+  )
+
+  if (layouts.length > 0 && !promptResult) {
+    return
   }
 
+  if (
+    promptResult &&
+    position.badge_customization?.allow_customization &&
+    !isBadgeCustomizationUnchanged(position.badge_customization, promptResult)
+  ) {
+    applyBadgeCustomizationResult(position.badge_customization, promptResult)
+  }
+
+  const layoutId = promptResult
+    ? parseBadgeCustomizationResult(promptResult).layoutId
+    : badgeAssignedLayoutId.value
+  previewBadgePath.value = withBadgeLayoutParam(badgeUrl.value, layoutId)
+  badgePreviewKey.value += 1
   openBadgePreviewFromModal()
 }
 
@@ -430,15 +457,22 @@ const handleCheckInAfterCheckout = async () => {
 }
 
 const openBadgePreview = () => {
-  if (!badgeUrl.value) {
+  if (!badgeUrl.value && !previewBadgePath.value) {
     return
+  }
+  if (!previewBadgePath.value) {
+    previewBadgePath.value = badgeUrl.value
   }
   showPrintPreview.value = true
 }
 
 const handleBadgeCustomizePreview = async (result) => {
   try {
-    await processEventyayCheckInStore.previewBadgeCustomization(result)
+    const path = await processEventyayCheckInStore.previewBadgeCustomization(result)
+    previewBadgePath.value = path || withBadgeLayoutParam(
+      badgeUrl.value,
+      parseBadgeCustomizationResult(result).layoutId
+    )
     badgePreviewKey.value += 1
     openBadgePreview()
   } catch (error) {
@@ -452,6 +486,7 @@ const handleBadgeCustomizePreview = async (result) => {
 
 const handlePrintClose = () => {
   showPrintPreview.value = false
+  previewBadgePath.value = ''
 }
 
 const getProductEnglishName = (product) => {
@@ -1068,6 +1103,7 @@ onMounted(async () => {
         ? Promise.resolve()
         : liveRegistrationStore.fetchProducts(),
       processEventyayCheckInStore.prefetchCheckInLists(),
+      isBadgeStation.value ? Promise.resolve() : fetchBadgeLayouts(),
       ensureEventQuestionsLoaded()
     ])
     if (!isBadgeStation.value) {
@@ -1567,21 +1603,23 @@ const openAttendeeFromSearch = async (order) => {
 
     <BadgeCustomizeModal
       v-if="badgeCustomizeRequest"
-      :fields="badgeCustomizeRequest.customization.fields"
+      :fields="badgeCustomizeRequest.customization.fields || []"
       :hidden-fields="badgeCustomizeRequest.customization.hidden_fields || []"
       :field-overrides="badgeCustomizeRequest.customization.field_overrides || {}"
       :allow-badge-editing="Boolean(badgeCustomizeRequest.customization.allow_badge_editing)"
       :show-preview="Boolean(badgeCustomizeRequest.badgeUrlPath || badgeUrl)"
       :mode="badgeCustomizeRequest.editMode ? 'edit' : 'print'"
+      :layouts="badgeCustomizeRequest.layouts || []"
+      :initial-layout-id="badgeCustomizeRequest.initialLayoutId"
       @preview="handleBadgeCustomizePreview"
       @confirm="resolveBadgeCustomization"
       @cancel="cancelBadgeCustomization"
     />
 
     <BadgePrintPreview
-      v-if="showPrintPreview && badgeUrl"
+      v-if="showPrintPreview && (previewBadgePath || badgeUrl)"
       :key="badgePreviewKey"
-      :badge-path="badgeUrl"
+      :badge-path="previewBadgePath || badgeUrl"
       @close="handlePrintClose"
     />
   </div>

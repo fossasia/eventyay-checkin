@@ -1,11 +1,12 @@
 export function parseBadgeCustomizationResult(result) {
   if (Array.isArray(result)) {
-    return { hiddenFields: result, fieldOverrides: {} }
+    return { hiddenFields: result, fieldOverrides: {}, layoutId: null }
   }
 
   return {
     hiddenFields: result?.hiddenFields || [],
-    fieldOverrides: result?.fieldOverrides || {}
+    fieldOverrides: result?.fieldOverrides || {},
+    layoutId: result?.layoutId ?? null
   }
 }
 
