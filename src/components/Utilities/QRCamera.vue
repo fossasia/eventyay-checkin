@@ -235,6 +235,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.scanner-stream {
+  transform: scaleX(-1);
+}
+
 .scanner-stream :deep(video) {
   object-fit: cover;
 }
