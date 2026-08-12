@@ -61,6 +61,8 @@ describe('fetchBadgePdfWithRetry', () => {
 
     expect(result.status).toBe('ready')
     expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0][1].headers.Accept).toContain('application/pdf')
+    expect(fetchMock.mock.calls[0][1].headers.Accept).toContain('application/json')
 
     vi.useRealTimers()
   })

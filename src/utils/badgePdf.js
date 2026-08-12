@@ -44,7 +44,7 @@ export async function fetchBadgePdf(badgePath, { baseUrl, apitoken } = {}) {
     credentials: 'omit',
     headers: {
       Authorization: `Device ${apitoken}`,
-      Accept: 'application/pdf'
+      Accept: 'application/pdf, application/json'
     }
   })
 
