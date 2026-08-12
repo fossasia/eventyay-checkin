@@ -10,7 +10,7 @@ import {
 } from '@/utils/checkInListCache'
 import { createAuthorizedDeviceApi, normalizeApiResourcePath } from '@/utils/serverUrl'
 import { DEVICE_PROFILE_DENIED_MESSAGE, getDeviceErrorMessage, handleDeviceApiError } from '@/utils/deviceErrors'
-import { fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME } from '@/utils/badgePdf'
+import { fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME, withBadgeLayoutParam } from '@/utils/badgePdf'
 import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
 import { shouldUseSilentPrint } from '@/utils/kioskLauncher'
 import { parseQrPayload } from '@/utils/session'
@@ -29,6 +29,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   const showSuccess = ref(false)
   const showError = ref(false)
   const badgeUrl = ref('')
+  const badgeAssignedLayoutId = ref(null)
+  const badgeLayouts = ref([])
   const isGeneratingBadge = ref(false)
   const checkInListCache = ref(createEmptyCheckInListCache())
   const checkInListRequestCoordinator = createCheckInListRequestCoordinator()
@@ -150,6 +152,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showSuccess.value = false
     showError.value = false
     badgeUrl.value = ''
+    badgeAssignedLayoutId.value = null
     isGeneratingBadge.value = false
   }
 
@@ -631,6 +634,39 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   function setBadgeUrlFromPosition(position) {
     const badgeDownload = position?.downloads?.find((download) => download.output === 'badge')
     badgeUrl.value = normalizeApiResourcePath(badgeDownload?.url || '')
+    badgeAssignedLayoutId.value =
+      badgeDownload?.layout != null && badgeDownload?.layout !== ''
+        ? Number(badgeDownload.layout)
+        : null
+  }
+
+  async function fetchBadgeLayouts({ force = false } = {}) {
+    const { organizer, eventSlug, url, apitoken, isReady } = getEventListContext()
+    if (!isReady) {
+      return []
+    }
+    if (!force && badgeLayouts.value.length) {
+      return badgeLayouts.value
+    }
+
+    try {
+      const api = createAuthorizedDeviceApi(url, apitoken, { Accept: 'application/json' })
+      const response = await api.get(
+        `/api/v1/organizers/${organizer}/events/${eventSlug}/badgelayouts/`
+      )
+      const results = Array.isArray(response) ? response : response?.results || []
+      badgeLayouts.value = results
+        .map((layout) => ({
+          id: layout.id,
+          name: layout.name || `Layout ${layout.id}`,
+          default: Boolean(layout.default)
+        }))
+        .sort((a, b) => Number(b.default) - Number(a.default) || String(a.name).localeCompare(String(b.name)))
+      return badgeLayouts.value
+    } catch (error) {
+      console.warn('Unable to load badge layouts:', error)
+      return badgeLayouts.value
+    }
   }
 
   function showCanceledAttendeeFromSearch(order, hints = {}) {
@@ -862,14 +898,15 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function getBadgeBlob(badgeUrlPath) {
+  async function getBadgeBlob(badgeUrlPath, { layoutId = null } = {}) {
     const { apitoken, url } = getEventListContext()
 
     if (!url || !apitoken || !badgeUrlPath) {
       return null
     }
 
-    const result = await fetchBadgePdfWithRetry(badgeUrlPath, { baseUrl: url, apitoken })
+    const pathWithLayout = withBadgeLayoutParam(badgeUrlPath, layoutId)
+    const result = await fetchBadgePdfWithRetry(pathWithLayout, { baseUrl: url, apitoken })
     if (result.status === 'ready') {
       return { blob: result.blob }
     }
@@ -1007,7 +1044,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     return printBadge(badgeUrlPath, { silent })
   }
 
-  async function printBadge(badgeUrlPath, { silent = false } = {}) {
+  async function printBadge(badgeUrlPath, { silent = false, layoutId = null } = {}) {
     if (!badgeUrlPath) {
       return PRINT_OUTCOME.FAILED
     }
@@ -1015,7 +1052,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     isGeneratingBadge.value = true
 
     try {
-      const badgeResult = await getBadgeBlob(badgeUrlPath)
+      const badgeResult = await getBadgeBlob(badgeUrlPath, { layoutId })
       if (badgeResult?.profileDenied) {
         showErrorMsg(buildAttendeeMessage(badgeResult.detail, null))
         return PRINT_OUTCOME.FAILED
@@ -1066,6 +1103,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     showSuccess,
     showError,
     badgeUrl,
+    badgeAssignedLayoutId,
+    badgeLayouts,
     isGeneratingBadge,
     availableCheckInLists,
     autoPrintFeedback,
@@ -1083,6 +1122,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     cancelBadgeCustomization,
     previewBadgeCustomization,
     openBadgeCustomization,
+    fetchBadgeLayouts,
     clearAutoPrintFeedback,
     showOfferCheckInMsg,
     showCanceledAttendeeFromSearch,

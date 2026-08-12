@@ -1,6 +1,30 @@
 import { resolveApiResourceUrl } from '@/utils/serverUrl'
 import { DEVICE_PROFILE_DENIED_MESSAGE, isDeviceProfileDeniedResponse } from '@/utils/deviceErrors'
 
+/**
+ * Append or replace a `layout` query param on a badge download path/URL.
+ */
+export function withBadgeLayoutParam(badgePath, layoutId) {
+  const path = String(badgePath || '').trim()
+  if (!path) {
+    return ''
+  }
+  if (layoutId == null || layoutId === '') {
+    return path
+  }
+
+  const hashIndex = path.indexOf('#')
+  const withoutHash = hashIndex >= 0 ? path.slice(0, hashIndex) : path
+  const hash = hashIndex >= 0 ? path.slice(hashIndex) : ''
+  const queryIndex = withoutHash.indexOf('?')
+  const base = queryIndex >= 0 ? withoutHash.slice(0, queryIndex) : withoutHash
+  const query = queryIndex >= 0 ? withoutHash.slice(queryIndex + 1) : ''
+  const params = new URLSearchParams(query)
+  params.set('layout', String(layoutId))
+  const qs = params.toString()
+  return `${base}?${qs}${hash}`
+}
+
 function decodeBase64Pdf(base64, mimeType = 'application/pdf') {
   const binary = atob(base64)
   const bytes = new Uint8Array(binary.length)
@@ -20,7 +44,7 @@ export async function fetchBadgePdf(badgePath, { baseUrl, apitoken } = {}) {
     credentials: 'omit',
     headers: {
       Authorization: `Device ${apitoken}`,
-      Accept: 'application/pdf'
+      Accept: 'application/pdf, application/json'
     }
   })
 

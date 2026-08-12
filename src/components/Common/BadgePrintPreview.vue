@@ -1,11 +1,11 @@
 <script setup>
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 import { XMarkIcon } from '@heroicons/vue/20/solid'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
-import { fetchBadgePdfWithRetry, printPdfBlob, cancelActivePrint } from '@/utils/badgePdf'
+import { fetchBadgePdfWithRetry, printPdfBlob, cancelActivePrint, withBadgeLayoutParam } from '@/utils/badgePdf'
 import { isKioskEnvironment } from '@/utils/kioskLauncher'
 
 const route = useRoute()
@@ -16,6 +16,14 @@ const props = defineProps({
   badgePath: {
     type: String,
     required: true
+  },
+  layouts: {
+    type: Array,
+    default: () => []
+  },
+  initialLayoutId: {
+    type: [Number, String],
+    default: null
   }
 })
 
@@ -25,16 +33,53 @@ const isLoading = ref(true)
 const printError = ref(false)
 const pdfUrl = ref(null)
 const pdfBlob = ref(null)
-
 const loadError = ref('')
+const selectedLayoutId = ref('')
+
+const showLayoutSelect = computed(() => Array.isArray(props.layouts) && props.layouts.length > 0)
+
+const effectiveBadgePath = computed(() =>
+  withBadgeLayoutParam(props.badgePath, selectedLayoutId.value || null)
+)
+
+function resolveInitialLayoutId() {
+  if (props.initialLayoutId != null && props.initialLayoutId !== '') {
+    return String(props.initialLayoutId)
+  }
+  const defaultLayout = (props.layouts || []).find((layout) => layout.default)
+  if (defaultLayout) {
+    return String(defaultLayout.id)
+  }
+  if (props.layouts?.length) {
+    return String(props.layouts[0].id)
+  }
+  return ''
+}
+
+watch(
+  () => [props.initialLayoutId, props.layouts],
+  () => {
+    selectedLayoutId.value = resolveInitialLayoutId()
+  },
+  { immediate: true }
+)
+
+const revokePdfUrl = () => {
+  if (pdfUrl.value) {
+    URL.revokeObjectURL(pdfUrl.value)
+    pdfUrl.value = null
+  }
+}
 
 const fetchPDF = async () => {
   isLoading.value = true
   printError.value = false
   loadError.value = ''
+  revokePdfUrl()
+  pdfBlob.value = null
 
   try {
-    const result = await fetchBadgePdfWithRetry(props.badgePath, {
+    const result = await fetchBadgePdfWithRetry(effectiveBadgePath.value, {
       apitoken: deviceApiToken.value,
       baseUrl: deviceApiUrl.value
     })
@@ -61,6 +106,17 @@ const fetchPDF = async () => {
   }
 }
 
+watch(
+  effectiveBadgePath,
+  () => {
+    if (!effectiveBadgePath.value) {
+      return
+    }
+    void fetchPDF()
+  },
+  { immediate: true }
+)
+
 const handlePrint = async () => {
   if (!pdfBlob.value) {
     return
@@ -84,15 +140,9 @@ const handleDownload = () => {
   URL.revokeObjectURL(downloadUrl)
 }
 
-onMounted(() => {
-  fetchPDF()
-})
-
 onBeforeUnmount(() => {
   cancelActivePrint()
-  if (pdfUrl.value) {
-    URL.revokeObjectURL(pdfUrl.value)
-  }
+  revokePdfUrl()
 })
 </script>
 
@@ -108,6 +158,22 @@ onBeforeUnmount(() => {
         <XMarkIcon class="h-7 w-7" />
       </button>
       <h2 class="mb-4">Badge preview</h2>
+
+      <div v-if="showLayoutSelect" class="mb-4">
+        <label for="badge-print-layout-select" class="text-sm font-medium text-body">
+          Badge layout
+        </label>
+        <select
+          id="badge-print-layout-select"
+          v-model="selectedLayoutId"
+          class="mt-1 w-full"
+          aria-label="Badge layout"
+        >
+          <option v-for="layout in layouts" :key="layout.id" :value="String(layout.id)">
+            {{ layout.name }}{{ layout.default ? ' (default)' : '' }}
+          </option>
+        </select>
+      </div>
 
       <div v-if="isLoading" class="py-10 text-center text-sm text-body-muted">Loading badge...</div>
 
