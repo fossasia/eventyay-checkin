@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
 import { canRenderBadgeLocally, renderBadgePdfFromLayout } from '@/utils/badgeRenderer'
+import { describe, expect, it } from 'vitest'
 
 describe('badgeRenderer', () => {
   const layout = {
