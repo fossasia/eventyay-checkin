@@ -11,6 +11,8 @@ import {
 import { createAuthorizedDeviceApi, normalizeApiResourcePath } from '@/utils/serverUrl'
 import { DEVICE_PROFILE_DENIED_MESSAGE, getDeviceErrorMessage, handleDeviceApiError } from '@/utils/deviceErrors'
 import { fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME, withBadgeLayoutParam } from '@/utils/badgePdf'
+import { canRenderBadgeLocally, renderBadgePdfFromLayout } from '@/utils/badgeRenderer'
+import { resolveLayoutForPosition } from '@/offline/memoryIndex'
 import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
 import { shouldUseSilentPrint } from '@/utils/kioskLauncher'
 import { parseQrPayload } from '@/utils/session'
@@ -192,10 +194,14 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }, durationMs)
   }
 
-  function queueBadgePrint(badgeUrlPath) {
+  function queueBadgePrint(badgeUrlPath, position = null) {
     void (async () => {
       try {
-        const badgeResult = await getBadgeBlob(badgeUrlPath)
+        const path = String(badgeUrlPath || '')
+        const isLocalMarker = path.startsWith('local://')
+        const badgeResult = await getBadgeBlob(isLocalMarker ? '' : path, {
+          positionHint: position || message.value
+        })
         if (!badgeResult?.blob) {
           console.warn('Badge print skipped:', badgeResult?.detail)
           return
@@ -307,7 +313,9 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       validityWindow: hints.validityWindow || '',
       admission_valid_from: position?.admission_valid_from || hints.admission_valid_from || null,
       admission_valid_until: position?.admission_valid_until || hints.admission_valid_until || null,
-      badge_customization: position?.badge_customization || hints.badge_customization || null
+      badge_customization: position?.badge_customization || hints.badge_customization || null,
+      pdf_data: position?.pdf_data || hints.pdf_data || null,
+      product: position?.product || hints.product || null
     }
   }
 
@@ -795,6 +803,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       await persistOfflineIndex(offlineSync.index, { apitoken })
     }
 
+    badgeUrl.value = 'local://offline-badge'
+
     const synthetic = {
       status: evaluation.alreadyRedeemed ? 'redeemed' : 'ok',
       position: {
@@ -1003,8 +1013,50 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function getBadgeBlob(badgeUrlPath, { layoutId = null } = {}) {
+  async function tryRenderLocalBadge(positionHint = null) {
+    const offlineSync = useOfflineSyncStore()
+    const processApi = useEventyayApi()
+    if (!offlineSync.index) {
+      await offlineSync.hydrate(processApi)
+    }
+    if (!offlineSync.index) {
+      return null
+    }
+
+    const secret = String(positionHint?.secret || message.value?.secret || '').trim()
+    const fromIndex = secret ? offlineSync.index.positionsBySecret.get(secret) : null
+    const pdfData = positionHint?.pdf_data || fromIndex?.pdfData || null
+    if (!pdfData) {
+      return null
+    }
+
+    const layout = resolveLayoutForPosition(offlineSync.index, {
+      layoutId: fromIndex?.layoutId || positionHint?.downloads?.find((d) => d.output === 'badge')?.layout,
+      product: fromIndex?.product || positionHint?.product
+    })
+    if (!canRenderBadgeLocally(layout, pdfData)) {
+      return null
+    }
+
+    return renderBadgePdfFromLayout({
+      layout,
+      pdfData,
+      size: layout.size,
+      secret: secret || fromIndex?.secret || ''
+    })
+  }
+
+  async function getBadgeBlob(badgeUrlPath, { layoutId = null, positionHint = null } = {}) {
     const { apitoken, url } = getEventListContext()
+
+    try {
+      const localBlob = await tryRenderLocalBadge(positionHint)
+      if (localBlob) {
+        return { blob: localBlob, local: true }
+      }
+    } catch (error) {
+      console.warn('Local badge render failed, falling back to server PDF', error)
+    }
 
     if (!url || !apitoken || !badgeUrlPath) {
       return null
@@ -1149,15 +1201,20 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     return printBadge(badgeUrlPath, { silent })
   }
 
-  async function printBadge(badgeUrlPath, { silent = false, layoutId = null } = {}) {
-    if (!badgeUrlPath) {
+  async function printBadge(badgeUrlPath, { silent = false, layoutId = null, position = null } = {}) {
+    const path = badgeUrlPath || badgeUrl.value || ''
+    const isLocalMarker = path.startsWith('local://')
+    if (!path && !position && !message.value) {
       return PRINT_OUTCOME.FAILED
     }
 
     isGeneratingBadge.value = true
 
     try {
-      const badgeResult = await getBadgeBlob(badgeUrlPath, { layoutId })
+      const badgeResult = await getBadgeBlob(isLocalMarker ? '' : path, {
+        layoutId,
+        positionHint: position || message.value
+      })
       if (badgeResult?.profileDenied) {
         showErrorMsg(buildAttendeeMessage(badgeResult.detail, null))
         return PRINT_OUTCOME.FAILED

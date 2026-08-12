@@ -20,8 +20,10 @@
     "@heroicons/vue": "^2.2.0",
     "dayjs": "^1.11.21",
     "mande": "^2.0.9",
+    "pdf-lib": "^1.17.1",
     "pinia": "^2.3.1",
     "pinia-plugin-persistedstate": "^4.1.2",
+    "qrcode": "^1.5.4",
     "vue": "^3.5.38",
     "vue-qrcode-reader": "^5.7.3",
     "vue-router": "^4.5.0"
@@ -44,11 +46,11 @@
     "prettier-plugin-svelte": "^3.5.2",
     "prettier-plugin-tailwindcss": "^0.5.14",
     "start-server-and-test": "^2.1.5",
-    "tailwindcss": "^3.4.19",
-    "vite": "^6.4.3",
-    "vitest": "^4.1.9",
     "svelte": "^5.56.8",
-    "typescript": "^5.8.3"
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.8.3",
+    "vite": "^6.4.3",
+    "vitest": "^4.1.9"
   },
   "overrides": {
     "esbuild": "^0.25.0",
