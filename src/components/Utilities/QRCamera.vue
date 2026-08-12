@@ -116,6 +116,21 @@ function detectedQR(detectedCodes) {
   emit('scanned')
 }
 
+/**
+ * vue-qrcode-reader keeps a global async stop/start queue. Destroying and
+ * recreating the stream in the same tick races the previous MediaStream release
+ * and leaves a black <video> (pause-frame canvas with no picture).
+ */
+const CAMERA_RESTART_DELAY_MS = 350
+
+async function remountCameraStream() {
+  destroyed.value = true
+  await nextTick()
+  await new Promise((resolve) => setTimeout(resolve, CAMERA_RESTART_DELAY_MS))
+  cameraStreamNonce.value += 1
+  destroyed.value = false
+}
+
 async function switchCamera() {
   await updateAvailableCamera()
 
@@ -124,10 +139,8 @@ async function switchCamera() {
     return
   }
 
-  destroyed.value = true
-  await nextTick()
-  cameraStreamNonce.value += 1
-  destroyed.value = false
+  cameraStore.paused = false
+  await remountCameraStream()
 }
 
 function toggleCamera() {
@@ -145,15 +158,9 @@ async function refreshCamera() {
 
   await updateAvailableCamera()
 
-  if (!isCameraOn.value) {
-    isCameraOn.value = true
-    cameraStore.paused = false
-  }
-
-  destroyed.value = true
-  await nextTick()
-  cameraStreamNonce.value += 1
-  destroyed.value = false
+  isCameraOn.value = true
+  cameraStore.paused = false
+  await remountCameraStream()
 }
 
 watch(
