@@ -14,8 +14,18 @@ import {
   wipeAllEncryptedSnapshots
 } from '@/offline/snapshotStore'
 import { flushPendingRedeems, flushPendingRegistrations } from '@/offline/offlineActions'
+import { computeSyncPercent, pageFraction } from '@/offline/syncProgress'
 
 const MAX_PAGES = 50
+
+function reportPhaseProgress(onProgress, phase, fraction = 0, detail = {}) {
+  onProgress?.({
+    phase,
+    fraction: Math.min(1, Math.max(0, fraction)),
+    percent: computeSyncPercent(phase, fraction),
+    ...detail
+  })
+}
 
 export function canUseOfflineSync(selectedRole, securityProfile) {
   if (selectedRole === 'Badge Station' || securityProfile === 'eventyay_checkin_online_kiosk') {
@@ -58,11 +68,17 @@ async function fetchJsonPage(baseUrl, apitoken, path) {
   }
 }
 
-async function fetchAllPages(baseUrl, apitoken, path, { sinceParam, sinceValue, maxPages = MAX_PAGES } = {}) {
+async function fetchAllPages(
+  baseUrl,
+  apitoken,
+  path,
+  { sinceParam, sinceValue, maxPages = MAX_PAGES, onPage } = {}
+) {
   const results = []
   let nextPath = path
   let pageGenerated = null
   let pages = 0
+  let totalCount = null
 
   while (nextPath && pages < maxPages) {
     pages += 1
@@ -76,7 +92,10 @@ async function fetchAllPages(baseUrl, apitoken, path, { sinceParam, sinceValue, 
     pageGenerated = headerCursor || pageGenerated
     const batch = Array.isArray(body) ? body : body.results || []
     results.push(...batch)
-    if (body.next) {
+    if (typeof body?.count === 'number') {
+      totalCount = body.count
+    }
+    if (body?.next) {
       try {
         const nextUrl = new URL(body.next, 'https://placeholder.local')
         nextPath = `${nextUrl.pathname}${nextUrl.search}`
@@ -86,9 +105,15 @@ async function fetchAllPages(baseUrl, apitoken, path, { sinceParam, sinceValue, 
     } else {
       nextPath = null
     }
+    onPage?.({
+      page: pages,
+      fetched: results.length,
+      count: totalCount,
+      hasMore: Boolean(nextPath)
+    })
   }
 
-  return { results, pageGenerated }
+  return { results, pageGenerated, pages, count: totalCount }
 }
 
 async function safeFetchAllPages(...args) {
@@ -118,11 +143,12 @@ export async function persistOfflineIndex(index, { apitoken }) {
   await saveEncryptedSnapshot(index.organizer, index.eventSlug, envelope)
 }
 
-async function syncOrders(url, apitoken, organizer, eventSlug, snapshot) {
+async function syncOrders(url, apitoken, organizer, eventSlug, snapshot, { onPage } = {}) {
   const base = `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/?ordering=last_modified`
   const withPdf = await safeFetchAllPages(url, apitoken, `${base}&pdf_data=true`, {
     sinceParam: 'modified_since',
-    sinceValue: snapshot.cursors.ordersModifiedSince
+    sinceValue: snapshot.cursors.ordersModifiedSince,
+    onPage
   })
   if (!withPdf.error) {
     return withPdf
@@ -130,7 +156,8 @@ async function syncOrders(url, apitoken, organizer, eventSlug, snapshot) {
   // Lean fallback: still sync secrets/names/checkins so scanning works offline.
   return safeFetchAllPages(url, apitoken, base, {
     sinceParam: 'modified_since',
-    sinceValue: snapshot.cursors.ordersModifiedSince
+    sinceValue: snapshot.cursors.ordersModifiedSince,
+    onPage
   })
 }
 
@@ -154,18 +181,27 @@ export async function runOfflineSync({
   const snapshot = memoryIndexToSnapshot(index)
   const warnings = []
 
-  onProgress?.({ phase: 'layouts' })
+  const trackPagedPhase = (phase) => (pageInfo) => {
+    reportPhaseProgress(onProgress, phase, pageFraction(pageInfo), pageInfo)
+  }
+
+  reportPhaseProgress(onProgress, 'layouts', 0)
   const layoutsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/badgelayouts/`
-  const layoutsResult = await safeFetchAllPages(url, apitoken, layoutsPath)
+  const layoutsResult = await safeFetchAllPages(url, apitoken, layoutsPath, {
+    onPage: trackPagedPhase('layouts')
+  })
   if (layoutsResult.error) {
     warnings.push('layouts')
   } else {
     mergeLayoutsIntoSnapshot(snapshot, layoutsResult.results)
   }
+  reportPhaseProgress(onProgress, 'layouts', 1)
 
-  onProgress?.({ phase: 'products' })
+  reportPhaseProgress(onProgress, 'products', 0)
   const productsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/products/`
-  const productsResult = await safeFetchAllPages(url, apitoken, productsPath)
+  const productsResult = await safeFetchAllPages(url, apitoken, productsPath, {
+    onPage: trackPagedPhase('products')
+  })
   if (!productsResult.error) {
     snapshot.products = (productsResult.results || []).filter(
       (product) => product?.active !== false && product?.admission !== false
@@ -173,18 +209,24 @@ export async function runOfflineSync({
   } else {
     warnings.push('products')
   }
+  reportPhaseProgress(onProgress, 'products', 1)
 
-  onProgress?.({ phase: 'checkinlists' })
+  reportPhaseProgress(onProgress, 'checkinlists', 0)
   const listsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/checkinlists/`
-  const listsResult = await safeFetchAllPages(url, apitoken, listsPath)
+  const listsResult = await safeFetchAllPages(url, apitoken, listsPath, {
+    onPage: trackPagedPhase('checkinlists')
+  })
   if (!listsResult.error) {
     snapshot.checkInLists = listsResult.results || []
   } else {
     warnings.push('checkinlists')
   }
+  reportPhaseProgress(onProgress, 'checkinlists', 1)
 
-  onProgress?.({ phase: 'orders' })
-  const ordersResult = await syncOrders(url, apitoken, organizer, eventSlug, snapshot)
+  reportPhaseProgress(onProgress, 'orders', 0)
+  const ordersResult = await syncOrders(url, apitoken, organizer, eventSlug, snapshot, {
+    onPage: trackPagedPhase('orders')
+  })
   if (ordersResult.error) {
     warnings.push('orders')
   } else {
@@ -193,12 +235,14 @@ export async function runOfflineSync({
       snapshot.cursors.ordersModifiedSince = ordersResult.pageGenerated
     }
   }
+  reportPhaseProgress(onProgress, 'orders', 1)
 
-  onProgress?.({ phase: 'revoked' })
+  reportPhaseProgress(onProgress, 'revoked', 0)
   const revokedPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/revokedsecrets/`
   const revokedResult = await safeFetchAllPages(url, apitoken, revokedPath, {
     sinceParam: 'created_since',
-    sinceValue: snapshot.cursors.revokedCreatedSince
+    sinceValue: snapshot.cursors.revokedCreatedSince,
+    onPage: trackPagedPhase('revoked')
   })
   if (revokedResult.error) {
     warnings.push('revoked')
@@ -208,6 +252,7 @@ export async function runOfflineSync({
       snapshot.cursors.revokedCreatedSince = revokedResult.pageGenerated
     }
   }
+  reportPhaseProgress(onProgress, 'revoked', 1)
 
   if (warnings.includes('orders') && Object.keys(snapshot.positionsBySecret).length === 0) {
     return { ok: false, error: 'orders_sync_failed', warnings }
@@ -216,11 +261,14 @@ export async function runOfflineSync({
   snapshot.lastSyncedAt = new Date().toISOString()
   let nextIndex = createMemoryIndex(snapshot)
 
-  onProgress?.({ phase: 'flush' })
+  reportPhaseProgress(onProgress, 'flush', 0)
   await flushPendingRedeems(nextIndex, { url, apitoken, organizer })
+  reportPhaseProgress(onProgress, 'flush', 0.5)
   await flushPendingRegistrations(nextIndex, { url, apitoken, organizer, eventSlug })
 
-  const followUp = await syncOrders(url, apitoken, organizer, eventSlug, memoryIndexToSnapshot(nextIndex))
+  const followUp = await syncOrders(url, apitoken, organizer, eventSlug, memoryIndexToSnapshot(nextIndex), {
+    onPage: trackPagedPhase('flush')
+  })
   if (!followUp.error && followUp.results.length) {
     const followSnapshot = memoryIndexToSnapshot(nextIndex)
     mergeOrdersIntoSnapshot(followSnapshot, followUp.results)
@@ -230,8 +278,11 @@ export async function runOfflineSync({
     followSnapshot.lastSyncedAt = new Date().toISOString()
     nextIndex = createMemoryIndex(followSnapshot)
   }
+  reportPhaseProgress(onProgress, 'flush', 1)
 
+  reportPhaseProgress(onProgress, 'persist', 0.2)
   await persistOfflineIndex(nextIndex, { apitoken })
+  reportPhaseProgress(onProgress, 'persist', 1)
 
   return {
     ok: true,
