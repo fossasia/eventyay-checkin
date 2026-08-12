@@ -248,7 +248,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
 
     showAutoPrintFeedback('printing', `Printing badge for ${attendeeLabel}…`, AUTO_PRINT_COSMETIC_MS)
-    queueBadgePrint(badgeUrlPath)
+    queueBadgePrint(badgeUrlPath, position)
     cameraStore.clearLastScan()
     return true
   }
