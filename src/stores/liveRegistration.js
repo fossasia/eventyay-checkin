@@ -66,6 +66,14 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
     }
   }
 
+  function restoreProductsFromSnapshot(snapshotProducts) {
+    if (!Array.isArray(snapshotProducts) || !snapshotProducts.length) {
+      return
+    }
+    products.value = snapshotProducts
+    productsLoaded.value = true
+  }
+
   function buildOrderPayload(attendee, productId) {
     const attendeeName = String(attendee.attendee_name || '').trim()
     const attendeeEmail = String(attendee.attendee_email || '').trim()
@@ -238,7 +246,9 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
     products,
     isLoadingProducts,
     isRegistering,
+    productsLoaded,
     fetchProducts,
+    restoreProductsFromSnapshot,
     registerAndMarkPaid
   }
 })

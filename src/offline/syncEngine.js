@@ -91,6 +91,14 @@ async function fetchAllPages(baseUrl, apitoken, path, { sinceParam, sinceValue, 
   return { results, pageGenerated }
 }
 
+async function safeFetchAllPages(...args) {
+  try {
+    return await fetchAllPages(...args)
+  } catch (error) {
+    return { results: [], pageGenerated: null, error }
+  }
+}
+
 export async function loadOfflineIndex({ organizer, eventSlug, apitoken }) {
   const envelope = await loadEncryptedSnapshot(organizer, eventSlug)
   if (!envelope) {
@@ -108,6 +116,22 @@ export async function persistOfflineIndex(index, { apitoken }) {
   const snapshot = memoryIndexToSnapshot(index)
   const envelope = await encryptJson(snapshot, key)
   await saveEncryptedSnapshot(index.organizer, index.eventSlug, envelope)
+}
+
+async function syncOrders(url, apitoken, organizer, eventSlug, snapshot) {
+  const base = `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/?ordering=last_modified`
+  const withPdf = await safeFetchAllPages(url, apitoken, `${base}&pdf_data=true`, {
+    sinceParam: 'modified_since',
+    sinceValue: snapshot.cursors.ordersModifiedSince
+  })
+  if (!withPdf.error) {
+    return withPdf
+  }
+  // Lean fallback: still sync secrets/names/checkins so scanning works offline.
+  return safeFetchAllPages(url, apitoken, base, {
+    sinceParam: 'modified_since',
+    sinceValue: snapshot.cursors.ordersModifiedSince
+  })
 }
 
 export async function runOfflineSync({
@@ -128,70 +152,83 @@ export async function runOfflineSync({
 
   const index = await loadOfflineIndex({ organizer, eventSlug, apitoken })
   const snapshot = memoryIndexToSnapshot(index)
+  const warnings = []
 
   onProgress?.({ phase: 'layouts' })
   const layoutsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/badgelayouts/`
-  const { results: layouts } = await fetchAllPages(url, apitoken, layoutsPath)
-  mergeLayoutsIntoSnapshot(snapshot, layouts)
+  const layoutsResult = await safeFetchAllPages(url, apitoken, layoutsPath)
+  if (layoutsResult.error) {
+    warnings.push('layouts')
+  } else {
+    mergeLayoutsIntoSnapshot(snapshot, layoutsResult.results)
+  }
+
+  onProgress?.({ phase: 'products' })
+  const productsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/products/`
+  const productsResult = await safeFetchAllPages(url, apitoken, productsPath)
+  if (!productsResult.error) {
+    snapshot.products = (productsResult.results || []).filter(
+      (product) => product?.active !== false && product?.admission !== false
+    )
+  } else {
+    warnings.push('products')
+  }
+
+  onProgress?.({ phase: 'checkinlists' })
+  const listsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/checkinlists/`
+  const listsResult = await safeFetchAllPages(url, apitoken, listsPath)
+  if (!listsResult.error) {
+    snapshot.checkInLists = listsResult.results || []
+  } else {
+    warnings.push('checkinlists')
+  }
 
   onProgress?.({ phase: 'orders' })
-  const ordersPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/?ordering=last_modified&pdf_data=true`
-  const { results: orders, pageGenerated: ordersCursor } = await fetchAllPages(url, apitoken, ordersPath, {
-    sinceParam: 'modified_since',
-    sinceValue: snapshot.cursors.ordersModifiedSince
-  })
-  mergeOrdersIntoSnapshot(snapshot, orders)
-  if (ordersCursor) {
-    snapshot.cursors.ordersModifiedSince = ordersCursor
+  const ordersResult = await syncOrders(url, apitoken, organizer, eventSlug, snapshot)
+  if (ordersResult.error) {
+    warnings.push('orders')
+  } else {
+    mergeOrdersIntoSnapshot(snapshot, ordersResult.results)
+    if (ordersResult.pageGenerated) {
+      snapshot.cursors.ordersModifiedSince = ordersResult.pageGenerated
+    }
   }
 
   onProgress?.({ phase: 'revoked' })
   const revokedPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/revokedsecrets/`
-  const { results: revoked, pageGenerated: revokedCursor } = await fetchAllPages(url, apitoken, revokedPath, {
+  const revokedResult = await safeFetchAllPages(url, apitoken, revokedPath, {
     sinceParam: 'created_since',
     sinceValue: snapshot.cursors.revokedCreatedSince
   })
-  mergeRevokedIntoSnapshot(snapshot, revoked)
-  if (revokedCursor) {
-    snapshot.cursors.revokedCreatedSince = revokedCursor
+  if (revokedResult.error) {
+    warnings.push('revoked')
+  } else {
+    mergeRevokedIntoSnapshot(snapshot, revokedResult.results)
+    if (revokedResult.pageGenerated) {
+      snapshot.cursors.revokedCreatedSince = revokedResult.pageGenerated
+    }
+  }
+
+  if (warnings.includes('orders') && Object.keys(snapshot.positionsBySecret).length === 0) {
+    return { ok: false, error: 'orders_sync_failed', warnings }
   }
 
   snapshot.lastSyncedAt = new Date().toISOString()
-  const nextIndex = createMemoryIndex(snapshot)
+  let nextIndex = createMemoryIndex(snapshot)
 
   onProgress?.({ phase: 'flush' })
   await flushPendingRedeems(nextIndex, { url, apitoken, organizer })
   await flushPendingRegistrations(nextIndex, { url, apitoken, organizer, eventSlug })
 
-  // Absorb server-side results of flushed registrations / concurrent check-ins.
-  const { results: followUpOrders, pageGenerated: followUpCursor } = await fetchAllPages(
-    url,
-    apitoken,
-    `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/?ordering=last_modified&pdf_data=true`,
-    {
-      sinceParam: 'modified_since',
-      sinceValue: nextIndex.cursors.ordersModifiedSince
-    }
-  )
-  if (followUpOrders.length) {
+  const followUp = await syncOrders(url, apitoken, organizer, eventSlug, memoryIndexToSnapshot(nextIndex))
+  if (!followUp.error && followUp.results.length) {
     const followSnapshot = memoryIndexToSnapshot(nextIndex)
-    mergeOrdersIntoSnapshot(followSnapshot, followUpOrders)
-    if (followUpCursor) {
-      followSnapshot.cursors.ordersModifiedSince = followUpCursor
+    mergeOrdersIntoSnapshot(followSnapshot, followUp.results)
+    if (followUp.pageGenerated) {
+      followSnapshot.cursors.ordersModifiedSince = followUp.pageGenerated
     }
     followSnapshot.lastSyncedAt = new Date().toISOString()
-    const merged = createMemoryIndex(followSnapshot)
-    await persistOfflineIndex(merged, { apitoken })
-    return {
-      ok: true,
-      index: merged,
-      counts: {
-        orders: orders.length + followUpOrders.length,
-        revoked: revoked.length,
-        layouts: layouts.length,
-        positions: merged.positionsBySecret.size
-      }
-    }
+    nextIndex = createMemoryIndex(followSnapshot)
   }
 
   await persistOfflineIndex(nextIndex, { apitoken })
@@ -199,10 +236,13 @@ export async function runOfflineSync({
   return {
     ok: true,
     index: nextIndex,
+    warnings,
     counts: {
-      orders: orders.length,
-      revoked: revoked.length,
-      layouts: layouts.length,
+      orders: ordersResult.results?.length || 0,
+      revoked: revokedResult.results?.length || 0,
+      layouts: layoutsResult.results?.length || 0,
+      products: snapshot.products.length,
+      checkInLists: snapshot.checkInLists.length,
       positions: nextIndex.positionsBySecret.size
     }
   }
