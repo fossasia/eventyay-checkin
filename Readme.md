@@ -1,144 +1,70 @@
-# Open Event Check-In
+# Eventyay Check-In
+
+Vue 3 check-in app for [Eventyay](https://eventyay.com): device pairing, ticket scanning, badge printing, lead scanning, and offline sync for Check-In Staff.
 
 [![Netlify Status](https://api.netlify.com/api/v1/badges/7456234f-3254-4395-8cd8-67979322e555/deploy-status)](https://app.netlify.com/sites/open-event-checkin/deploys)
-[![Codacy Badge](https://app.codacy.com/project/badge/Grade/3583a71b83d94d388e1d8dd087f2b861)](https://app.codacy.com/gh/fossasia/open-event-checkin/dashboard?utm_source=gh&utm_medium=referral&utm_content=&utm_campaign=Badge_grade)
-[![Gitter](https://img.shields.io/badge/chat-on%20gitter-ff006f.svg?style=flat-square)](https://gitter.im/fossasia/open-event-frontend)
-[![Mailing](https://img.shields.io/badge/Mailing-List-red.svg)](https://groups.google.com/forum/#!forum/open-event)
-[![Twitter Follow](https://img.shields.io/twitter/follow/eventyay.svg?style=social&label=Follow&maxAge=2592000?style=flat-square)](https://twitter.com/eventyay)
 
-## Communication
-Please join our [mailing list](https://groups.google.com/forum/#!forum/open-event) or [chat channel](https://gitter.im/fossasia/open-event-frontend) to get in touch with the developers.
+## Station types
 
-## Installation
-Easily deployed on a variety of platforms. Detailed platform specific instructions have been provided below.
+| Role | Device security profile | Notes |
+|---|---|---|
+| **Check-In Staff** | `eventyay_checkin` | Scan, search, live registration, badge print, **offline sync** |
+| **Badge Station** | `eventyay_checkin_online_kiosk` | Kiosk check-in + badge print — **online only** |
+| **Lead Scanner** | `full` (typical) | Exhibitor lead capture |
 
-### Local
-Clone or Fork the codebase and following instructions [below](#running--development).
+See operator guides: [`docs/checkin.md`](docs/checkin.md), [`docs/exhibitor.md`](docs/exhibitor.md).
 
-### Github Pages (using Github Actions)
-Refer to the [workflow](https://github.com/fossasia/open-event-checkin/tree/development/.github/workflows) for deployment.
+## Offline sync (Check-In Staff)
 
-## Running / Development
+Implements [issue #103](https://github.com/fossasia/eventyay-checkin/issues/103).
 
-After cloning the codebase, install packages:
+- Syncs **badge layouts** and lean per-attendee **`pdf_data`** (not full badge PDFs)
+- Stores an **encrypted JSON snapshot** on the device (Web Crypto AES-GCM) — no client SQL/Prisma DB
+- Offline scan uses the snapshot; unknown tickets ask you to reconnect and sync
+- Queued check-ins and live registrations flush when online again
+- Badges can render locally from layout JSON + field data
+
+Requires Eventyay backend device ACL for order / revoked-secret sync (Check-In Staff profile).
+
+## Development
+
 ```sh
-npm i
-```
-
-Running:
-
-```sh
+npm install
 npm run dev
 ```
-Visit your app at [http://localhost:8080](http://localhost:8080).
 
-### Lint with [ESLint](https://eslint.org/)
+App: [http://localhost:8085](http://localhost:8085) (Vite; proxies `/api` to the Eventyay backend).
 
 ```sh
 npm run lint
-```
-
-### Format code with [Prettier](https://prettier.io/)
-
-```sh
 npm run format
-```
-
-### Running Tests (WIP)
-
-Unit Tests with [Vitest](https://vitest.dev/)
-```sh
 npm run test:unit
+npm run build
 ```
 
-End-to-End Tests with [Cypress](https://www.cypress.io/)
-```sh
-npm run test:e2e:dev
-```
+## Production
 
-### Building for Production
+- Production check-in: [https://checkin.eventyay.com](https://checkin.eventyay.com)
+- Pair devices from the organizer **Connected devices** screen in Eventyay
 
-```sh
-npm build
-```
+## Kiosk mode (Badge Station)
 
-## Deployments and Releases
-
-### Deployments
-
-**Master branch**
-
-Deployed in a production environment at [checkin.eventyay.com](https://checkin.eventyay.com) it consumes the API exposed by master branch deployment of open event server, hosted at [api.eventyay.com](https://api.eventyay.com).
-
-## Kiosk Mode Setup (Silent Badge Printing)
-
-This setup runs **Google Chrome in kiosk mode** for automated check-in and **silent badge printing**.
-
-### 1. Launch Chrome in Kiosk Mode
-
-Run the following command:
+Silent printing example (Chrome):
 
 ```sh
-open -a "Google Chrome" --args --kiosk --kiosk-printing --app=https://access.eventyay.com
+open -a "Google Chrome" --args --kiosk --kiosk-printing --app=https://checkin.eventyay.com/?kiosk=true
 ```
 
-### 2. Register the Device
+1. Choose **Badge Station**
+2. Register the device
+3. Use the default system printer
 
-Once Chrome opens:
+## Stack
 
-1. Select the **Server**.
-2. Choose **Badge Printing Station**.
-3. Continue with **Device Registration**.
-
-After registration, the kiosk will be ready for **automated attendee check-in and badge printing**.
-> Ensure the **printer is installed and set as the default printer** on the system.
-
-
----
-
-If you want, I can also add a **“Auto-start kiosk on boot” section** (very useful for event check-in machines).
-
-#### Development branch
-
-Only deployed locally with `npm run dev` or Netlify when you make a pull request it consumes the API exposed by development branch of open event server, hosted at [test-api.eventyay.com](https://test-api.eventyay.com).
-
-## Further Reading / Useful Links
-
-- [Vue.js](https://vuejs.org/)
-
-- [Vue Router](https://router.vuejs.org/)
-
-- [Pinia](https://pinia.vuejs.org/)
-  
-- [Tailwind CSS](https://tailwindcss.com/)
-
-- [Headless UI](https://headlessui.com/)
-
-- [heroicons](https://heroicons.com/)
-
-- [Vue Devtools for browsers](https://devtools.vuejs.org/guide/installation.html)
-
-
-## Contributions Best Practices
-
-### Commits
-
-- Write clear meaningful git commit messages (Do read [chris.beams.io/posts/git-commit/](https://chris.beams.io/posts/git-commit/))
-- Make sure your PR's description contains GitHub's special keyword references that automatically close the related issue when the PR is merged. (More info at [github.com/blog/1506-closing-issues-via-pull-requests](https://github.com/blog/1506-closing-issues-via-pull-requests) )
-- When you make very minor changes to a PR of yours (like for example fixing a failing Travis build or some small style corrections or minor changes requested by reviewers) make sure you squash your commits afterward so that you don't have an absurd number of commits for a very small fix. (Learn how to squash at [davidwalsh.name/squash-commits-git](https://davidwalsh.name/squash-commits-git) )
-- When you're submitting a PR for a UI-related issue, it would be really awesome if you add a screenshot of your change or a link to a deployment where it can be tested out along with your PR. It makes it very easy for the reviewers and you'll also get reviews quicker.
-
-### Feature Requests and Bug Reports
-
-When you file a feature request or when you are submitting a bug report to the [issue tracker](https://github.com/fossasia/open-event-checkin/issues), make sure you add steps to reproduce it.
-
-### Join the development
-
-- Before you join development, please set up the project on your local machine, run it and go through the application completely.
-- If you would like to work on an issue, drop in a comment with the estimated completion date at the issue. If it is already assigned to someone, but there is no sign of any work being done, please feel free to drop in a comment.
+- Vue 3, Vue Router, Pinia
+- Tailwind CSS, Headless UI, Heroicons
+- Vitest, Cypress (e2e), Vite 6
 
 ## License
 
-This project is currently licensed under the [Apache License version 2.0](LICENSE).
-
-To obtain the software under a different license, Please contact [FOSSASIA](https://blog.fossasia.org/contact/).
+Apache License 2.0 — see [LICENSE](LICENSE). Contact [FOSSASIA](https://blog.fossasia.org/contact/) for other licensing.
