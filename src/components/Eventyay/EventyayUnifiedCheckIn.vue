@@ -668,12 +668,31 @@ const submitLiveRegistration = async () => {
     )
 
     closeLiveRegistrationDialog()
+    if (registrationResult.offlinePending) {
+      liveRegistrationResult.value = {
+        attendeeName,
+        orderCode: '',
+        orderPositionId: null,
+        ticketDownloadUrl: '',
+        ticketDownloadAvailable: false,
+        offlinePending: true
+      }
+      notificationStore.addNotification(
+        [
+          'Queued offline',
+          'Live registration will sync when you are back online. Ticket printing is available after sync.'
+        ],
+        'success'
+      )
+      return
+    }
     liveRegistrationResult.value = {
       attendeeName,
       orderCode: registrationResult.orderCode,
       orderPositionId: registrationResult.orderPositionId || registrationResult.orderPosition?.id || null,
       ticketDownloadUrl: registrationResult.ticketDownloadUrl || '',
-      ticketDownloadAvailable: registrationResult.ticketDownloadAvailable === true
+      ticketDownloadAvailable: registrationResult.ticketDownloadAvailable === true,
+      offlinePending: false
     }
   } catch (error) {
     console.error('Live registration failed:', error)
@@ -1455,7 +1474,9 @@ const openAttendeeFromSearch = async (order) => {
         class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
       >
         <div class="card w-full max-w-md p-6">
-          <h2 class="mb-1 text-xl text-success">Registration complete</h2>
+          <h2 class="mb-1 text-xl text-success">
+            {{ liveRegistrationResult.offlinePending ? 'Registration queued' : 'Registration complete' }}
+          </h2>
           <p class="mb-4 text-sm text-body-muted">
             {{ liveRegistrationResult.attendeeName }}
             <span v-if="liveRegistrationResult.orderCode">
@@ -1464,7 +1485,15 @@ const openAttendeeFromSearch = async (order) => {
           </p>
 
           <p
-            v-if="!liveRegistrationResult.ticketDownloadAvailable"
+            v-if="liveRegistrationResult.offlinePending"
+            class="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-dark"
+          >
+            You are offline. This registration will sync when connectivity returns. Printing is
+            available after a successful sync.
+          </p>
+
+          <p
+            v-else-if="!liveRegistrationResult.ticketDownloadAvailable"
             class="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-dark"
           >
             Ticket PDF download is not configured for this event. Enable the PDF ticket output

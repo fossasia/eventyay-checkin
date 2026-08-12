@@ -3,6 +3,9 @@ import { createAuthorizedDeviceApi } from '@/utils/serverUrl'
 import { raiseIfDeviceApiError } from '@/utils/deviceErrors'
 import { ref } from 'vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
+import { useOfflineSyncStore } from '@/stores/offlineSync'
+import { enqueuePendingRegistration, isBrowserOffline } from '@/offline/offlineActions'
+import { canUseOfflineSync, persistOfflineIndex } from '@/offline/syncEngine'
 
 const DEFAULT_INVOICE_ADDRESS = {
   is_business: false,
@@ -157,6 +160,37 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
     isRegistering.value = true
 
     try {
+      const processApi = useEventyayApi()
+      if (
+        isBrowserOffline() &&
+        canUseOfflineSync(processApi.selectedRole, processApi.securityProfile)
+      ) {
+        const offlineSync = useOfflineSyncStore()
+        if (!offlineSync.index) {
+          await offlineSync.hydrate(processApi)
+        }
+        const payload = buildOrderPayload(attendee, productId)
+        const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+        enqueuePendingRegistration(offlineSync.index, {
+          id: pendingId,
+          payload,
+          createdAt: new Date().toISOString()
+        })
+        await persistOfflineIndex(offlineSync.index, { apitoken: processApi.apitoken })
+        return {
+          createdOrder: null,
+          paidOrder: null,
+          secret: '',
+          orderCode: '',
+          orderPosition: null,
+          orderPositionId: null,
+          ticketDownloadUrl: '',
+          ticketDownloadAvailable: false,
+          offlinePending: true,
+          pendingId
+        }
+      }
+
       const createdOrder = await createOrder(attendee, productId)
       const orderCode = createdOrder?.code
       if (!orderCode) {

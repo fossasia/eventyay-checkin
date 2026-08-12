@@ -13,6 +13,7 @@ import {
   saveEncryptedSnapshot,
   wipeAllEncryptedSnapshots
 } from '@/offline/snapshotStore'
+import { flushPendingRedeems, flushPendingRegistrations } from '@/offline/offlineActions'
 
 const MAX_PAGES = 50
 
@@ -157,6 +158,42 @@ export async function runOfflineSync({
 
   snapshot.lastSyncedAt = new Date().toISOString()
   const nextIndex = createMemoryIndex(snapshot)
+
+  onProgress?.({ phase: 'flush' })
+  await flushPendingRedeems(nextIndex, { url, apitoken, organizer })
+  await flushPendingRegistrations(nextIndex, { url, apitoken, organizer, eventSlug })
+
+  // Absorb server-side results of flushed registrations / concurrent check-ins.
+  const { results: followUpOrders, pageGenerated: followUpCursor } = await fetchAllPages(
+    url,
+    apitoken,
+    `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/?ordering=last_modified&pdf_data=true`,
+    {
+      sinceParam: 'modified_since',
+      sinceValue: nextIndex.cursors.ordersModifiedSince
+    }
+  )
+  if (followUpOrders.length) {
+    const followSnapshot = memoryIndexToSnapshot(nextIndex)
+    mergeOrdersIntoSnapshot(followSnapshot, followUpOrders)
+    if (followUpCursor) {
+      followSnapshot.cursors.ordersModifiedSince = followUpCursor
+    }
+    followSnapshot.lastSyncedAt = new Date().toISOString()
+    const merged = createMemoryIndex(followSnapshot)
+    await persistOfflineIndex(merged, { apitoken })
+    return {
+      ok: true,
+      index: merged,
+      counts: {
+        orders: orders.length + followUpOrders.length,
+        revoked: revoked.length,
+        layouts: layouts.length,
+        positions: merged.positionsBySecret.size
+      }
+    }
+  }
+
   await persistOfflineIndex(nextIndex, { apitoken })
 
   return {

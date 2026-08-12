@@ -15,6 +15,14 @@ import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
 import { shouldUseSilentPrint } from '@/utils/kioskLauncher'
 import { parseQrPayload } from '@/utils/session'
 import { useCheckinSettingsStore } from '@/stores/checkinSettings'
+import { useOfflineSyncStore } from '@/stores/offlineSync'
+import {
+  applyLocalCheckin,
+  enqueuePendingRedeem,
+  evaluateLocalRedeem,
+  isBrowserOffline
+} from '@/offline/offlineActions'
+import { persistOfflineIndex } from '@/offline/syncEngine'
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -747,6 +755,80 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
+  async function redeemOfflineBySecret(
+    normalizedSecret,
+    { type = 'entry', hints = {}, suppressSuccess = false, processApi, apitoken } = {}
+  ) {
+    const offlineSync = useOfflineSyncStore()
+    if (!offlineSync.index) {
+      await offlineSync.hydrate(processApi)
+    }
+    const selectedList = getSelectedCheckInList()
+    const listId = selectedList?.id || processApi.selectedCheckInListId
+    if (!listId) {
+      showErrorMsg(
+        buildAttendeeMessage('No check-in lists are configured for this event.', null, normalizedSecret)
+      )
+      return null
+    }
+
+    const evaluation = evaluateLocalRedeem(offlineSync.index, normalizedSecret, { listId, type })
+    if (!evaluation.ok) {
+      showErrorMsg(
+        buildAttendeeMessage(evaluation.message, evaluation.position || null, normalizedSecret, hints)
+      )
+      return { status: 'error', reason: evaluation.reason }
+    }
+
+    const nonce = generateNonce()
+    const datetime = new Date().toISOString()
+    let position = evaluation.position
+    if (!evaluation.alreadyRedeemed) {
+      position = applyLocalCheckin(offlineSync.index, position, { listId, type, datetime })
+      enqueuePendingRedeem(offlineSync.index, {
+        secret: normalizedSecret,
+        lists: [Number(listId)],
+        type,
+        nonce,
+        datetime
+      })
+      await persistOfflineIndex(offlineSync.index, { apitoken })
+    }
+
+    const synthetic = {
+      status: evaluation.alreadyRedeemed ? 'redeemed' : 'ok',
+      position: {
+        id: position.id,
+        secret: position.secret,
+        attendee_name: position.attendeeName,
+        attendee_email: position.attendeeEmail,
+        company: position.company,
+        job_title: position.jobTitle,
+        product: position.product,
+        checkins: position.checkins,
+        pdf_data: position.pdfData,
+        downloads: []
+      },
+      offline: true
+    }
+
+    if (!suppressSuccess) {
+      showSuccessMsg(
+        buildAttendeeMessage(
+          evaluation.alreadyRedeemed ? getCheckInResultMessage('redeemed') : getCheckInResultMessage('ok'),
+          synthetic.position,
+          normalizedSecret,
+          {
+            ...hints,
+            alreadyCheckedIn: evaluation.alreadyRedeemed,
+            submessage: 'Saved offline — will sync when online'
+          }
+        )
+      )
+    }
+    return synthetic
+  }
+
   async function redeemBySecret(secret, { type = 'entry', attendeeHints = null, isRetry = false, suppressSuccess = false } = {}) {
     const hints = attendeeHints || {}
     const normalizedSecret = String(secret || '').trim()
@@ -760,6 +842,17 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     if (!url || !apitoken || !organizer) {
       showErrorMsg(buildAttendeeMessage('Device is not configured for check-in.', null, normalizedSecret))
       return null
+    }
+
+    const offlineSync = useOfflineSyncStore()
+    if (isBrowserOffline() && offlineSync.enabled) {
+      return redeemOfflineBySecret(normalizedSecret, {
+        type,
+        hints,
+        suppressSuccess,
+        processApi,
+        apitoken
+      })
     }
 
     try {
@@ -890,6 +983,18 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
               : 'This code is not valid for this event.',
             { hideHttpStatusText: true }
           )
+
+      // Network failure with a synced local copy: fall back to offline redeem once.
+      if (!isRetry && isRedeemNetworkError(error) && offlineSync.enabled) {
+        return redeemOfflineBySecret(normalizedSecret, {
+          type,
+          hints,
+          suppressSuccess,
+          processApi,
+          apitoken
+        })
+      }
+
       showSimpleScanError(fallbackMessage, normalizedSecret, {
         ...hints,
         errorReason: 'invalid'
