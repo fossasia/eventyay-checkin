@@ -2,8 +2,10 @@
 import { ArrowPathIcon } from '@heroicons/vue/20/solid'
 import StandardButton from '@/components/Common/StandardButton.vue'
 
-function reload() {
-  window.location.reload()
+const emit = defineEmits(['refresh'])
+
+function onRefresh() {
+  emit('refresh')
 }
 </script>
 <template>
@@ -12,6 +14,6 @@ function reload() {
     :icon="ArrowPathIcon"
     variant="white"
     size="sm"
-    @click="reload"
+    @click="onRefresh"
   />
 </template>

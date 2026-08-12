@@ -139,6 +139,23 @@ function toggleCamera() {
   }
 }
 
+async function refreshCamera() {
+  cameraStore.clearLastScan()
+  hasDetection.value = false
+
+  await updateAvailableCamera()
+
+  if (!isCameraOn.value) {
+    isCameraOn.value = true
+    cameraStore.paused = false
+  }
+
+  destroyed.value = true
+  await nextTick()
+  cameraStreamNonce.value += 1
+  destroyed.value = false
+}
+
 watch(
   () => cameraStore.isProcessing,
   (processing) => {
@@ -211,7 +228,7 @@ onUnmounted(() => {
         size="sm"
         @click="switchCamera"
       />
-      <RefreshButton />
+      <RefreshButton @refresh="refreshCamera" />
     </div>
   </div>
 </template>
