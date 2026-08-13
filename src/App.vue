@@ -6,12 +6,14 @@ import NotificationHolder from '@/components/Notifications/NotificationHolder.vu
 import LoadingView from '@/components/Utilities/LoadingView.vue'
 import { useLoadingStore } from '@/stores/loading'
 import { useEventyayApi } from '@/stores/eventyayapi'
+import { useOfflineSyncStore } from '@/stores/offlineSync'
 import { isKioskEnvironment } from '@/utils/kioskLauncher'
 import { validateDeviceSession } from '@/utils/session'
 
 const route = useRoute()
 const loadingStore = useLoadingStore()
 const processApi = useEventyayApi()
+const offlineSync = useOfflineSyncStore()
 const isKioskShell = computed(() => isKioskEnvironment(route))
 
 const SESSION_POLL_MS = 45000
@@ -29,6 +31,7 @@ async function pollDeviceSession() {
   }
   const isValid = await validateDeviceSession(processApi)
   if (!isValid) {
+    await offlineSync.wipe()
     processApi.handleAuthError()
   }
 }
@@ -54,10 +57,24 @@ function handleVisibilityChange() {
     if (processApi.apitoken) {
       pollDeviceSession()
       startSessionPolling()
+      if (offlineSync.enabled && offlineSync.isOnline) {
+        offlineSync.syncNow(processApi)
+      }
     }
     return
   }
   stopSessionPolling()
+}
+
+function handleOnline() {
+  offlineSync.setOnline(true)
+  if (processApi.apitoken && offlineSync.enabled) {
+    offlineSync.syncNow(processApi)
+  }
+}
+
+function handleOffline() {
+  offlineSync.setOnline(false)
 }
 
 onMounted(() => {
@@ -68,11 +85,16 @@ onMounted(() => {
   }
   startSessionPolling()
   document.addEventListener('visibilitychange', handleVisibilityChange)
+  window.addEventListener('online', handleOnline)
+  window.addEventListener('offline', handleOffline)
+  offlineSync.setOnline(navigator.onLine)
 })
 
 onBeforeUnmount(() => {
   stopSessionPolling()
   document.removeEventListener('visibilitychange', handleVisibilityChange)
+  window.removeEventListener('online', handleOnline)
+  window.removeEventListener('offline', handleOffline)
 })
 
 watch(isKioskShell, ensureNavbarLoadedForKiosk)

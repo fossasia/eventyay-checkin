@@ -28,6 +28,7 @@ import { useLiveRegistrationStore } from '@/stores/liveRegistration'
 import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
+import { useOfflineSyncStore } from '@/stores/offlineSync'
 import { useCameraStore } from '@/stores/camera'
 import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
 import { downloadPdfBlob, fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME } from '@/utils/badgePdf'
@@ -1092,6 +1093,14 @@ onMounted(async () => {
       resetLiveRegistrationForm()
     }
     checkInReady.value = true
+
+    const offlineSync = useOfflineSyncStore()
+    await offlineSync.hydrate(processApi)
+    if (offlineSync.enabled && navigator.onLine) {
+      offlineSync.syncNow(processApi).catch(() => {
+        // Sync errors surface via status chip; check-in remains usable online.
+      })
+    }
   } catch (error) {
     console.error('Error loading check-in page:', error)
     notificationStore.addNotification(['Error', 'Unable to load check-in page'], 'error')

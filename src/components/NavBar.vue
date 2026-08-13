@@ -2,14 +2,17 @@
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import EventyayConfigurePanel from '@/components/Eventyay/EventyayConfigurePanel.vue'
+import OfflineSyncStatus from '@/components/Utilities/OfflineSyncStatus.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useLoadingStore } from '@/stores/loading'
+import { useOfflineSyncStore } from '@/stores/offlineSync'
 import { getEventyayLogoProps, getRoleLabel } from '@/utils/session'
 import { isKioskEnvironment } from '@/utils/kioskLauncher'
 
 const route = useRoute()
 const processApi = useEventyayApi()
 const loadingStore = useLoadingStore()
+const offlineSync = useOfflineSyncStore()
 
 loadingStore.navbarLoaded()
 
@@ -53,7 +56,8 @@ const contextLabel = computed(() => {
   return parts.join(' · ')
 })
 
-function logout() {
+async function logout() {
+  await offlineSync.wipe()
   processApi.logout()
 }
 
@@ -83,6 +87,7 @@ function closeConfigure() {
       </div>
 
       <div class="flex shrink-0 items-center gap-4">
+        <OfflineSyncStatus />
         <button
           v-if="showConfigure"
           type="button"
