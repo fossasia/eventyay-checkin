@@ -12,6 +12,7 @@ import {
   runOfflineSync,
   wipeOfflineData
 } from '@/offline/syncEngine'
+import { setPendingPrintSync } from '@/offline/badgePrintAssets'
 import { mergeProgressFloor, phaseLabel } from '@/offline/syncProgress'
 
 const DISPLAY_TICK_MS = 50
@@ -202,6 +203,12 @@ export const useOfflineSyncStore = defineStore('offlineSync', () => {
     setSyncProgress({ phase: 'layouts', percent: 1 })
     startDisplaySmoothing()
     try {
+      setPendingPrintSync({
+        url: processApi.url,
+        apitoken: processApi.apitoken,
+        organizer: processApi.organizer,
+        eventSlug: processApi.eventSlug
+      })
       const result = await runOfflineSync({
         url: processApi.url,
         apitoken: processApi.apitoken,

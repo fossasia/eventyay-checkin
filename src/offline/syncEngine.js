@@ -14,6 +14,7 @@ import {
   wipeAllEncryptedSnapshots
 } from '@/offline/snapshotStore'
 import { flushPendingRedeems, flushPendingRegistrations } from '@/offline/offlineActions'
+import { flushPendingPrintSync } from '@/offline/badgePrintAssets'
 import { computeSyncPercent, pageFraction } from '@/offline/syncProgress'
 
 const MAX_PAGES = 50
@@ -136,6 +137,7 @@ export async function loadOfflineIndex({ organizer, eventSlug, apitoken }) {
 }
 
 export async function persistOfflineIndex(index, { apitoken }) {
+  await flushPendingPrintSync(index, apitoken)
   const salt = ensureDeviceSalt()
   const key = await deriveSnapshotKey(apitoken, salt)
   const snapshot = memoryIndexToSnapshot(index)
