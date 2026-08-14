@@ -12,6 +12,7 @@ import {
   runOfflineSync,
   wipeOfflineData
 } from '@/offline/syncEngine'
+import { setPendingPrintSync } from '@/offline/badgePrintAssets'
 
 export const useOfflineSyncStore = defineStore('offlineSync', () => {
   const index = ref(null)
@@ -122,6 +123,12 @@ export const useOfflineSyncStore = defineStore('offlineSync', () => {
     isSyncing.value = true
     lastError.value = ''
     try {
+      setPendingPrintSync({
+        url: processApi.url,
+        apitoken: processApi.apitoken,
+        organizer: processApi.organizer,
+        eventSlug: processApi.eventSlug
+      })
       const result = await runOfflineSync({
         url: processApi.url,
         apitoken: processApi.apitoken,

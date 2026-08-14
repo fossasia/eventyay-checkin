@@ -14,8 +14,9 @@ import {
   wipeAllEncryptedSnapshots
 } from '@/offline/snapshotStore'
 import { flushPendingRedeems, flushPendingRegistrations } from '@/offline/offlineActions'
+import { flushPendingPrintSync } from '@/offline/badgePrintAssets'
 
-const MAX_PAGES = 600
+const MAX_PAGES = 50
 
 export function canUseOfflineSync(selectedRole, securityProfile) {
   if (selectedRole === 'Badge Station' || securityProfile === 'eventyay_checkin_online_kiosk') {
@@ -35,82 +36,6 @@ function joinUrl(baseUrl, path) {
     }
   }
   return `${base}${path.startsWith('/') ? path : `/${path}`}`
-}
-
-async function fetchAssetBytes(baseUrl, apitoken, pathOrUrl) {
-  const raw = String(pathOrUrl || '').trim()
-  if (!raw) {
-    return null
-  }
-  const url = /^https?:\/\//i.test(raw) ? raw : joinUrl(baseUrl, raw)
-  try {
-    const response = await fetch(url, {
-      credentials: 'omit',
-      headers: {
-        Authorization: `Device ${apitoken}`,
-        Accept: 'application/pdf, image/*, font/ttf, application/octet-stream, */*'
-      }
-    })
-    if (!response.ok) {
-      return null
-    }
-    const buffer = await response.arrayBuffer()
-    if (!buffer.byteLength) {
-      return null
-    }
-    return new Uint8Array(buffer)
-  } catch {
-    return null
-  }
-}
-
-function bytesToBase64(bytes) {
-  let binary = ''
-  const chunk = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk))
-  }
-  return btoa(binary)
-}
-
-async function syncLayoutBackgrounds(baseUrl, apitoken, organizer, eventSlug, snapshot) {
-  for (const layout of Object.values(snapshot.layouts || {})) {
-    const layoutId = layout?.id
-    if (!layoutId) {
-      continue
-    }
-    const endpointPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/badgelayouts/${layoutId}/background/`
-    let bytes = await fetchAssetBytes(baseUrl, apitoken, endpointPath)
-    if (!bytes && layout.background) {
-      bytes = await fetchAssetBytes(baseUrl, apitoken, layout.background)
-    }
-    if (bytes) {
-      layout.backgroundPdf = bytesToBase64(bytes)
-    }
-  }
-}
-
-const PRINT_ASSET_PATHS = {
-  regular: '/static/fonts/opensans_regular_macroman/OpenSans-Regular-webfont.ttf',
-  bold: '/static/fonts/opensans_bold_macroman/OpenSans-Bold-webfont.ttf',
-  italic: '/static/fonts/opensans_italic_macroman/OpenSans-Italic-webfont.ttf',
-  boldItalic: '/static/fonts/opensans_bolditalic_macroman/OpenSans-BoldItalic-webfont.ttf',
-  poweredByDark: '/static/pretixpresale/pdf/powered_by_eventyay_dark.png',
-  poweredByWhite: '/static/pretixpresale/pdf/powered_by_eventyay_white.png'
-}
-
-async function syncPrintAssets(baseUrl, apitoken, snapshot) {
-  const assets = { ...(snapshot.printAssets || {}) }
-  for (const [key, path] of Object.entries(PRINT_ASSET_PATHS)) {
-    if (assets[key]) {
-      continue
-    }
-    const bytes = await fetchAssetBytes(baseUrl, apitoken, path)
-    if (bytes) {
-      assets[key] = bytesToBase64(bytes)
-    }
-  }
-  snapshot.printAssets = assets
 }
 
 async function fetchJsonPage(baseUrl, apitoken, path) {
@@ -179,6 +104,7 @@ export async function loadOfflineIndex({ organizer, eventSlug, apitoken }) {
 }
 
 export async function persistOfflineIndex(index, { apitoken }) {
+  await flushPendingPrintSync(index, apitoken)
   const salt = ensureDeviceSalt()
   const key = await deriveSnapshotKey(apitoken, salt)
   const snapshot = memoryIndexToSnapshot(index)
@@ -209,8 +135,6 @@ export async function runOfflineSync({
   const layoutsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/badgelayouts/`
   const { results: layouts } = await fetchAllPages(url, apitoken, layoutsPath)
   mergeLayoutsIntoSnapshot(snapshot, layouts)
-  await syncLayoutBackgrounds(url, apitoken, organizer, eventSlug, snapshot)
-  await syncPrintAssets(url, apitoken, snapshot)
 
   onProgress?.({ phase: 'orders' })
   const ordersPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/?ordering=last_modified&pdf_data=true`
