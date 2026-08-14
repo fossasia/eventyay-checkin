@@ -179,4 +179,28 @@ describe('badgeRenderer', () => {
     })
     expect(blob.size).toBeGreaterThan(400)
   })
+
+  it('embeds a synced background PDF as the badge page', async () => {
+    const { PDFDocument } = await import('pdf-lib')
+    const bgDoc = await PDFDocument.create()
+    bgDoc.addPage([420, 297])
+    const bgBytes = await bgDoc.save()
+    const backgroundPdf = btoa(String.fromCharCode(...bgBytes))
+
+    const blob = await renderBadgePdfFromLayout({
+      layout: {
+        ...defaultLayout,
+        backgroundPdf
+      },
+      pdfData: {
+        attendee_name: 'Ada Lovelace',
+        attendee_job_title: 'Engineer',
+        attendee_company: 'FOSSASIA',
+        event_name: 'Demo Event',
+        secret: 'sec-bg'
+      },
+      secret: 'sec-bg'
+    })
+    expect(blob.size).toBeGreaterThan(800)
+  })
 })

@@ -243,6 +243,22 @@ async function drawBarcode(page, pdfDoc, element, pdfData, secret) {
   })
 }
 
+function decodeBackgroundBytes(layout, backgroundBytes = null) {
+  if (backgroundBytes) {
+    return backgroundBytes instanceof Uint8Array ? backgroundBytes : new Uint8Array(backgroundBytes)
+  }
+  const encoded = layout?.backgroundPdf
+  if (!encoded || typeof encoded !== 'string') {
+    return null
+  }
+  const binary = atob(encoded)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
 /**
  * Render a badge PDF from layout JSON + pdf_data map (no server PDF download).
  */
@@ -254,20 +270,21 @@ export async function renderBadgePdfFromLayout({
   backgroundBytes = null
 } = {}) {
   const elements = getLayoutElements(layout)
-  const pageSize = resolvePageSize(size || layout?.size)
+  const bgBytes = decodeBackgroundBytes(layout, backgroundBytes)
 
   const pdfDoc = await PDFDocument.create()
   let page
-  if (backgroundBytes) {
+  if (bgBytes) {
     try {
-      const bgDoc = await PDFDocument.load(backgroundBytes)
+      const bgDoc = await PDFDocument.load(bgBytes)
       const [bgPage] = await pdfDoc.copyPages(bgDoc, [0])
       page = pdfDoc.addPage(bgPage)
-      page.setSize(pageSize.width, pageSize.height)
     } catch {
-      page = pdfDoc.addPage([pageSize.width, pageSize.height])
+      page = null
     }
-  } else {
+  }
+  if (!page) {
+    const pageSize = resolvePageSize(size || layout?.size)
     page = pdfDoc.addPage([pageSize.width, pageSize.height])
   }
 
@@ -285,8 +302,17 @@ export async function renderBadgePdfFromLayout({
       drawTextarea(page, element, pdfData, secret, fonts)
     } else if (type === 'barcodearea') {
       await drawBarcode(page, pdfDoc, element, pdfData, secret)
+    } else if (type === 'imagearea') {
+      const width = mm(element.width)
+      const height = mm(element.height)
+      page.drawRectangle({
+        x: mm(element.left),
+        y: mm(element.bottom),
+        width,
+        height,
+        color: rgb(0.8, 0.8, 0.8)
+      })
     }
-    // imagearea / poweredby need live assets; skip offline without breaking the PDF.
   }
 
   const bytes = await pdfDoc.save()

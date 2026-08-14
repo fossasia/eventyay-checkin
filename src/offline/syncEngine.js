@@ -37,6 +37,50 @@ function joinUrl(baseUrl, path) {
   return `${base}${path.startsWith('/') ? path : `/${path}`}`
 }
 
+async function fetchBinary(baseUrl, apitoken, path) {
+  const response = await fetch(joinUrl(baseUrl, path), {
+    credentials: 'omit',
+    headers: {
+      Authorization: `Device ${apitoken}`,
+      Accept: 'application/pdf'
+    }
+  })
+  if (!response.ok) {
+    return null
+  }
+  const buffer = await response.arrayBuffer()
+  if (!buffer.byteLength) {
+    return null
+  }
+  return new Uint8Array(buffer)
+}
+
+function bytesToBase64(bytes) {
+  let binary = ''
+  const chunk = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunk))
+  }
+  return btoa(binary)
+}
+
+async function syncLayoutBackgrounds(baseUrl, apitoken, organizer, eventSlug, snapshot) {
+  for (const layout of Object.values(snapshot.layouts || {})) {
+    const layoutId = layout?.id
+    if (!layoutId) {
+      continue
+    }
+    const endpointPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/badgelayouts/${layoutId}/background/`
+    let bytes = await fetchBinary(baseUrl, apitoken, endpointPath)
+    if (!bytes && layout.background) {
+      bytes = await fetchBinary(baseUrl, apitoken, layout.background)
+    }
+    if (bytes) {
+      layout.backgroundPdf = bytesToBase64(bytes)
+    }
+  }
+}
+
 async function fetchJsonPage(baseUrl, apitoken, path) {
   const response = await fetch(joinUrl(baseUrl, path), {
     credentials: 'omit',
@@ -133,6 +177,7 @@ export async function runOfflineSync({
   const layoutsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/badgelayouts/`
   const { results: layouts } = await fetchAllPages(url, apitoken, layoutsPath)
   mergeLayoutsIntoSnapshot(snapshot, layouts)
+  await syncLayoutBackgrounds(url, apitoken, organizer, eventSlug, snapshot)
 
   onProgress?.({ phase: 'orders' })
   const ordersPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/?ordering=last_modified&pdf_data=true`

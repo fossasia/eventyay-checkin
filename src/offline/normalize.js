@@ -97,6 +97,7 @@ export function normalizeLayout(layout) {
     layout: Array.isArray(parsedLayout) ? parsedLayout : [],
     size: layout.size || null,
     background: layout.background || null,
+    backgroundPdf: layout.backgroundPdf || null,
     askUserFields: layout.ask_user_fields || null,
     allowCustomization: Boolean(layout.allow_customization),
     allowBadgeEditing: Boolean(layout.allow_badge_editing),
@@ -151,6 +152,10 @@ export function mergeLayoutsIntoSnapshot(snapshot, layouts) {
     const normalized = normalizeLayout(layout)
     if (!normalized) {
       continue
+    }
+    const existing = snapshot.layouts[String(normalized.id)]
+    if (existing?.backgroundPdf && !normalized.backgroundPdf) {
+      normalized.backgroundPdf = existing.backgroundPdf
     }
     snapshot.layouts[String(normalized.id)] = normalized
     for (const productId of normalized.productAssignments) {
