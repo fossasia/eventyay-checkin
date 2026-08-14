@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest'
 import {
   CUSTOM_ORIGIN_WEBSITE,
   DEFAULT_ORIGIN_WEBSITE,
   resolveOriginWebsite
 } from '@/utils/originWebsites'
+import { describe, expect, it } from 'vitest'
 
 describe('resolveOriginWebsite', () => {
   it('returns the selected origin website', () => {
