@@ -37,22 +37,31 @@ function joinUrl(baseUrl, path) {
   return `${base}${path.startsWith('/') ? path : `/${path}`}`
 }
 
-async function fetchBinary(baseUrl, apitoken, path) {
-  const response = await fetch(joinUrl(baseUrl, path), {
-    credentials: 'omit',
-    headers: {
-      Authorization: `Device ${apitoken}`,
-      Accept: 'application/pdf'
+async function fetchAssetBytes(baseUrl, apitoken, pathOrUrl) {
+  const raw = String(pathOrUrl || '').trim()
+  if (!raw) {
+    return null
+  }
+  const url = /^https?:\/\//i.test(raw) ? raw : joinUrl(baseUrl, raw)
+  try {
+    const response = await fetch(url, {
+      credentials: 'omit',
+      headers: {
+        Authorization: `Device ${apitoken}`,
+        Accept: 'application/pdf, image/*, font/ttf, application/octet-stream, */*'
+      }
+    })
+    if (!response.ok) {
+      return null
     }
-  })
-  if (!response.ok) {
+    const buffer = await response.arrayBuffer()
+    if (!buffer.byteLength) {
+      return null
+    }
+    return new Uint8Array(buffer)
+  } catch {
     return null
   }
-  const buffer = await response.arrayBuffer()
-  if (!buffer.byteLength) {
-    return null
-  }
-  return new Uint8Array(buffer)
 }
 
 function bytesToBase64(bytes) {
@@ -71,12 +80,53 @@ async function syncLayoutBackgrounds(baseUrl, apitoken, organizer, eventSlug, sn
       continue
     }
     const endpointPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/badgelayouts/${layoutId}/background/`
-    let bytes = await fetchBinary(baseUrl, apitoken, endpointPath)
+    let bytes = await fetchAssetBytes(baseUrl, apitoken, endpointPath)
     if (!bytes && layout.background) {
-      bytes = await fetchBinary(baseUrl, apitoken, layout.background)
+      bytes = await fetchAssetBytes(baseUrl, apitoken, layout.background)
     }
     if (bytes) {
       layout.backgroundPdf = bytesToBase64(bytes)
+    }
+  }
+}
+
+const PRINT_FONT_PATHS = {
+  regular: '/static/fonts/opensans_regular_macroman/OpenSans-Regular-webfont.ttf',
+  bold: '/static/fonts/opensans_bold_macroman/OpenSans-Bold-webfont.ttf',
+  italic: '/static/fonts/opensans_italic_macroman/OpenSans-Italic-webfont.ttf',
+  boldItalic: '/static/fonts/opensans_bolditalic_macroman/OpenSans-BoldItalic-webfont.ttf'
+}
+
+async function syncPrintAssets(baseUrl, apitoken, snapshot) {
+  const assets = { ...(snapshot.printAssets || {}) }
+  for (const [key, path] of Object.entries(PRINT_FONT_PATHS)) {
+    if (assets[key]) {
+      continue
+    }
+    const bytes = await fetchAssetBytes(baseUrl, apitoken, path)
+    if (bytes) {
+      assets[key] = bytesToBase64(bytes)
+    }
+  }
+  snapshot.printAssets = assets
+}
+
+async function syncPdfImages(baseUrl, apitoken, snapshot) {
+  for (const record of Object.values(snapshot.positionsBySecret || {})) {
+    const images = record?.pdfData?.images
+    if (!images || typeof images !== 'object') {
+      continue
+    }
+    for (const [key, value] of Object.entries(images)) {
+      if (!value || String(value).startsWith('data:')) {
+        continue
+      }
+      const bytes = await fetchAssetBytes(baseUrl, apitoken, value)
+      if (!bytes) {
+        continue
+      }
+      const mime = String(value).toLowerCase().includes('.png') ? 'image/png' : 'image/jpeg'
+      images[key] = `data:${mime};base64,${bytesToBase64(bytes)}`
     }
   }
 }
@@ -178,6 +228,7 @@ export async function runOfflineSync({
   const { results: layouts } = await fetchAllPages(url, apitoken, layoutsPath)
   mergeLayoutsIntoSnapshot(snapshot, layouts)
   await syncLayoutBackgrounds(url, apitoken, organizer, eventSlug, snapshot)
+  await syncPrintAssets(url, apitoken, snapshot)
 
   onProgress?.({ phase: 'orders' })
   const ordersPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/?ordering=last_modified&pdf_data=true`
@@ -186,6 +237,7 @@ export async function runOfflineSync({
     sinceValue: snapshot.cursors.ordersModifiedSince
   })
   mergeOrdersIntoSnapshot(snapshot, orders)
+  await syncPdfImages(url, apitoken, snapshot)
   if (ordersCursor) {
     snapshot.cursors.ordersModifiedSince = ordersCursor
   }
@@ -221,6 +273,7 @@ export async function runOfflineSync({
   if (followUpOrders.length) {
     const followSnapshot = memoryIndexToSnapshot(nextIndex)
     mergeOrdersIntoSnapshot(followSnapshot, followUpOrders)
+    await syncPdfImages(url, apitoken, followSnapshot)
     if (followUpCursor) {
       followSnapshot.cursors.ordersModifiedSince = followUpCursor
     }

@@ -1046,48 +1046,58 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       layout,
       pdfData,
       size: layout.size,
-      secret: resolvedSecret || secret
+      secret: resolvedSecret || secret,
+      printAssets: offlineSync.index.printAssets || {}
     })
+  }
+
+  function resolveServerBadgePath(badgeUrlPath, layoutId, positionHint) {
+    const path = String(badgeUrlPath || '')
+    if (path && !path.startsWith('local://')) {
+      return withBadgeLayoutParam(path, layoutId)
+    }
+    const { organizer, eventSlug } = getEventListContext()
+    const positionId = positionHint?.id || positionHint?.orderPositionId || message.value?.orderPositionId
+    if (!organizer || !eventSlug || !positionId) {
+      return ''
+    }
+    return withBadgeLayoutParam(
+      `/api/v1/organizers/${organizer}/events/${eventSlug}/orderpositions/${positionId}/download/badge/`,
+      layoutId
+    )
   }
 
   async function getBadgeBlob(badgeUrlPath, { layoutId = null, positionHint = null } = {}) {
     const { apitoken, url } = getEventListContext()
+    const hint = positionHint || message.value
+    const offline = isBrowserOffline()
+
+    if (!offline && url && apitoken) {
+      const serverPath = resolveServerBadgePath(badgeUrlPath, layoutId, hint)
+      if (serverPath) {
+        const result = await fetchBadgePdfWithRetry(serverPath, { baseUrl: url, apitoken })
+        if (result.status === 'ready') {
+          return { blob: result.blob }
+        }
+        if (result.profileDenied) {
+          return { profileDenied: true, detail: result.detail || DEVICE_PROFILE_DENIED_MESSAGE }
+        }
+      }
+    }
 
     try {
-      const localBlob = await tryRenderLocalBadge(positionHint, layoutId)
+      const localBlob = await tryRenderLocalBadge(hint, layoutId)
       if (localBlob) {
         return { blob: localBlob, local: true }
       }
     } catch (error) {
-      console.warn('Local badge render failed, falling back to server PDF', error)
+      console.warn('Local badge render failed', error)
     }
 
-    const path = String(badgeUrlPath || '')
-    const isLocalMarker = path.startsWith('local://')
-    if (isLocalMarker || !path) {
-      return {
-        detail: 'Could not render badge from synced layout data. Sync online and try again.'
-      }
-    }
-
-    if (!url || !apitoken) {
-      return null
-    }
-
-    const pathWithLayout = withBadgeLayoutParam(badgeUrlPath, layoutId)
-    const result = await fetchBadgePdfWithRetry(pathWithLayout, { baseUrl: url, apitoken })
-    if (result.status === 'ready') {
-      return { blob: result.blob }
-    }
-    if (result.profileDenied) {
-      return { profileDenied: true, detail: result.detail || DEVICE_PROFILE_DENIED_MESSAGE }
-    }
     return {
-      detail:
-        result.detail ||
-        (result.status === 'generating'
-          ? 'Badge is still generating. Ensure a Celery worker is running and try again.'
-          : 'Could not load the badge PDF.')
+      detail: offline
+        ? 'Could not render badge from synced layout data. Sync online and try again.'
+        : 'Could not load the badge PDF. Check your connection and try Print again.'
     }
   }
 

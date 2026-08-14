@@ -1,8 +1,9 @@
+import fontkit from '@pdf-lib/fontkit'
 import { degrees, PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import QRCode from 'qrcode'
 
 const MM_TO_PT = 72 / 25.4
-const RENDERABLE_TYPES = new Set(['textarea', 'text', 'barcodearea'])
+const RENDERABLE_TYPES = new Set(['textarea', 'text', 'barcodearea', 'imagearea', 'poweredby'])
 
 function mm(value) {
   return Number(value || 0) * MM_TO_PT
@@ -110,7 +111,7 @@ export function buildBadgePdfData({ positionHint = null, snapshotRecord = null }
 
 function textareaContent(element, pdfData, secret) {
   const content = element?.content
-  if (content === 'other') {
+  if (content === 'other' || content === 'other_i18n') {
     return resolveOtherText(element.text, pdfData, secret)
   }
   return fieldValue(pdfData, content, secret)
@@ -178,53 +179,80 @@ async function embedQrPng(pdfDoc, text, sizePt) {
   return pdfDoc.embedPng(bytes)
 }
 
+function pickFont(element, fonts) {
+  if (element.bold && element.italic) {
+    return fonts.boldItalic || fonts.bold || fonts.regular
+  }
+  if (element.italic) {
+    return fonts.italic || fonts.regular
+  }
+  if (element.bold) {
+    return fonts.bold || fonts.regular
+  }
+  return fonts.regular
+}
+
+function alignedX(left, boxWidth, textWidth, align) {
+  if (align === 'center') {
+    return left + (boxWidth - textWidth) / 2
+  }
+  if (align === 'right') {
+    return left + boxWidth - textWidth
+  }
+  return left
+}
+
 function drawTextarea(page, element, pdfData, secret, fonts) {
   const text = textareaContent(element, pdfData, secret)
   if (!text) {
     return
   }
 
-  const fontSize = Number(element.fontsize) || 12
-  const font = element.bold ? fonts.bold : fonts.regular
+  let fontSize = Number(element.fontsize) || 12
+  const font = pickFont(element, fonts)
   const color = layoutColorToRgb(element.color)
   const boxWidth = element.width != null ? mm(element.width) : page.getWidth()
   const left = mm(element.left)
   const bottom = mm(element.bottom)
   const rotation = Number(element.rotation || 0)
-  const lineHeight = fontSize * 1.15
+  const leading = fontSize
 
-  if (element.downward) {
-    page.drawText(text, {
-      x: left,
-      y: bottom,
-      size: fontSize,
-      font,
-      color,
-      rotate: degrees(-90 - rotation)
-    })
-    return
+  if (element.autofit_width) {
+    while (fontSize > 6 && font.widthOfTextAtSize(text, fontSize) > boxWidth) {
+      fontSize -= 0.5
+    }
   }
 
   const lines = wrapTextLines(text, font, fontSize, boxWidth)
-  let cursorY = bottom + lineHeight * 0.85
-  for (const line of lines) {
-    const textWidth = font.widthOfTextAtSize(line, fontSize)
-    let drawX = left
-    if (element.align === 'center') {
-      drawX = left + (boxWidth - textWidth) / 2
-    } else if (element.align === 'right') {
-      drawX = left + boxWidth - textWidth
-    }
+  const descent = Math.abs(font.heightAtSize(fontSize, { descender: true }) - font.heightAtSize(fontSize))
+  const blockHeight = lines.length * leading
+
+  const drawLine = (line, x, y) => {
     page.drawText(line, {
-      x: Math.max(0, drawX),
-      y: cursorY,
+      x: Math.max(0, x),
+      y,
       size: fontSize,
       font,
       color,
-      maxWidth: boxWidth || undefined,
       rotate: degrees(-rotation)
     })
-    cursorY += lineHeight
+  }
+
+  if (element.downward) {
+    let y = bottom - descent / 2 - leading
+    for (const line of lines) {
+      const textWidth = font.widthOfTextAtSize(line, fontSize)
+      drawLine(line, alignedX(left, boxWidth, textWidth, element.align), y)
+      y -= leading
+    }
+    return
+  }
+
+  let y = bottom + blockHeight - descent
+  for (const line of lines) {
+    const textWidth = font.widthOfTextAtSize(line, fontSize)
+    drawLine(line, alignedX(left, boxWidth, textWidth, element.align), y)
+    y -= leading
   }
 }
 
@@ -243,11 +271,7 @@ async function drawBarcode(page, pdfDoc, element, pdfData, secret) {
   })
 }
 
-function decodeBackgroundBytes(layout, backgroundBytes = null) {
-  if (backgroundBytes) {
-    return backgroundBytes instanceof Uint8Array ? backgroundBytes : new Uint8Array(backgroundBytes)
-  }
-  const encoded = layout?.backgroundPdf
+function decodeBase64Bytes(encoded) {
   if (!encoded || typeof encoded !== 'string') {
     return null
   }
@@ -259,6 +283,68 @@ function decodeBackgroundBytes(layout, backgroundBytes = null) {
   return bytes
 }
 
+function decodeDataUrl(dataUrl) {
+  const match = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/)
+  if (!match) {
+    return null
+  }
+  return { mime: match[1], bytes: decodeBase64Bytes(match[2]) }
+}
+
+function decodeBackgroundBytes(layout, backgroundBytes = null) {
+  if (backgroundBytes) {
+    return backgroundBytes instanceof Uint8Array ? backgroundBytes : new Uint8Array(backgroundBytes)
+  }
+  return decodeBase64Bytes(layout?.backgroundPdf)
+}
+
+async function embedCustomFonts(pdfDoc, printAssets = {}) {
+  pdfDoc.registerFontkit(fontkit)
+  const embed = async (key, fallback) => {
+    const bytes = decodeBase64Bytes(printAssets?.[key])
+    if (!bytes) {
+      return fallback
+    }
+    try {
+      return await pdfDoc.embedFont(bytes, { subset: true })
+    } catch {
+      return fallback
+    }
+  }
+  const regular = await embed('regular', await pdfDoc.embedFont(StandardFonts.Helvetica))
+  const bold = await embed('bold', await pdfDoc.embedFont(StandardFonts.HelveticaBold))
+  const italic = await embed('italic', regular)
+  const boldItalic = await embed('boldItalic', bold)
+  return { regular, bold, italic, boldItalic }
+}
+
+async function drawImageArea(page, pdfDoc, element, pdfData) {
+  const width = mm(element.width)
+  const height = mm(element.height)
+  const x = mm(element.left)
+  const y = mm(element.bottom)
+  const source = pdfData?.images?.[element.content]
+  const decoded = decodeDataUrl(source)
+  if (decoded?.bytes) {
+    try {
+      const image = decoded.mime.includes('png')
+        ? await pdfDoc.embedPng(decoded.bytes)
+        : await pdfDoc.embedJpg(decoded.bytes)
+      page.drawImage(image, { x, y, width, height })
+      return
+    } catch {
+      // Fall through to placeholder.
+    }
+  }
+  page.drawRectangle({
+    x,
+    y,
+    width,
+    height,
+    color: rgb(0.8, 0.8, 0.8)
+  })
+}
+
 /**
  * Render a badge PDF from layout JSON + pdf_data map (no server PDF download).
  */
@@ -267,7 +353,8 @@ export async function renderBadgePdfFromLayout({
   pdfData = {},
   size = null,
   secret = '',
-  backgroundBytes = null
+  backgroundBytes = null,
+  printAssets = {}
 } = {}) {
   const elements = getLayoutElements(layout)
   const bgBytes = decodeBackgroundBytes(layout, backgroundBytes)
@@ -288,10 +375,7 @@ export async function renderBadgePdfFromLayout({
     page = pdfDoc.addPage([pageSize.width, pageSize.height])
   }
 
-  const fonts = {
-    regular: await pdfDoc.embedFont(StandardFonts.Helvetica),
-    bold: await pdfDoc.embedFont(StandardFonts.HelveticaBold)
-  }
+  const fonts = await embedCustomFonts(pdfDoc, printAssets)
 
   for (const element of elements) {
     if (!element || typeof element !== 'object') {
@@ -303,15 +387,7 @@ export async function renderBadgePdfFromLayout({
     } else if (type === 'barcodearea') {
       await drawBarcode(page, pdfDoc, element, pdfData, secret)
     } else if (type === 'imagearea') {
-      const width = mm(element.width)
-      const height = mm(element.height)
-      page.drawRectangle({
-        x: mm(element.left),
-        y: mm(element.bottom),
-        width,
-        height,
-        color: rgb(0.8, 0.8, 0.8)
-      })
+      await drawImageArea(page, pdfDoc, element, pdfData)
     }
   }
 

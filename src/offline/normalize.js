@@ -14,6 +14,7 @@ export function createEmptySnapshot(organizer, eventSlug) {
       ordersModifiedSince: null,
       revokedCreatedSince: null
     },
+    printAssets: {},
     lastSyncedAt: null
   }
 }
