@@ -27,6 +27,7 @@ export function createMemoryIndex(snapshot) {
     products: [...(snapshot?.products || [])],
     checkInLists: [...(snapshot?.checkInLists || [])],
     layoutProductMap: { ...(snapshot?.layoutProductMap || {}) },
+    printAssets: { ...(snapshot?.printAssets || {}) },
     lastSyncedAt: snapshot?.lastSyncedAt || null,
     organizer: snapshot?.organizer || '',
     eventSlug: snapshot?.eventSlug || ''
@@ -59,6 +60,7 @@ export function memoryIndexToSnapshot(index) {
     pendingRedeems: [...index.pendingRedeems],
     pendingRegistrations: [...index.pendingRegistrations],
     cursors: { ...index.cursors },
+    printAssets: { ...(index.printAssets || {}) },
     lastSyncedAt: index.lastSyncedAt
   }
 }

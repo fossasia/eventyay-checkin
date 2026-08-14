@@ -1,4 +1,4 @@
-import { fetchBadgePdfWithRetry, withBadgeLayoutParam } from '@/utils/badgePdf'
+import { fetchBadgePdf, fetchBadgePdfWithRetry, withBadgeLayoutParam } from '@/utils/badgePdf'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 describe('withBadgeLayoutParam', () => {
@@ -18,6 +18,28 @@ describe('withBadgeLayoutParam', () => {
     expect(withBadgeLayoutParam('/positions/1/download/badge/', null)).toBe(
       '/positions/1/download/badge/'
     )
+  })
+
+  it('does not rewrite local offline badge markers', () => {
+    expect(withBadgeLayoutParam('local://offline-badge', 12)).toBe('local://offline-badge')
+  })
+})
+
+describe('fetchBadgePdf', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('does not fetch local offline badge markers', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const result = await fetchBadgePdf('local://offline-badge?layout=12', {
+      baseUrl: 'https://dev.eventyay.com',
+      apitoken: 'token'
+    })
+    expect(result.status).toBe('error')
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })
 

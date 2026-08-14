@@ -15,6 +15,7 @@ export function createEmptySnapshot(organizer, eventSlug) {
       ordersModifiedSince: null,
       revokedCreatedSince: null
     },
+    printAssets: {},
     lastSyncedAt: null
   }
 }
@@ -37,10 +38,7 @@ export function normalizePositionFromOrder(order, position, { listIds = [], layo
       ? { ...position.pdf_data }
       : {}
 
-  // Images are live URLs; keep keys but offline render may skip missing blobs.
-  if (pdfData.images && typeof pdfData.images === 'object') {
-    pdfData.images = { ...pdfData.images }
-  }
+  delete pdfData.images
 
   const record = {
     id: position.id,
@@ -98,6 +96,7 @@ export function normalizeLayout(layout) {
     layout: Array.isArray(parsedLayout) ? parsedLayout : [],
     size: layout.size || null,
     background: layout.background || null,
+    backgroundPdf: layout.backgroundPdf || null,
     askUserFields: layout.ask_user_fields || null,
     allowCustomization: Boolean(layout.allow_customization),
     allowBadgeEditing: Boolean(layout.allow_badge_editing),
@@ -152,6 +151,10 @@ export function mergeLayoutsIntoSnapshot(snapshot, layouts) {
     const normalized = normalizeLayout(layout)
     if (!normalized) {
       continue
+    }
+    const existing = snapshot.layouts[String(normalized.id)]
+    if (existing?.backgroundPdf && !normalized.backgroundPdf) {
+      normalized.backgroundPdf = existing.backgroundPdf
     }
     snapshot.layouts[String(normalized.id)] = normalized
     for (const productId of normalized.productAssignments) {

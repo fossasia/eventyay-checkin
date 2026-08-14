@@ -55,6 +55,7 @@ describe('normalize + memory index', () => {
       }
     )
     expect(record.pdfData.question_42).toBe('Vegan')
+    expect(record.pdfData.images).toBeUndefined()
     expect(record.listIds).toEqual([3])
     expect(record.searchText).toContain('ada')
   })
@@ -101,6 +102,30 @@ describe('normalize + memory index', () => {
 
     const roundTrip = createMemoryIndex(memoryIndexToSnapshot(index))
     expect(roundTrip.positionsBySecret.get('sec-1').attendeeName).toBe('Ada Lovelace')
+  })
+
+  it('keeps previously synced badge background PDFs when layouts refresh', () => {
+    const snapshot = createEmptySnapshot('org', 'evt')
+    mergeLayoutsIntoSnapshot(snapshot, [
+      {
+        id: 7,
+        name: 'Default',
+        default: true,
+        layout: '[]',
+        backgroundPdf: 'JVBERi0x'
+      }
+    ])
+    mergeLayoutsIntoSnapshot(snapshot, [
+      {
+        id: 7,
+        name: 'Default',
+        default: true,
+        layout: '[]',
+        background: '/media/pub/bg.pdf'
+      }
+    ])
+    expect(snapshot.layouts['7'].backgroundPdf).toBe('JVBERi0x')
+    expect(snapshot.layouts['7'].background).toBe('/media/pub/bg.pdf')
   })
 })
 
