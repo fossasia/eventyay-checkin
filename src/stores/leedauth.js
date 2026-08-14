@@ -76,5 +76,17 @@ export const useleedauth = defineStore('leedauth', () => {
     }
   }
 
-  return { leedlogin }
+  async function loginWithPendingKey() {
+    const processApi = useEventyayApi()
+    const pendingKey = String(processApi.pendingExhibitorKey || '').trim()
+    if (!pendingKey) {
+      return { success: false, skipped: true }
+    }
+
+    const response = await leedlogin({ key: pendingKey })
+    processApi.setPendingExhibitorKey('')
+    return response
+  }
+
+  return { leedlogin, loginWithPendingKey }
 })

@@ -22,6 +22,7 @@ export const useEventyayApi = defineStore(
     const deviceName = ref('')
     const gateName = ref('')
     const securityProfile = ref('')
+    const pendingExhibitorKey = ref('')
 
     function $reset() {
       apitoken.value = ''
@@ -40,6 +41,7 @@ export const useEventyayApi = defineStore(
       deviceName.value = ''
       gateName.value = ''
       securityProfile.value = ''
+      pendingExhibitorKey.value = ''
     }
 
     function parseRegistrationError(error) {
@@ -104,6 +106,10 @@ export const useEventyayApi = defineStore(
       exhiname.value = ''
       boothname.value = ''
       boothid.value = ''
+    }
+
+    function setPendingExhibitorKey(key) {
+      pendingExhibitorKey.value = String(key || '').trim()
     }
 
     function setEvent(slug, name) {
@@ -175,6 +181,7 @@ export const useEventyayApi = defineStore(
       deviceName.value = ''
       gateName.value = ''
       securityProfile.value = ''
+      pendingExhibitorKey.value = ''
 
       if (!clearRole) {
         selectedRole.value = preservedRole
@@ -342,6 +349,8 @@ export const useEventyayApi = defineStore(
       setApiCred,
       setEvent,
       setExhibitor,
+      pendingExhibitorKey,
+      setPendingExhibitorKey,
       selectedRole,
       setRole,
       applyStationTypeChange,
