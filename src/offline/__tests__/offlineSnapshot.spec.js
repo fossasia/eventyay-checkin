@@ -9,6 +9,7 @@ import {
 } from '@/offline/normalize'
 import {
   createMemoryIndex,
+  listStoredPositions,
   lookupBySecret,
   memoryIndexToSnapshot,
   searchPositions
@@ -93,6 +94,9 @@ describe('normalize + memory index', () => {
     expect(lookupBySecret(index, 'revoked-1').status).toBe('revoked')
     expect(lookupBySecret(index, 'unknown').status).toBe('missing')
     expect(searchPositions(index, 'lovelace')).toHaveLength(1)
+    expect(listStoredPositions(index, '')).toHaveLength(1)
+    expect(listStoredPositions(index, 'ada')).toHaveLength(1)
+    expect(listStoredPositions(index, 'zzz')).toHaveLength(0)
     expect(index.layouts.get('7').layout[0].content).toBe('attendee_name')
 
     const roundTrip = createMemoryIndex(memoryIndexToSnapshot(index))

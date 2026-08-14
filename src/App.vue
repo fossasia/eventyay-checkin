@@ -58,7 +58,7 @@ function handleVisibilityChange() {
       pollDeviceSession()
       startSessionPolling()
       if (offlineSync.enabled && offlineSync.isOnline) {
-        offlineSync.syncNow(processApi)
+        offlineSync.scheduleAutoSync(processApi, { delayMs: 0 })
       }
     }
     return
@@ -69,7 +69,7 @@ function handleVisibilityChange() {
 function handleOnline() {
   offlineSync.setOnline(true)
   if (processApi.apitoken && offlineSync.enabled) {
-    offlineSync.syncNow(processApi)
+    offlineSync.scheduleAutoSync(processApi, { delayMs: 0 })
   }
 }
 

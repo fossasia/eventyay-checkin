@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { lookupBySecret, searchPositions } from '@/offline/memoryIndex'
+import {
+  lookupBySecret,
+  listStoredPositions,
+  positionToSearchOrder,
+  searchPositions
+} from '@/offline/memoryIndex'
 import {
   canUseOfflineSync,
   loadOfflineIndex,
@@ -16,6 +21,7 @@ export const useOfflineSyncStore = defineStore('offlineSync', () => {
   const lastSyncedAt = ref(null)
   const lastCounts = ref(null)
   const enabled = ref(false)
+  let autoSyncTimer = null
 
   const pendingCount = computed(() => {
     if (!index.value) {
@@ -23,6 +29,8 @@ export const useOfflineSyncStore = defineStore('offlineSync', () => {
     }
     return (index.value.pendingRedeems?.length || 0) + (index.value.pendingRegistrations?.length || 0)
   })
+
+  const hasSnapshotData = computed(() => Boolean(index.value?.positionsBySecret?.size))
 
   const statusLabel = computed(() => {
     if (!enabled.value) {
@@ -35,22 +43,57 @@ export const useOfflineSyncStore = defineStore('offlineSync', () => {
       return pendingCount.value ? `Offline · ${pendingCount.value} pending` : 'Offline'
     }
     if (lastSyncedAt.value) {
-      return `Synced`
+      return 'Synced'
     }
-    return 'Online · not synced'
+    return 'Online'
   })
 
   function setOnline(value) {
     isOnline.value = Boolean(value)
   }
 
-  async function hydrate(processApi) {
-    enabled.value =
+  function isOfflineCapable(processApi) {
+    return (
       Boolean(processApi?.apitoken) &&
       canUseOfflineSync(processApi.selectedRole, processApi.securityProfile)
+    )
+  }
+
+  function isOfflineMode() {
+    return !isOnline.value || (typeof navigator !== 'undefined' && !navigator.onLine)
+  }
+
+  function clearAutoSyncTimer() {
+    if (autoSyncTimer) {
+      clearTimeout(autoSyncTimer)
+      autoSyncTimer = null
+    }
+  }
+
+  function scheduleAutoSync(processApi, { delayMs = 400 } = {}) {
+    if (!isOfflineCapable(processApi) || !processApi?.apitoken) {
+      return
+    }
+    if (!isOnline.value || (typeof navigator !== 'undefined' && !navigator.onLine)) {
+      return
+    }
+    clearAutoSyncTimer()
+    autoSyncTimer = setTimeout(() => {
+      autoSyncTimer = null
+      if (isSyncing.value) {
+        return
+      }
+      syncNow(processApi).catch(() => {
+        // Errors surface via status label.
+      })
+    }, delayMs)
+  }
+
+  async function hydrate(processApi) {
+    enabled.value = isOfflineCapable(processApi)
     if (!enabled.value || !processApi.organizer || !processApi.eventSlug) {
       index.value = null
-      return
+      return { ok: false }
     }
     try {
       index.value = await loadOfflineIndex({
@@ -59,9 +102,11 @@ export const useOfflineSyncStore = defineStore('offlineSync', () => {
         apitoken: processApi.apitoken
       })
       lastSyncedAt.value = index.value.lastSyncedAt
+      return { ok: true, index: index.value }
     } catch {
       index.value = null
       lastError.value = 'Could not load offline snapshot'
+      return { ok: false, error: lastError.value }
     }
   }
 
@@ -112,10 +157,18 @@ export const useOfflineSyncStore = defineStore('offlineSync', () => {
     if (!index.value) {
       return []
     }
-    return searchPositions(index.value, query)
+    return searchPositions(index.value, query).map(positionToSearchOrder)
+  }
+
+  function searchStored(query = '', { limit = 100 } = {}) {
+    if (!index.value) {
+      return []
+    }
+    return listStoredPositions(index.value, query, { limit }).map(positionToSearchOrder)
   }
 
   async function wipe() {
+    clearAutoSyncTimer()
     await wipeOfflineData()
     index.value = null
     lastSyncedAt.value = null
@@ -133,12 +186,17 @@ export const useOfflineSyncStore = defineStore('offlineSync', () => {
     lastCounts,
     enabled,
     pendingCount,
+    hasSnapshotData,
     statusLabel,
     setOnline,
+    isOfflineCapable,
+    isOfflineMode,
     hydrate,
+    scheduleAutoSync,
     syncNow,
     findBySecret,
     search,
+    searchStored,
     wipe
   }
 })
