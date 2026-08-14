@@ -15,7 +15,7 @@ import {
 } from '@/offline/snapshotStore'
 import { flushPendingRedeems, flushPendingRegistrations } from '@/offline/offlineActions'
 
-const MAX_PAGES = 50
+const MAX_PAGES = 600
 
 export function canUseOfflineSync(selectedRole, securityProfile) {
   if (selectedRole === 'Badge Station' || securityProfile === 'eventyay_checkin_online_kiosk') {
@@ -109,26 +109,6 @@ async function syncPrintAssets(baseUrl, apitoken, snapshot) {
     }
   }
   snapshot.printAssets = assets
-}
-
-async function syncPdfImages(baseUrl, apitoken, snapshot) {
-  for (const record of Object.values(snapshot.positionsBySecret || {})) {
-    const images = record?.pdfData?.images
-    if (!images || typeof images !== 'object') {
-      continue
-    }
-    for (const [key, value] of Object.entries(images)) {
-      if (!value || String(value).startsWith('data:')) {
-        continue
-      }
-      const bytes = await fetchAssetBytes(baseUrl, apitoken, value)
-      if (!bytes) {
-        continue
-      }
-      const mime = String(value).toLowerCase().includes('.png') ? 'image/png' : 'image/jpeg'
-      images[key] = `data:${mime};base64,${bytesToBase64(bytes)}`
-    }
-  }
 }
 
 async function fetchJsonPage(baseUrl, apitoken, path) {
@@ -237,7 +217,6 @@ export async function runOfflineSync({
     sinceValue: snapshot.cursors.ordersModifiedSince
   })
   mergeOrdersIntoSnapshot(snapshot, orders)
-  await syncPdfImages(url, apitoken, snapshot)
   if (ordersCursor) {
     snapshot.cursors.ordersModifiedSince = ordersCursor
   }
@@ -273,7 +252,6 @@ export async function runOfflineSync({
   if (followUpOrders.length) {
     const followSnapshot = memoryIndexToSnapshot(nextIndex)
     mergeOrdersIntoSnapshot(followSnapshot, followUpOrders)
-    await syncPdfImages(url, apitoken, followSnapshot)
     if (followUpCursor) {
       followSnapshot.cursors.ordersModifiedSince = followUpCursor
     }

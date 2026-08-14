@@ -87,6 +87,11 @@ describe('badgeRenderer', () => {
     expect(canRenderBadgeLocally(defaultLayout, { attendee_name: 'Ada' })).toBe(true)
     expect(canRenderBadgeLocally(null, { attendee_name: 'Ada' })).toBe(false)
     expect(canRenderBadgeLocally({ layout: [] }, {})).toBe(false)
+    expect(
+      canRenderBadgeLocally({
+        layout: [{ type: 'imagearea', content: 'question_photo', left: 0, bottom: 0, width: 20, height: 20 }]
+      })
+    ).toBe(false)
   })
 
   it('renders the default badge layout with downward fields and QR payload', async () => {

@@ -49,12 +49,13 @@ describe('normalize + memory index', () => {
         pdf_data: {
           attendee_name: 'Ada',
           'question_42': 'Vegan',
-          images: { photo: null }
+          images: { photo: '/api/v1/pdf_image/photo' }
         },
         checkins: [{ list: 3, type: 'entry', datetime: '2030-01-01T00:00:00Z' }]
       }
     )
     expect(record.pdfData.question_42).toBe('Vegan')
+    expect(record.pdfData.images).toBeUndefined()
     expect(record.listIds).toEqual([3])
     expect(record.searchText).toContain('ada')
   })

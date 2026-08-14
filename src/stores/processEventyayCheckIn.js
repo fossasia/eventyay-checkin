@@ -1072,6 +1072,15 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     const hint = positionHint || message.value
     const offline = isBrowserOffline()
 
+    try {
+      const localBlob = await tryRenderLocalBadge(hint, layoutId)
+      if (localBlob) {
+        return { blob: localBlob, local: true }
+      }
+    } catch (error) {
+      console.warn('Local badge render failed', error)
+    }
+
     if (!offline && url && apitoken) {
       const serverPath = resolveServerBadgePath(badgeUrlPath, layoutId, hint)
       if (serverPath) {
@@ -1083,15 +1092,6 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           return { profileDenied: true, detail: result.detail || DEVICE_PROFILE_DENIED_MESSAGE }
         }
       }
-    }
-
-    try {
-      const localBlob = await tryRenderLocalBadge(hint, layoutId)
-      if (localBlob) {
-        return { blob: localBlob, local: true }
-      }
-    } catch (error) {
-      console.warn('Local badge render failed', error)
     }
 
     return {

@@ -37,10 +37,7 @@ export function normalizePositionFromOrder(order, position, { listIds = [], layo
       ? { ...position.pdf_data }
       : {}
 
-  // Images are live URLs; keep keys but offline render may skip missing blobs.
-  if (pdfData.images && typeof pdfData.images === 'object') {
-    pdfData.images = { ...pdfData.images }
-  }
+  delete pdfData.images
 
   const record = {
     id: position.id,
