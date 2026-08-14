@@ -11,7 +11,7 @@ import {
 import { createAuthorizedDeviceApi, normalizeApiResourcePath } from '@/utils/serverUrl'
 import { DEVICE_PROFILE_DENIED_MESSAGE, getDeviceErrorMessage, handleDeviceApiError } from '@/utils/deviceErrors'
 import { fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME, withBadgeLayoutParam } from '@/utils/badgePdf'
-import { canRenderBadgeLocally, renderBadgePdfFromLayout } from '@/utils/badgeRenderer'
+import { canRenderBadgeLocally, renderBadgePdfFromLayout, buildBadgePdfData } from '@/utils/badgeRenderer'
 import { resolveLayoutForPosition } from '@/offline/memoryIndex'
 import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
 import { shouldUseSilentPrint } from '@/utils/kioskLauncher'
@@ -1025,14 +1025,14 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
     const secret = String(positionHint?.secret || message.value?.secret || '').trim()
     const fromIndex = secret ? offlineSync.index.positionsBySecret.get(secret) : null
-    const pdfData = positionHint?.pdf_data || fromIndex?.pdfData || null
-    if (!pdfData) {
-      return null
-    }
+    const { pdfData, secret: resolvedSecret } = buildBadgePdfData({
+      positionHint: positionHint || message.value,
+      snapshotRecord: fromIndex
+    })
 
     const layout = resolveLayoutForPosition(offlineSync.index, {
       layoutId: fromIndex?.layoutId || positionHint?.downloads?.find((d) => d.output === 'badge')?.layout,
-      product: fromIndex?.product || positionHint?.product
+      product: fromIndex?.product || positionHint?.product || message.value?.product
     })
     if (!canRenderBadgeLocally(layout, pdfData)) {
       return null
@@ -1042,7 +1042,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       layout,
       pdfData,
       size: layout.size,
-      secret: secret || fromIndex?.secret || ''
+      secret: resolvedSecret || secret
     })
   }
 
@@ -1058,7 +1058,15 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       console.warn('Local badge render failed, falling back to server PDF', error)
     }
 
-    if (!url || !apitoken || !badgeUrlPath) {
+    const path = String(badgeUrlPath || '')
+    const isLocalMarker = path.startsWith('local://')
+    if (isLocalMarker || !path) {
+      return {
+        detail: 'Could not render badge from synced layout data. Sync online and try again.'
+      }
+    }
+
+    if (!url || !apitoken) {
       return null
     }
 
