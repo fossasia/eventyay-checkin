@@ -11,7 +11,13 @@ import {
 import { createAuthorizedDeviceApi, normalizeApiResourcePath } from '@/utils/serverUrl'
 import { DEVICE_PROFILE_DENIED_MESSAGE, getDeviceErrorMessage, handleDeviceApiError } from '@/utils/deviceErrors'
 import { fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME, withBadgeLayoutParam } from '@/utils/badgePdf'
-import { canRenderBadgeLocally, renderBadgePdfFromLayout, buildBadgePdfData } from '@/utils/badgeRenderer'
+import {
+  BADGE_ONLINE_ONLY_MESSAGE,
+  buildBadgePdfData,
+  canRenderBadgeLocally,
+  layoutRequiresOnlineGeneration,
+  renderBadgePdfFromLayout
+} from '@/utils/badgeRenderer'
 import { resolveLayoutForPosition } from '@/offline/memoryIndex'
 import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
 import { shouldUseSilentPrint } from '@/utils/kioskLauncher'
@@ -203,7 +209,11 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           positionHint: position || message.value
         })
         if (!badgeResult?.blob) {
-          console.warn('Badge print skipped:', badgeResult?.detail)
+          if (badgeResult?.requiresOnline) {
+            showAutoPrintFeedback('error', badgeResult.detail || BADGE_ONLINE_ONLY_MESSAGE, AUTO_PRINT_ERROR_MS)
+          } else {
+            console.warn('Badge print skipped:', badgeResult?.detail)
+          }
           return
         }
         void printPdfBlob(badgeResult.blob, { silent: shouldUseSilentPrint() })
@@ -1013,14 +1023,14 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function tryRenderLocalBadge(positionHint = null, layoutId = null) {
+  async function resolveOfflineBadgeLayout(positionHint = null, layoutId = null) {
     const offlineSync = useOfflineSyncStore()
     const processApi = useEventyayApi()
     if (!offlineSync.index) {
       await offlineSync.hydrate(processApi)
     }
     if (!offlineSync.index) {
-      return null
+      return { layout: null, pdfData: {}, secret: '', fromIndex: null }
     }
 
     const hint = positionHint || message.value
@@ -1030,7 +1040,6 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       positionHint: hint,
       snapshotRecord: fromIndex
     })
-
     const layout = resolveLayoutForPosition(offlineSync.index, {
       layoutId:
         layoutId ||
@@ -1038,6 +1047,20 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         hint?.downloads?.find((d) => d.output === 'badge')?.layout,
       product: fromIndex?.product || hint?.product || hint?.product_id
     })
+    return {
+      layout,
+      pdfData,
+      secret: resolvedSecret || secret,
+      fromIndex,
+      printAssets: offlineSync.index.printAssets || {}
+    }
+  }
+
+  async function tryRenderLocalBadge(positionHint = null, layoutId = null) {
+    const { layout, pdfData, secret, printAssets } = await resolveOfflineBadgeLayout(
+      positionHint,
+      layoutId
+    )
     if (!canRenderBadgeLocally(layout, pdfData)) {
       return null
     }
@@ -1046,8 +1069,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       layout,
       pdfData,
       size: layout.size,
-      secret: resolvedSecret || secret,
-      printAssets: offlineSync.index.printAssets || {}
+      secret,
+      printAssets
     })
   }
 
@@ -1071,14 +1094,21 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     const { apitoken, url } = getEventListContext()
     const hint = positionHint || message.value
     const offline = isBrowserOffline()
+    const { layout } = await resolveOfflineBadgeLayout(hint, layoutId)
 
-    try {
-      const localBlob = await tryRenderLocalBadge(hint, layoutId)
-      if (localBlob) {
-        return { blob: localBlob, local: true }
+    if (layoutRequiresOnlineGeneration(layout)) {
+      if (offline) {
+        return { requiresOnline: true, detail: BADGE_ONLINE_ONLY_MESSAGE }
       }
-    } catch (error) {
-      console.warn('Local badge render failed', error)
+    } else {
+      try {
+        const localBlob = await tryRenderLocalBadge(hint, layoutId)
+        if (localBlob) {
+          return { blob: localBlob, local: true }
+        }
+      } catch (error) {
+        console.warn('Local badge render failed', error)
+      }
     }
 
     if (!offline && url && apitoken) {
@@ -1096,7 +1126,9 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
     return {
       detail: offline
-        ? 'Could not render badge from synced layout data. Sync online and try again.'
+        ? layoutRequiresOnlineGeneration(layout)
+          ? BADGE_ONLINE_ONLY_MESSAGE
+          : 'Could not render badge from synced layout data. Sync online and try again.'
         : 'Could not load the badge PDF. Check your connection and try Print again.'
     }
   }

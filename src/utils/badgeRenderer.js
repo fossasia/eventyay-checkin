@@ -3,7 +3,11 @@ import { degrees, PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import QRCode from 'qrcode'
 
 const MM_TO_PT = 72 / 25.4
-const RENDERABLE_TYPES = new Set(['textarea', 'text', 'barcodearea', 'poweredby'])
+const RENDERABLE_TYPES = new Set(['textarea', 'text', 'barcodearea', 'imagearea', 'poweredby'])
+const ONLINE_ONLY_TYPES = new Set(['imagearea'])
+
+export const BADGE_ONLINE_ONLY_MESSAGE =
+  'This badge uses images or other artifacts that can only be generated online. Please go online to continue with badge generation.'
 
 function mm(value) {
   return Number(value || 0) * MM_TO_PT
@@ -283,6 +287,14 @@ function decodeBase64Bytes(encoded) {
   return bytes
 }
 
+function decodeDataUrl(dataUrl) {
+  const match = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/)
+  if (!match) {
+    return null
+  }
+  return { mime: match[1], bytes: decodeBase64Bytes(match[2]) }
+}
+
 function decodeBackgroundBytes(layout, backgroundBytes = null) {
   if (backgroundBytes) {
     return backgroundBytes instanceof Uint8Array ? backgroundBytes : new Uint8Array(backgroundBytes)
@@ -308,6 +320,54 @@ async function embedCustomFonts(pdfDoc, printAssets = {}) {
   const italic = await embed('italic', regular)
   const boldItalic = await embed('boldItalic', bold)
   return { regular, bold, italic, boldItalic }
+}
+
+async function drawPoweredBy(page, pdfDoc, element, printAssets) {
+  const style = String(element.content || 'dark').toLowerCase() === 'white' ? 'poweredByWhite' : 'poweredByDark'
+  const bytes = decodeBase64Bytes(printAssets?.[style] || printAssets?.poweredByDark)
+  if (!bytes) {
+    return
+  }
+  try {
+    const image = await pdfDoc.embedPng(bytes)
+    const height = mm(element.size || 20)
+    const width = image.height ? height * (image.width / image.height) : height
+    page.drawImage(image, {
+      x: mm(element.left),
+      y: mm(element.bottom),
+      width,
+      height
+    })
+  } catch (error) {
+    console.warn('Could not draw powered-by mark', error)
+  }
+}
+
+async function drawImageArea(page, pdfDoc, element, pdfData) {
+  const width = mm(element.width)
+  const height = mm(element.height)
+  const x = mm(element.left)
+  const y = mm(element.bottom)
+  const source = pdfData?.images?.[element.content]
+  const decoded = decodeDataUrl(source)
+  if (decoded?.bytes) {
+    try {
+      const image = decoded.mime.includes('png')
+        ? await pdfDoc.embedPng(decoded.bytes)
+        : await pdfDoc.embedJpg(decoded.bytes)
+      page.drawImage(image, { x, y, width, height })
+      return
+    } catch {
+      // Fall through to placeholder.
+    }
+  }
+  page.drawRectangle({
+    x,
+    y,
+    width,
+    height,
+    color: rgb(0.8, 0.8, 0.8)
+  })
 }
 
 /**
@@ -351,6 +411,10 @@ export async function renderBadgePdfFromLayout({
       drawTextarea(page, element, pdfData, secret, fonts)
     } else if (type === 'barcodearea') {
       await drawBarcode(page, pdfDoc, element, pdfData, secret)
+    } else if (type === 'imagearea') {
+      await drawImageArea(page, pdfDoc, element, pdfData)
+    } else if (type === 'poweredby') {
+      await drawPoweredBy(page, pdfDoc, element, printAssets)
     }
   }
 
@@ -358,13 +422,17 @@ export async function renderBadgePdfFromLayout({
   return new Blob([bytes], { type: 'application/pdf' })
 }
 
+export function layoutRequiresOnlineGeneration(layout) {
+  return getLayoutElements(layout).some((element) => ONLINE_ONLY_TYPES.has(element?.type))
+}
+
 export function canRenderBadgeLocally(layout, pdfData = null) {
   const elements = getLayoutElements(layout)
   if (!elements.some((element) => RENDERABLE_TYPES.has(element?.type))) {
     return false
   }
-  if (!pdfData || typeof pdfData !== 'object') {
-    return true
+  if (layoutRequiresOnlineGeneration(layout)) {
+    return false
   }
-  return true
+  return Boolean(!pdfData || typeof pdfData === 'object')
 }

@@ -94,7 +94,9 @@ const PRINT_FONT_PATHS = {
   regular: '/static/fonts/opensans_regular_macroman/OpenSans-Regular-webfont.ttf',
   bold: '/static/fonts/opensans_bold_macroman/OpenSans-Bold-webfont.ttf',
   italic: '/static/fonts/opensans_italic_macroman/OpenSans-Italic-webfont.ttf',
-  boldItalic: '/static/fonts/opensans_bolditalic_macroman/OpenSans-BoldItalic-webfont.ttf'
+  boldItalic: '/static/fonts/opensans_bolditalic_macroman/OpenSans-BoldItalic-webfont.ttf',
+  poweredByDark: '/static/pretixpresale/pdf/powered_by_eventyay_dark.png',
+  poweredByWhite: '/static/pretixpresale/pdf/powered_by_eventyay_white.png'
 }
 
 async function syncPrintAssets(baseUrl, apitoken, snapshot) {

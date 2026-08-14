@@ -1,8 +1,10 @@
 import {
+  BADGE_ONLINE_ONLY_MESSAGE,
   buildBadgePdfData,
   canRenderBadgeLocally,
   fieldValue,
   getLayoutElements,
+  layoutRequiresOnlineGeneration,
   renderBadgePdfFromLayout,
   resolvePageSize
 } from '@/utils/badgeRenderer'
@@ -87,11 +89,31 @@ describe('badgeRenderer', () => {
     expect(canRenderBadgeLocally(defaultLayout, { attendee_name: 'Ada' })).toBe(true)
     expect(canRenderBadgeLocally(null, { attendee_name: 'Ada' })).toBe(false)
     expect(canRenderBadgeLocally({ layout: [] }, {})).toBe(false)
-    expect(
-      canRenderBadgeLocally({
-        layout: [{ type: 'imagearea', content: 'question_photo', left: 0, bottom: 0, width: 20, height: 20 }]
-      })
-    ).toBe(false)
+  })
+
+  it('requires online generation only for per-attendee image areas', () => {
+    const withImage = {
+      layout: [{ type: 'imagearea', content: 'question_photo', left: '10', bottom: '10', width: '30', height: '40' }]
+    }
+    expect(layoutRequiresOnlineGeneration(withImage)).toBe(true)
+    expect(canRenderBadgeLocally(withImage, {})).toBe(false)
+    expect(layoutRequiresOnlineGeneration({ layout: [{ type: 'poweredby', content: 'dark' }] })).toBe(false)
+    expect(canRenderBadgeLocally({ layout: [{ type: 'poweredby', content: 'dark' }] }, {})).toBe(true)
+    expect(layoutRequiresOnlineGeneration(defaultLayout)).toBe(false)
+    expect(BADGE_ONLINE_ONLY_MESSAGE).toMatch(/go online/i)
+  })
+
+  it('embeds a synced powered-by PNG', async () => {
+    const png =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+    const blob = await renderBadgePdfFromLayout({
+      layout: {
+        size: [{ width: 148, height: 105, orientation: 'landscape' }],
+        layout: [{ type: 'poweredby', content: 'dark', left: '10', bottom: '10', size: '20' }]
+      },
+      printAssets: { poweredByDark: png }
+    })
+    expect(blob.size).toBeGreaterThan(100)
   })
 
   it('renders the default badge layout with downward fields and QR payload', async () => {
