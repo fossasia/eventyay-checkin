@@ -55,6 +55,7 @@ describe('normalize + memory index', () => {
       }
     )
     expect(record.pdfData.question_42).toBe('Vegan')
+    expect(record.pdfData.images).toBeUndefined()
     expect(record.listIds).toEqual([3])
     expect(record.searchText).toContain('ada')
   })

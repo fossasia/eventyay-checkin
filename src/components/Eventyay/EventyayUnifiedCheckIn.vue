@@ -1159,16 +1159,7 @@ onMounted(async () => {
   try {
     await waitForDesignAssets()
 
-    if (offlineSync.index?.products?.length && !isBadgeStation.value) {
-      liveRegistrationStore.restoreProductsFromSnapshot(offlineSync.index.products)
-    }
-    if (offlineSync.index?.checkInLists?.length) {
-      processEventyayCheckInStore.availableCheckInLists = offlineSync.index.checkInLists
-    }
-
-    checkInReady.value = true
-
-    const prefetchResults = await Promise.allSettled([
+    await Promise.all([
       eventyayEventStore.events.length
         ? Promise.resolve()
         : eventyayEventStore.fetchEvents(),
@@ -1179,19 +1170,10 @@ onMounted(async () => {
       isBadgeStation.value ? Promise.resolve() : fetchBadgeLayouts(),
       ensureEventQuestionsLoaded()
     ])
-    const prefetchFailed = prefetchResults.some((result) => result.status === 'rejected')
-    if (prefetchFailed && offlineSync.enabled && !navigator.onLine) {
-      notificationStore.addNotification(
-        ['Offline mode', 'Using synced check-in data. Connect to refresh.'],
-        'info'
-      )
-    } else if (prefetchFailed && navigator.onLine) {
-      console.warn('Some check-in prefetch requests failed', prefetchResults)
-    }
-
     if (!isBadgeStation.value) {
       resetLiveRegistrationForm()
     }
+    checkInReady.value = true
 
     if (offlineSync.enabled && navigator.onLine) {
       offlineSync.scheduleAutoSync(processApi)
@@ -1202,19 +1184,18 @@ onMounted(async () => {
     }
   } catch (error) {
     console.error('Error loading check-in page:', error)
-    await offlineSync.hydrate(processApi).catch(() => {})
-    notificationStore.addNotification(
-      [
-        'Warning',
-        offlineSync.hasSnapshotData
-          ? 'Network unavailable — using synced offline data.'
-          : 'Unable to fully load check-in page.'
-      ],
-      offlineSync.hasSnapshotData ? 'info' : 'error'
-    )
-    checkInReady.value = true
-    if (offlineSync.isOfflineMode() && offlineSync.hasSnapshotData) {
-      await searchOrders('', { force: true })
+    if (offlineSync.hasSnapshotData) {
+      notificationStore.addNotification(
+        ['Offline mode', 'Using synced check-in data. Connect to refresh.'],
+        'info'
+      )
+      checkInReady.value = true
+      if (offlineSync.isOfflineMode()) {
+        await searchOrders('', { force: true })
+      }
+    } else {
+      notificationStore.addNotification(['Error', 'Unable to load check-in page'], 'error')
+      checkInReady.value = true
     }
   } finally {
     loadingStore.contentLoaded()

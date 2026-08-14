@@ -86,9 +86,9 @@ describe('badgeRenderer', () => {
   })
 
   it('detects when local render is possible', () => {
-    expect(canRenderBadgeLocally(defaultLayout, { attendee_name: 'Ada' })).toBe(true)
-    expect(canRenderBadgeLocally(null, { attendee_name: 'Ada' })).toBe(false)
-    expect(canRenderBadgeLocally({ layout: [] }, {})).toBe(false)
+    expect(canRenderBadgeLocally(defaultLayout)).toBe(true)
+    expect(canRenderBadgeLocally(null)).toBe(false)
+    expect(canRenderBadgeLocally({ layout: [] })).toBe(false)
   })
 
   it('requires online generation only for per-attendee image areas', () => {
@@ -96,9 +96,9 @@ describe('badgeRenderer', () => {
       layout: [{ type: 'imagearea', content: 'question_photo', left: '10', bottom: '10', width: '30', height: '40' }]
     }
     expect(layoutRequiresOnlineGeneration(withImage)).toBe(true)
-    expect(canRenderBadgeLocally(withImage, {})).toBe(false)
+    expect(canRenderBadgeLocally(withImage)).toBe(false)
     expect(layoutRequiresOnlineGeneration({ layout: [{ type: 'poweredby', content: 'dark' }] })).toBe(false)
-    expect(canRenderBadgeLocally({ layout: [{ type: 'poweredby', content: 'dark' }] }, {})).toBe(true)
+    expect(canRenderBadgeLocally({ layout: [{ type: 'poweredby', content: 'dark' }] })).toBe(true)
     expect(layoutRequiresOnlineGeneration(defaultLayout)).toBe(false)
     expect(BADGE_ONLINE_ONLY_MESSAGE).toMatch(/go online/i)
   })

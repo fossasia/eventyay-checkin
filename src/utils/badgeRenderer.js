@@ -3,7 +3,7 @@ import { degrees, PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import QRCode from 'qrcode'
 
 const MM_TO_PT = 72 / 25.4
-const RENDERABLE_TYPES = new Set(['textarea', 'text', 'barcodearea', 'imagearea', 'poweredby'])
+const RENDERABLE_TYPES = new Set(['textarea', 'text', 'barcodearea', 'poweredby'])
 const ONLINE_ONLY_TYPES = new Set(['imagearea'])
 
 export const BADGE_ONLINE_ONLY_MESSAGE =
@@ -287,14 +287,6 @@ function decodeBase64Bytes(encoded) {
   return bytes
 }
 
-function decodeDataUrl(dataUrl) {
-  const match = String(dataUrl || '').match(/^data:([^;]+);base64,(.+)$/)
-  if (!match) {
-    return null
-  }
-  return { mime: match[1], bytes: decodeBase64Bytes(match[2]) }
-}
-
 function decodeBackgroundBytes(layout, backgroundBytes = null) {
   if (backgroundBytes) {
     return backgroundBytes instanceof Uint8Array ? backgroundBytes : new Uint8Array(backgroundBytes)
@@ -343,33 +335,6 @@ async function drawPoweredBy(page, pdfDoc, element, printAssets) {
   }
 }
 
-async function drawImageArea(page, pdfDoc, element, pdfData) {
-  const width = mm(element.width)
-  const height = mm(element.height)
-  const x = mm(element.left)
-  const y = mm(element.bottom)
-  const source = pdfData?.images?.[element.content]
-  const decoded = decodeDataUrl(source)
-  if (decoded?.bytes) {
-    try {
-      const image = decoded.mime.includes('png')
-        ? await pdfDoc.embedPng(decoded.bytes)
-        : await pdfDoc.embedJpg(decoded.bytes)
-      page.drawImage(image, { x, y, width, height })
-      return
-    } catch {
-      // Fall through to placeholder.
-    }
-  }
-  page.drawRectangle({
-    x,
-    y,
-    width,
-    height,
-    color: rgb(0.8, 0.8, 0.8)
-  })
-}
-
 /**
  * Render a badge PDF from layout JSON + pdf_data map (no server PDF download).
  */
@@ -411,8 +376,6 @@ export async function renderBadgePdfFromLayout({
       drawTextarea(page, element, pdfData, secret, fonts)
     } else if (type === 'barcodearea') {
       await drawBarcode(page, pdfDoc, element, pdfData, secret)
-    } else if (type === 'imagearea') {
-      await drawImageArea(page, pdfDoc, element, pdfData)
     } else if (type === 'poweredby') {
       await drawPoweredBy(page, pdfDoc, element, printAssets)
     }
@@ -426,13 +389,10 @@ export function layoutRequiresOnlineGeneration(layout) {
   return getLayoutElements(layout).some((element) => ONLINE_ONLY_TYPES.has(element?.type))
 }
 
-export function canRenderBadgeLocally(layout, pdfData = null) {
+export function canRenderBadgeLocally(layout) {
   const elements = getLayoutElements(layout)
   if (!elements.some((element) => RENDERABLE_TYPES.has(element?.type))) {
     return false
   }
-  if (layoutRequiresOnlineGeneration(layout)) {
-    return false
-  }
-  return Boolean(!pdfData || typeof pdfData === 'object')
+  return !layoutRequiresOnlineGeneration(layout)
 }

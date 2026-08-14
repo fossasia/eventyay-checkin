@@ -1,7 +1,6 @@
 import { createDeviceSalt } from '@/offline/snapshotCrypto'
 
 const CACHE_NAME = 'eventyay-offline-snapshots-v1'
-const LEGACY_BADGE_CACHE_NAME = 'eventyay-offline-badge-pdfs-v1'
 const SALT_KEY = 'eventyay-offline-salt'
 const memoryBlobs = new Map()
 
@@ -112,11 +111,6 @@ export async function wipeAllEncryptedSnapshots() {
   if (typeof caches !== 'undefined') {
     try {
       await caches.delete(CACHE_NAME)
-    } catch {
-      // ignore
-    }
-    try {
-      await caches.delete(LEGACY_BADGE_CACHE_NAME)
     } catch {
       // ignore
     }

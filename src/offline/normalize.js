@@ -37,10 +37,7 @@ export function normalizePositionFromOrder(order, position, { listIds = [], layo
       ? { ...position.pdf_data }
       : {}
 
-  // Image URLs stay as references; image-area badges are generated online only.
-  if (pdfData.images && typeof pdfData.images === 'object') {
-    pdfData.images = { ...pdfData.images }
-  }
+  delete pdfData.images
 
   const record = {
     id: position.id,

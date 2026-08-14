@@ -1030,7 +1030,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       await offlineSync.hydrate(processApi)
     }
     if (!offlineSync.index) {
-      return { layout: null, pdfData: {}, secret: '', fromIndex: null }
+      return { layout: null, pdfData: {}, secret: '', printAssets: {} }
     }
 
     const hint = positionHint || message.value
@@ -1051,27 +1051,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       layout,
       pdfData,
       secret: resolvedSecret || secret,
-      fromIndex,
       printAssets: offlineSync.index.printAssets || {}
     }
-  }
-
-  async function tryRenderLocalBadge(positionHint = null, layoutId = null) {
-    const { layout, pdfData, secret, printAssets } = await resolveOfflineBadgeLayout(
-      positionHint,
-      layoutId
-    )
-    if (!canRenderBadgeLocally(layout, pdfData)) {
-      return null
-    }
-
-    return renderBadgePdfFromLayout({
-      layout,
-      pdfData,
-      size: layout.size,
-      secret,
-      printAssets
-    })
   }
 
   function resolveServerBadgePath(badgeUrlPath, layoutId, positionHint) {
@@ -1094,15 +1075,22 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     const { apitoken, url } = getEventListContext()
     const hint = positionHint || message.value
     const offline = isBrowserOffline()
-    const { layout } = await resolveOfflineBadgeLayout(hint, layoutId)
+    const { layout, pdfData, secret, printAssets } = await resolveOfflineBadgeLayout(hint, layoutId)
+    const needsOnline = layoutRequiresOnlineGeneration(layout)
 
-    if (layoutRequiresOnlineGeneration(layout)) {
-      if (offline) {
-        return { requiresOnline: true, detail: BADGE_ONLINE_ONLY_MESSAGE }
-      }
-    } else {
+    if (needsOnline && offline) {
+      return { requiresOnline: true, detail: BADGE_ONLINE_ONLY_MESSAGE }
+    }
+
+    if (!needsOnline && canRenderBadgeLocally(layout)) {
       try {
-        const localBlob = await tryRenderLocalBadge(hint, layoutId)
+        const localBlob = await renderBadgePdfFromLayout({
+          layout,
+          pdfData,
+          size: layout.size,
+          secret,
+          printAssets
+        })
         if (localBlob) {
           return { blob: localBlob, local: true }
         }
@@ -1126,7 +1114,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
     return {
       detail: offline
-        ? layoutRequiresOnlineGeneration(layout)
+        ? needsOnline
           ? BADGE_ONLINE_ONLY_MESSAGE
           : 'Could not render badge from synced layout data. Sync online and try again.'
         : 'Could not load the badge PDF. Check your connection and try Print again.'

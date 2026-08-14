@@ -90,7 +90,7 @@ async function syncLayoutBackgrounds(baseUrl, apitoken, organizer, eventSlug, sn
   }
 }
 
-const PRINT_FONT_PATHS = {
+const PRINT_ASSET_PATHS = {
   regular: '/static/fonts/opensans_regular_macroman/OpenSans-Regular-webfont.ttf',
   bold: '/static/fonts/opensans_bold_macroman/OpenSans-Bold-webfont.ttf',
   italic: '/static/fonts/opensans_italic_macroman/OpenSans-Italic-webfont.ttf',
@@ -101,7 +101,7 @@ const PRINT_FONT_PATHS = {
 
 async function syncPrintAssets(baseUrl, apitoken, snapshot) {
   const assets = { ...(snapshot.printAssets || {}) }
-  for (const [key, path] of Object.entries(PRINT_FONT_PATHS)) {
+  for (const [key, path] of Object.entries(PRINT_ASSET_PATHS)) {
     if (assets[key]) {
       continue
     }
