@@ -1,10 +1,16 @@
 import { resolveServerUrl } from '@/utils/serverUrl'
 
-const PRINT_ASSET_PATHS = {
-  regular: '/static/fonts/opensans_regular_macroman/OpenSans-Regular-webfont.ttf',
-  bold: '/static/fonts/opensans_bold_macroman/OpenSans-Bold-webfont.ttf',
-  italic: '/static/fonts/opensans_italic_macroman/OpenSans-Italic-webfont.ttf',
-  boldItalic: '/static/fonts/opensans_bolditalic_macroman/OpenSans-BoldItalic-webfont.ttf',
+export const PRINT_ASSET_PATHS = {
+  regular: '/static/fonts/OpenSans-Regular.ttf',
+  bold: '/static/fonts/OpenSans-Bold.ttf',
+  italic: '/static/fonts/OpenSans-Italic.ttf',
+  boldItalic: '/static/fonts/OpenSans-BoldItalic.ttf',
+  and: '/static/fonts/AND-Regular.ttf',
+  arabic: '/static/fonts/NotoNaskhArabic-Regular.ttf',
+  arabicBold: '/static/fonts/NotoNaskhArabic-Bold.ttf',
+  devanagari: '/static/fonts/NotoSansDevanagari-Regular.ttf',
+  devanagariBold: '/static/fonts/NotoSansDevanagari-Bold.ttf',
+  fallback: '/static/fonts/DroidSansFallbackFull.ttf',
   poweredByDark: '/static/pretixpresale/pdf/powered_by_eventyay_dark.png',
   poweredByWhite: '/static/pretixpresale/pdf/powered_by_eventyay_white.png'
 }

@@ -1,3 +1,4 @@
+import { PRINT_ASSET_PATHS } from '@/offline/badgePrintAssets'
 import {
   BADGE_ONLINE_ONLY_MESSAGE,
   buildBadgePdfData,
@@ -6,9 +7,34 @@ import {
   getLayoutElements,
   layoutRequiresOnlineGeneration,
   renderBadgePdfFromLayout,
-  resolvePageSize
+  resolvePageSize,
+  splitScriptRuns
 } from '@/utils/badgeRenderer'
+import { existsSync, readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
+
+const EVENTYAY_FONTS = resolve(process.cwd(), '../eventyay/app/eventyay/static/fonts')
+
+function fontAsset(filename) {
+  const path = resolve(EVENTYAY_FONTS, filename)
+  if (!existsSync(path)) {
+    return null
+  }
+  return readFileSync(path).toString('base64')
+}
+
+const multilingualPrintAssets = {
+  regular: fontAsset('OpenSans-Regular.ttf'),
+  bold: fontAsset('OpenSans-Bold.ttf'),
+  and: fontAsset('AND-Regular.ttf'),
+  arabic: fontAsset('NotoNaskhArabic-Regular.ttf'),
+  arabicBold: fontAsset('NotoNaskhArabic-Bold.ttf'),
+  devanagari: fontAsset('NotoSansDevanagari-Regular.ttf'),
+  devanagariBold: fontAsset('NotoSansDevanagari-Bold.ttf'),
+  fallback: fontAsset('DroidSansFallbackFull.ttf')
+}
+const hasServerFonts = Object.values(multilingualPrintAssets).every(Boolean)
 
 describe('badgeRenderer', () => {
   const defaultLayout = {
@@ -217,6 +243,56 @@ describe('badgeRenderer', () => {
     })
     expect(blob.size).toBeGreaterThan(400)
   })
+
+  it('syncs the same static font and powered-by paths the server PDF renderer uses', () => {
+    expect(PRINT_ASSET_PATHS).toMatchObject({
+      regular: '/static/fonts/OpenSans-Regular.ttf',
+      bold: '/static/fonts/OpenSans-Bold.ttf',
+      italic: '/static/fonts/OpenSans-Italic.ttf',
+      boldItalic: '/static/fonts/OpenSans-BoldItalic.ttf',
+      and: '/static/fonts/AND-Regular.ttf',
+      arabic: '/static/fonts/NotoNaskhArabic-Regular.ttf',
+      arabicBold: '/static/fonts/NotoNaskhArabic-Bold.ttf',
+      devanagari: '/static/fonts/NotoSansDevanagari-Regular.ttf',
+      devanagariBold: '/static/fonts/NotoSansDevanagari-Bold.ttf',
+      fallback: '/static/fonts/DroidSansFallbackFull.ttf',
+      poweredByDark: '/static/pretixpresale/pdf/powered_by_eventyay_dark.png',
+      poweredByWhite: '/static/pretixpresale/pdf/powered_by_eventyay_white.png'
+    })
+  })
+
+  it('splits mixed-script badge text into font runs', () => {
+    const runs = splitScriptRuns('Ada مرحبا नमस्ते')
+    expect(runs.map((run) => run.script)).toEqual(['latin', 'arabic', 'latin', 'devanagari'])
+  })
+
+  it.skipIf(!hasServerFonts)(
+    'embeds Open Sans, Noto, AND, and Droid fonts so Arabic, Devanagari, and CJK print',
+    async () => {
+      const blob = await renderBadgePdfFromLayout({
+        layout: {
+          size: [{ width: 148, height: 105, orientation: 'landscape' }],
+          layout: [
+            {
+              type: 'textarea',
+              left: '8',
+              bottom: '80',
+              fontsize: '14',
+              color: [0, 0, 0, 1],
+              width: '130',
+              content: 'attendee_name',
+              align: 'left'
+            }
+          ]
+        },
+        pdfData: {
+          attendee_name: 'مرحبا Ada नमस्ते 你好'
+        },
+        printAssets: multilingualPrintAssets
+      })
+      expect(blob.size).toBeGreaterThan(2000)
+    }
+  )
 
   it('embeds a synced background PDF as the badge page', async () => {
     const { PDFDocument } = await import('pdf-lib')

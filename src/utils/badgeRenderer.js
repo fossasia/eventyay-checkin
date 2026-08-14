@@ -1,3 +1,4 @@
+import { shapeArabicForPdf } from '@/utils/arabicPdfText'
 import fontkit from '@pdf-lib/fontkit'
 import { degrees, PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import QRCode from 'qrcode'
@@ -121,7 +122,83 @@ function textareaContent(element, pdfData, secret) {
   return fieldValue(pdfData, content, secret)
 }
 
-function wrapTextLines(text, font, fontSize, maxWidthPt) {
+const ARABIC_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/
+const DEVANAGARI_RE = /[\u0900-\u097F]/
+
+function scriptOfChar(ch) {
+  if (ARABIC_RE.test(ch)) {
+    return 'arabic'
+  }
+  if (DEVANAGARI_RE.test(ch)) {
+    return 'devanagari'
+  }
+  return 'latin'
+}
+
+export function splitScriptRuns(text) {
+  const runs = []
+  for (const ch of String(text || '')) {
+    const script = scriptOfChar(ch)
+    const last = runs[runs.length - 1]
+    if (last && last.script === script) {
+      last.text += ch
+    } else {
+      runs.push({ script, text: ch })
+    }
+  }
+  return runs
+}
+
+function fontHasGlyphs(font, text) {
+  if (!font || !text) {
+    return false
+  }
+  try {
+    font.encodeText(text)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function textWidth(font, text, fontSize) {
+  if (!font || !text) {
+    return 0
+  }
+  try {
+    return font.widthOfTextAtSize(text, fontSize)
+  } catch {
+    return String(text).length * fontSize * 0.5
+  }
+}
+
+function resolveRunFont(run, element, fonts) {
+  let font = pickFont(element, fonts)
+  if (run.script === 'arabic') {
+    font = (element.bold ? fonts.arabicBold : fonts.arabic) || fonts.arabic || font
+  } else if (run.script === 'devanagari') {
+    font = (element.bold ? fonts.devanagariBold : fonts.devanagari) || fonts.devanagari || font
+  }
+  if (fontHasGlyphs(font, run.text)) {
+    return font
+  }
+  if (fonts.and && fontHasGlyphs(fonts.and, run.text)) {
+    return fonts.and
+  }
+  if (fonts.fallback && fontHasGlyphs(fonts.fallback, run.text)) {
+    return fonts.fallback
+  }
+  return fonts.and || fonts.fallback || font
+}
+
+function lineWidth(line, element, fonts, fontSize) {
+  return splitScriptRuns(line).reduce(
+    (width, run) => width + textWidth(resolveRunFont(run, element, fonts), run.text, fontSize),
+    0
+  )
+}
+
+function wrapTextLines(text, element, fonts, fontSize, maxWidthPt) {
   const normalized = String(text || '').trim()
   if (!normalized) {
     return []
@@ -135,7 +212,7 @@ function wrapTextLines(text, font, fontSize, maxWidthPt) {
   let current = ''
   for (const word of words) {
     const candidate = current ? `${current} ${word}` : word
-    if (font.widthOfTextAtSize(candidate, fontSize) <= maxWidthPt) {
+    if (lineWidth(candidate, element, fonts, fontSize) <= maxWidthPt) {
       current = candidate
       continue
     }
@@ -152,7 +229,8 @@ function wrapTextLines(text, font, fontSize, maxWidthPt) {
 
 function buildBarcodePayload(pdfData, secret) {
   const ticket = fieldValue(pdfData, 'secret', secret)
-  const eventLabel = fieldValue(pdfData, 'event_name', secret) || fieldValue(pdfData, 'event', secret)
+  const eventLabel =
+    fieldValue(pdfData, 'event_name', secret) || fieldValue(pdfData, 'event', secret)
   const lead =
     fieldValue(pdfData, 'pseudonymization_id', secret) || fieldValue(pdfData, 'lead', secret)
   return JSON.stringify({
@@ -207,13 +285,13 @@ function alignedX(left, boxWidth, textWidth, align) {
 }
 
 function drawTextarea(page, element, pdfData, secret, fonts) {
-  const text = textareaContent(element, pdfData, secret)
+  const text = shapeArabicForPdf(textareaContent(element, pdfData, secret))
   if (!text) {
     return
   }
 
   let fontSize = Number(element.fontsize) || 12
-  const font = pickFont(element, fonts)
+  const baseFont = pickFont(element, fonts)
   const color = layoutColorToRgb(element.color)
   const boxWidth = element.width != null ? mm(element.width) : page.getWidth()
   const left = mm(element.left)
@@ -222,31 +300,46 @@ function drawTextarea(page, element, pdfData, secret, fonts) {
   const leading = fontSize
 
   if (element.autofit_width) {
-    while (fontSize > 6 && font.widthOfTextAtSize(text, fontSize) > boxWidth) {
+    while (fontSize > 6 && lineWidth(text, element, fonts, fontSize) > boxWidth) {
       fontSize -= 0.5
     }
   }
 
-  const lines = wrapTextLines(text, font, fontSize, boxWidth)
-  const descent = Math.abs(font.heightAtSize(fontSize, { descender: true }) - font.heightAtSize(fontSize))
+  const lines = wrapTextLines(text, element, fonts, fontSize, boxWidth)
+  const descent = Math.abs(
+    baseFont.heightAtSize(fontSize, { descender: true }) - baseFont.heightAtSize(fontSize)
+  )
   const blockHeight = lines.length * leading
 
-  const drawLine = (line, x, y) => {
-    page.drawText(line, {
-      x: Math.max(0, x),
-      y,
-      size: fontSize,
-      font,
-      color,
-      rotate: degrees(-rotation)
-    })
+  const drawLine = (line, startX, y) => {
+    let x = startX
+    for (const run of splitScriptRuns(line)) {
+      const font = resolveRunFont(run, element, fonts)
+      const width = textWidth(font, run.text, fontSize)
+      try {
+        page.drawText(run.text, {
+          x: Math.max(0, x),
+          y,
+          size: fontSize,
+          font,
+          color,
+          rotate: degrees(-rotation)
+        })
+      } catch (error) {
+        console.warn('Could not draw badge text run', error)
+      }
+      x += width
+    }
   }
 
   if (element.downward) {
     let y = bottom - descent / 2 - leading
     for (const line of lines) {
-      const textWidth = font.widthOfTextAtSize(line, fontSize)
-      drawLine(line, alignedX(left, boxWidth, textWidth, element.align), y)
+      drawLine(
+        line,
+        alignedX(left, boxWidth, lineWidth(line, element, fonts, fontSize), element.align),
+        y
+      )
       y -= leading
     }
     return
@@ -254,8 +347,11 @@ function drawTextarea(page, element, pdfData, secret, fonts) {
 
   let y = bottom + blockHeight - descent
   for (const line of lines) {
-    const textWidth = font.widthOfTextAtSize(line, fontSize)
-    drawLine(line, alignedX(left, boxWidth, textWidth, element.align), y)
+    drawLine(
+      line,
+      alignedX(left, boxWidth, lineWidth(line, element, fonts, fontSize), element.align),
+      y
+    )
     y -= leading
   }
 }
@@ -311,11 +407,29 @@ async function embedCustomFonts(pdfDoc, printAssets = {}) {
   const bold = await embed('bold', await pdfDoc.embedFont(StandardFonts.HelveticaBold))
   const italic = await embed('italic', regular)
   const boldItalic = await embed('boldItalic', bold)
-  return { regular, bold, italic, boldItalic }
+  const and = await embed('and', null)
+  const arabic = await embed('arabic', null)
+  const arabicBold = await embed('arabicBold', arabic)
+  const devanagari = await embed('devanagari', null)
+  const devanagariBold = await embed('devanagariBold', devanagari)
+  const fallback = await embed('fallback', null)
+  return {
+    regular,
+    bold,
+    italic,
+    boldItalic,
+    and,
+    arabic,
+    arabicBold,
+    devanagari,
+    devanagariBold,
+    fallback
+  }
 }
 
 async function drawPoweredBy(page, pdfDoc, element, printAssets) {
-  const style = String(element.content || 'dark').toLowerCase() === 'white' ? 'poweredByWhite' : 'poweredByDark'
+  const style =
+    String(element.content || 'dark').toLowerCase() === 'white' ? 'poweredByWhite' : 'poweredByDark'
   const bytes = decodeBase64Bytes(printAssets?.[style] || printAssets?.poweredByDark)
   if (!bytes) {
     return
