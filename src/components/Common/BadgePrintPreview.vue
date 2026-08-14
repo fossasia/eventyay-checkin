@@ -4,13 +4,12 @@ import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
 import { XMarkIcon } from '@heroicons/vue/20/solid'
 import StandardButton from '@/components/Common/StandardButton.vue'
-import { useEventyayApi } from '@/stores/eventyayapi'
-import { fetchBadgePdfWithRetry, printPdfBlob, cancelActivePrint, withBadgeLayoutParam } from '@/utils/badgePdf'
+import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
+import { printPdfBlob, cancelActivePrint } from '@/utils/badgePdf'
 import { isKioskEnvironment } from '@/utils/kioskLauncher'
 
 const route = useRoute()
-const processApi = useEventyayApi()
-const { apitoken: deviceApiToken, url: deviceApiUrl } = storeToRefs(processApi)
+const processEventyayCheckInStore = useProcessEventyayCheckInStore()
 
 const props = defineProps({
   badgePath: {
@@ -23,6 +22,10 @@ const props = defineProps({
   },
   initialLayoutId: {
     type: [Number, String],
+    default: null
+  },
+  position: {
+    type: Object,
     default: null
   }
 })
@@ -37,10 +40,6 @@ const loadError = ref('')
 const selectedLayoutId = ref('')
 
 const showLayoutSelect = computed(() => Array.isArray(props.layouts) && props.layouts.length > 0)
-
-const effectiveBadgePath = computed(() =>
-  withBadgeLayoutParam(props.badgePath, selectedLayoutId.value || null)
-)
 
 function resolveInitialLayoutId() {
   if (props.initialLayoutId != null && props.initialLayoutId !== '') {
@@ -79,19 +78,14 @@ const fetchPDF = async () => {
   pdfBlob.value = null
 
   try {
-    const result = await fetchBadgePdfWithRetry(effectiveBadgePath.value, {
-      apitoken: deviceApiToken.value,
-      baseUrl: deviceApiUrl.value
+    const result = await processEventyayCheckInStore.getBadgeBlob(props.badgePath, {
+      layoutId: selectedLayoutId.value || null,
+      positionHint: props.position
     })
-    if (result.status !== 'ready' || !result.blob) {
+    if (!result?.blob) {
       printError.value = true
-      if (result.status === 'generating') {
-        loadError.value = 'Badge is still generating. Try Print again in a moment.'
-      } else if (result.detail) {
-        loadError.value = result.detail
-      } else {
-        loadError.value = 'Could not load the badge PDF. Check your connection and try Print again.'
-      }
+      loadError.value =
+        result?.detail || 'Could not load the badge PDF. Check your connection and try Print again.'
       return
     }
 
@@ -107,9 +101,9 @@ const fetchPDF = async () => {
 }
 
 watch(
-  effectiveBadgePath,
+  () => [props.badgePath, selectedLayoutId.value],
   () => {
-    if (!effectiveBadgePath.value) {
+    if (!props.badgePath && !props.position) {
       return
     }
     void fetchPDF()

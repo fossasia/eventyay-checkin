@@ -1013,7 +1013,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function tryRenderLocalBadge(positionHint = null) {
+  async function tryRenderLocalBadge(positionHint = null, layoutId = null) {
     const offlineSync = useOfflineSyncStore()
     const processApi = useEventyayApi()
     if (!offlineSync.index) {
@@ -1023,16 +1023,20 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       return null
     }
 
-    const secret = String(positionHint?.secret || message.value?.secret || '').trim()
+    const hint = positionHint || message.value
+    const secret = String(hint?.secret || '').trim()
     const fromIndex = secret ? offlineSync.index.positionsBySecret.get(secret) : null
     const { pdfData, secret: resolvedSecret } = buildBadgePdfData({
-      positionHint: positionHint || message.value,
+      positionHint: hint,
       snapshotRecord: fromIndex
     })
 
     const layout = resolveLayoutForPosition(offlineSync.index, {
-      layoutId: fromIndex?.layoutId || positionHint?.downloads?.find((d) => d.output === 'badge')?.layout,
-      product: fromIndex?.product || positionHint?.product || message.value?.product
+      layoutId:
+        layoutId ||
+        fromIndex?.layoutId ||
+        hint?.downloads?.find((d) => d.output === 'badge')?.layout,
+      product: fromIndex?.product || hint?.product || hint?.product_id
     })
     if (!canRenderBadgeLocally(layout, pdfData)) {
       return null
@@ -1050,7 +1054,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     const { apitoken, url } = getEventListContext()
 
     try {
-      const localBlob = await tryRenderLocalBadge(positionHint)
+      const localBlob = await tryRenderLocalBadge(positionHint, layoutId)
       if (localBlob) {
         return { blob: localBlob, local: true }
       }
@@ -1287,6 +1291,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     hasPrintedBadge,
     markPrintedBadge,
     printBadge,
+    getBadgeBlob,
     printBadgeWithOptionalCustomization,
     resolveBadgeCustomization,
     cancelBadgeCustomization,

@@ -1,6 +1,10 @@
 import { resolveApiResourceUrl } from '@/utils/serverUrl'
 import { DEVICE_PROFILE_DENIED_MESSAGE, isDeviceProfileDeniedResponse } from '@/utils/deviceErrors'
 
+export function isLocalBadgePath(badgePath) {
+  return String(badgePath || '').startsWith('local://')
+}
+
 /**
  * Append or replace a `layout` query param on a badge download path/URL.
  */
@@ -8,6 +12,9 @@ export function withBadgeLayoutParam(badgePath, layoutId) {
   const path = String(badgePath || '').trim()
   if (!path) {
     return ''
+  }
+  if (isLocalBadgePath(path)) {
+    return path
   }
   if (layoutId == null || layoutId === '') {
     return path
@@ -35,6 +42,12 @@ function decodeBase64Pdf(base64, mimeType = 'application/pdf') {
 }
 
 export async function fetchBadgePdf(badgePath, { baseUrl, apitoken } = {}) {
+  if (isLocalBadgePath(badgePath)) {
+    return {
+      status: 'error',
+      detail: 'Offline badge must be rendered locally, not downloaded from the server.'
+    }
+  }
   const url = resolveApiResourceUrl(badgePath, baseUrl)
   if (!url) {
     return { status: 'error' }

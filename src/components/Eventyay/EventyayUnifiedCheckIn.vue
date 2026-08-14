@@ -1743,6 +1743,7 @@ const openAttendeeFromSearch = async (order) => {
       :badge-path="previewBadgePath || badgeUrl"
       :layouts="isBadgeStation ? [] : badgeLayouts"
       :initial-layout-id="badgeAssignedLayoutId"
+      :position="message"
       @close="handlePrintClose"
     />
   </div>
