@@ -27,3 +27,14 @@ Use **Print badge** or **Print preview** when badges are enabled.
 **Step 7:** Confirm the browser print dialog when printing manually.
 
 <img src="./images/preview.png" alt="Badge preview">
+
+## Offline mode (Check-In Staff only)
+
+Badge Station stays **online-only**. Check-In Staff can continue after a first successful sync.
+
+1. While online, open check-in (or click **Sync** in the header) so layouts and attendee field data download into an encrypted on-device snapshot.
+2. If the network drops, known tickets still check in / out. Actions queue and upload when you reconnect.
+3. If a ticket is **not** in the snapshot yet, the app asks you to connect and sync latest check-in data — it will not invent tickets offline.
+4. Live registration while offline is queued; the real ticket secret exists only after sync succeeds. Print after sync.
+5. Badges print from synced **layout JSON** + per-attendee **field data** (`pdf_data`), not from cached full PDF files.
+6. Sign out wipes the encrypted snapshot from the device.

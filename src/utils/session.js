@@ -74,19 +74,29 @@ export function setAutoPrintPreference(role, enabled) {
   }
 }
 
-export async function validateDeviceSession(processApi) {
+export async function validateDeviceSession(processApi, { timeoutMs = 4000 } = {}) {
   if (!processApi.apitoken || !processApi.url) {
     return false
   }
 
   try {
     const api = createAuthorizedDeviceApi(processApi.url, processApi.apitoken)
-    const response = await api.get('/api/v1/device/session')
+    const response = await Promise.race([
+      api.get('/api/v1/device/session'),
+      new Promise((_, reject) => {
+        setTimeout(() => {
+          const timeoutError = new Error('session_timeout')
+          timeoutError.status = 0
+          reject(timeoutError)
+        }, timeoutMs)
+      })
+    ])
     if (response && 'security_profile' in response) {
       processApi.setSecurityProfile(response.security_profile)
     }
     return true
   } catch (error) {
+    // Network / timeout: keep the local session so offline mode can continue.
     return !isDeviceAuthFailure(error)
   }
 }

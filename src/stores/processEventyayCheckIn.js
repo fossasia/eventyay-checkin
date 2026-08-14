@@ -30,7 +30,7 @@ import {
   evaluateLocalRedeem,
   isBrowserOffline
 } from '@/offline/offlineActions'
-import { persistOfflineIndex } from '@/offline/syncEngine'
+import { canUseOfflineSync, persistOfflineIndex } from '@/offline/syncEngine'
 
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -865,7 +865,12 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
 
     const offlineSync = useOfflineSyncStore()
-    if (isBrowserOffline() && offlineSync.enabled) {
+    const canOffline =
+      offlineSync.isOfflineCapable?.(processApi) ||
+      (Boolean(processApi?.apitoken) &&
+        canUseOfflineSync(processApi.selectedRole, processApi.securityProfile))
+
+    if ((isBrowserOffline() || !offlineSync.isOnline) && canOffline) {
       return redeemOfflineBySecret(normalizedSecret, {
         type,
         hints,
@@ -1005,7 +1010,11 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           )
 
       // Network failure with a synced local copy: fall back to offline redeem once.
-      if (!isRetry && isRedeemNetworkError(error) && offlineSync.enabled) {
+      const canOffline =
+        offlineSync.isOfflineCapable?.(processApi) ||
+        (Boolean(processApi?.apitoken) &&
+          canUseOfflineSync(processApi.selectedRole, processApi.securityProfile))
+      if (!isRetry && isRedeemNetworkError(error) && canOffline) {
         return redeemOfflineBySecret(normalizedSecret, {
           type,
           hints,

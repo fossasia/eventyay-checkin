@@ -8,6 +8,7 @@ export function createEmptySnapshot(organizer, eventSlug) {
     positionsBySecret: {},
     revokedSecrets: {},
     products: [],
+    checkInLists: [],
     pendingRedeems: [],
     pendingRegistrations: [],
     cursors: {
