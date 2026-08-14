@@ -1,3 +1,4 @@
+import { mergeProgressFloor, phaseLabel } from '@/offline/syncProgress'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
@@ -13,12 +14,10 @@ import {
   wipeOfflineData
 } from '@/offline/syncEngine'
 import { setPendingPrintSync } from '@/offline/badgePrintAssets'
-import { mergeProgressFloor, phaseLabel } from '@/offline/syncProgress'
-
-const DISPLAY_TICK_MS = 50
-const DISPLAY_CATCHUP_RATIO = 0.28
 
 export const useOfflineSyncStore = defineStore('offlineSync', () => {
+  const DISPLAY_TICK_MS = 50
+  const DISPLAY_CATCHUP_RATIO = 0.28
   const index = ref(null)
   const isOnline = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
   const isSyncing = ref(false)

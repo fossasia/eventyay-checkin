@@ -1,4 +1,5 @@
 import { resolveServerUrl } from '@/utils/serverUrl'
+import { computeSyncPercent, pageFraction } from '@/offline/syncProgress'
 import {
   createEmptySnapshot,
   mergeLayoutsIntoSnapshot,
@@ -15,7 +16,6 @@ import {
 } from '@/offline/snapshotStore'
 import { flushPendingRedeems, flushPendingRegistrations } from '@/offline/offlineActions'
 import { flushPendingPrintSync } from '@/offline/badgePrintAssets'
-import { computeSyncPercent, pageFraction } from '@/offline/syncProgress'
 
 const MAX_PAGES = 50
 
