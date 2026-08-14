@@ -102,6 +102,48 @@ export function searchPositions(index, query, { limit = 25 } = {}) {
   return results
 }
 
+/** Return synced attendees for offline browse/search (all or filtered, sorted by name). */
+export function listStoredPositions(index, query = '', { limit = 100 } = {}) {
+  const needle = String(query || '').trim().toLowerCase()
+  const results = []
+  for (const position of index.positionsBySecret.values()) {
+    if (position.canceled || index.revokedSecrets.has(position.secret)) {
+      continue
+    }
+    if (needle.length >= 2) {
+      const haystack = position.searchText || buildSearchText(position)
+      if (!haystack.includes(needle)) {
+        continue
+      }
+    }
+    results.push(position)
+  }
+  results.sort((a, b) =>
+    String(a.attendeeName || '').localeCompare(String(b.attendeeName || ''), undefined, {
+      sensitivity: 'base'
+    })
+  )
+  return results.slice(0, limit)
+}
+
+/** Map a snapshot position into the check-in search result row shape. */
+export function positionToSearchOrder(position) {
+  return {
+    id: position.id,
+    secret: position.secret,
+    attendee_name: position.attendeeName || '',
+    attendee_email: position.attendeeEmail || '',
+    company: position.company || '',
+    job_title: position.jobTitle || '',
+    product: position.product,
+    variation: position.variation,
+    order: position.orderCode,
+    checkins: position.checkins || [],
+    pdf_data: position.pdfData || {},
+    offline: true
+  }
+}
+
 export function upsertPosition(index, record) {
   if (!record?.secret) {
     return

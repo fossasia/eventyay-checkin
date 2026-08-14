@@ -173,6 +173,19 @@ const SEARCH_RESULTS_LIMIT = 50
 let debounceTimer = null
 let activeRequestId = 0
 
+const offlineBrowseAvailable = computed(() => {
+  const offlineSync = useOfflineSyncStore()
+  return (
+    offlineSync.isOfflineCapable(processApi) &&
+    offlineSync.isOfflineMode() &&
+    offlineSync.hasSnapshotData
+  )
+})
+
+const searchPlaceholder = computed(() =>
+  offlineBrowseAvailable.value ? 'Search synced attendees...' : 'Search by name or email...'
+)
+
 watch(eventSlug, () => {
   eventQuestions.value = []
   searchCache.clear()
@@ -668,12 +681,31 @@ const submitLiveRegistration = async () => {
     )
 
     closeLiveRegistrationDialog()
+    if (registrationResult.offlinePending) {
+      liveRegistrationResult.value = {
+        attendeeName,
+        orderCode: '',
+        orderPositionId: null,
+        ticketDownloadUrl: '',
+        ticketDownloadAvailable: false,
+        offlinePending: true
+      }
+      notificationStore.addNotification(
+        [
+          'Queued offline',
+          'Live registration will sync when you are back online. Ticket printing is available after sync.'
+        ],
+        'success'
+      )
+      return
+    }
     liveRegistrationResult.value = {
       attendeeName,
       orderCode: registrationResult.orderCode,
       orderPositionId: registrationResult.orderPositionId || registrationResult.orderPosition?.id || null,
       ticketDownloadUrl: registrationResult.ticketDownloadUrl || '',
-      ticketDownloadAvailable: registrationResult.ticketDownloadAvailable === true
+      ticketDownloadAvailable: registrationResult.ticketDownloadAvailable === true,
+      offlinePending: false
     }
   } catch (error) {
     console.error('Live registration failed:', error)
@@ -1012,6 +1044,37 @@ const searchOrders = async (query, { force = false, requestId = ++activeRequestI
     return
   }
 
+  const offlineSync = useOfflineSyncStore()
+  const offlineMode =
+    offlineSync.isOfflineCapable(processApi) && offlineSync.isOfflineMode()
+
+  if (offlineMode) {
+    if (!offlineSync.index) {
+      await offlineSync.hydrate(processApi)
+    }
+    const cacheKey = normalizedQuery || '__browse__'
+    if (!force && searchCache.has(cacheKey)) {
+      orders.value = searchCache.get(cacheKey)
+      loading.value = false
+      return
+    }
+    loading.value = true
+    const offlineResults = sortOrdersByAttendeeName(offlineSync.searchStored(normalizedQuery))
+    searchCache.set(cacheKey, offlineResults)
+    orders.value = offlineResults
+    loading.value = false
+    if (normalizedQuery && !offlineResults.length) {
+      notificationStore.addNotification(
+        [
+          'Offline search',
+          'No synced attendees matched. Connect to refresh check-in data if this person is new.'
+        ],
+        'info'
+      )
+    }
+    return
+  }
+
   if (!normalizedQuery || normalizedQuery.length < MIN_SEARCH_LENGTH) {
     orders.value = []
     loading.value = false
@@ -1045,6 +1108,21 @@ const searchOrders = async (query, { force = false, requestId = ++activeRequestI
       return
     }
 
+    if (offlineSync.isOfflineCapable(processApi)) {
+      if (!offlineSync.index) {
+        await offlineSync.hydrate(processApi)
+      }
+      const offlineResults = sortOrdersByAttendeeName(offlineSync.searchStored(normalizedQuery))
+      if (offlineResults.length) {
+        orders.value = offlineResults
+        notificationStore.addNotification(
+          ['Search unavailable', 'Showing synced offline attendees.'],
+          'info'
+        )
+        return
+      }
+    }
+
     const filtered = filterSessionCachedOrders(normalizedQuery)
 
     if (filtered.length > 0) {
@@ -1075,6 +1153,9 @@ onMounted(async () => {
   }
   loadingStore.contentLoading()
 
+  const offlineSync = useOfflineSyncStore()
+  await offlineSync.hydrate(processApi)
+
   try {
     await waitForDesignAssets()
 
@@ -1094,17 +1175,28 @@ onMounted(async () => {
     }
     checkInReady.value = true
 
-    const offlineSync = useOfflineSyncStore()
-    await offlineSync.hydrate(processApi)
     if (offlineSync.enabled && navigator.onLine) {
-      offlineSync.syncNow(processApi).catch(() => {
-        // Sync errors surface via status chip; check-in remains usable online.
-      })
+      offlineSync.scheduleAutoSync(processApi)
+    }
+
+    if (offlineSync.isOfflineMode() && offlineSync.hasSnapshotData) {
+      await searchOrders('', { force: true })
     }
   } catch (error) {
     console.error('Error loading check-in page:', error)
-    notificationStore.addNotification(['Error', 'Unable to load check-in page'], 'error')
-    checkInReady.value = true
+    if (offlineSync.hasSnapshotData) {
+      notificationStore.addNotification(
+        ['Offline mode', 'Using synced check-in data. Connect to refresh.'],
+        'info'
+      )
+      checkInReady.value = true
+      if (offlineSync.isOfflineMode()) {
+        await searchOrders('', { force: true })
+      }
+    } else {
+      notificationStore.addNotification(['Error', 'Unable to load check-in page'], 'error')
+      checkInReady.value = true
+    }
   } finally {
     loadingStore.contentLoaded()
   }
@@ -1133,8 +1225,12 @@ watch(searchQuery, (value) => {
     clearTimeout(debounceTimer)
   }
 
+  const offlineSync = useOfflineSyncStore()
+  const offlineMode =
+    offlineSync.isOfflineCapable(processApi) && offlineSync.isOfflineMode()
+
   const normalizedQuery = getNormalizedSearchQuery(value)
-  if (!normalizedQuery || normalizedQuery.length < MIN_SEARCH_LENGTH) {
+  if (!offlineMode && (!normalizedQuery || normalizedQuery.length < MIN_SEARCH_LENGTH)) {
     orders.value = []
     loading.value = false
     return
@@ -1144,6 +1240,18 @@ watch(searchQuery, (value) => {
     searchOrders(value, { requestId })
   }, SEARCH_DEBOUNCE_MS)
 })
+
+watch(
+  () => useOfflineSyncStore().isOnline,
+  (online) => {
+    const offlineSync = useOfflineSyncStore()
+    if (!online && offlineSync.isOfflineCapable(processApi) && offlineSync.hasSnapshotData) {
+      void searchOrders(searchQuery.value, { force: true })
+    } else if (online && !getNormalizedSearchQuery(searchQuery.value)) {
+      orders.value = []
+    }
+  }
+)
 
 onBeforeUnmount(() => {
   document.removeEventListener('visibilitychange', handleVisibilityChange)
@@ -1329,13 +1437,16 @@ const openAttendeeFromSearch = async (order) => {
           <input
             v-model="searchQuery"
             type="search"
-            placeholder="Search by name or email..."
+            :placeholder="searchPlaceholder"
             class="pl-10"
           />
         </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto">
-          <div v-if="!searchQuery" class="flex h-full items-center justify-center text-center">
+          <div
+            v-if="!searchQuery && !offlineBrowseAvailable"
+            class="flex h-full items-center justify-center text-center"
+          >
             <p class="text-sm text-body-muted">Type at least 2 characters to search attendees.</p>
           </div>
 
@@ -1344,10 +1455,20 @@ const openAttendeeFromSearch = async (order) => {
           </div>
 
           <div v-else-if="orders.length === 0" class="py-10 text-center text-sm text-body-muted">
-            No matching attendees found.
+            <p v-if="offlineBrowseAvailable && !searchQuery">
+              No synced attendees yet. Connect to the internet to sync check-in data.
+            </p>
+            <p v-else>No matching attendees found.</p>
           </div>
 
-          <TransitionGroup v-else name="list" tag="div" class="space-y-2">
+          <template v-else>
+            <p
+              v-if="offlineBrowseAvailable && !searchQuery"
+              class="mb-3 text-xs text-body-muted"
+            >
+              Showing synced attendees. Type to filter.
+            </p>
+            <TransitionGroup name="list" tag="div" class="space-y-2">
             <article
               v-for="order in orders"
               :key="order.id"
@@ -1377,6 +1498,7 @@ const openAttendeeFromSearch = async (order) => {
               </div>
             </article>
           </TransitionGroup>
+          </template>
         </div>
       </section>
     </div>
@@ -1455,7 +1577,9 @@ const openAttendeeFromSearch = async (order) => {
         class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
       >
         <div class="card w-full max-w-md p-6">
-          <h2 class="mb-1 text-xl text-success">Registration complete</h2>
+          <h2 class="mb-1 text-xl text-success">
+            {{ liveRegistrationResult.offlinePending ? 'Registration queued' : 'Registration complete' }}
+          </h2>
           <p class="mb-4 text-sm text-body-muted">
             {{ liveRegistrationResult.attendeeName }}
             <span v-if="liveRegistrationResult.orderCode">
@@ -1464,7 +1588,15 @@ const openAttendeeFromSearch = async (order) => {
           </p>
 
           <p
-            v-if="!liveRegistrationResult.ticketDownloadAvailable"
+            v-if="liveRegistrationResult.offlinePending"
+            class="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-dark"
+          >
+            You are offline. This registration will sync when connectivity returns. Printing is
+            available after a successful sync.
+          </p>
+
+          <p
+            v-else-if="!liveRegistrationResult.ticketDownloadAvailable"
             class="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-dark"
           >
             Ticket PDF download is not configured for this event. Enable the PDF ticket output
