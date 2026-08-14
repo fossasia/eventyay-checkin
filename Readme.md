@@ -44,15 +44,14 @@ npm run build
 
 ## Production
 
-- Production check-in: [https://checkin.eventyay.com](https://checkin.eventyay.com)
-- Pair devices from the organizer **Connected devices** screen in Eventyay
+The check-in app is hosted at [https://access.eventyay.com](https://access.eventyay.com). Pair devices from the organizer **Connected devices** screen in Eventyay.
 
 ## Kiosk mode (Badge Station)
 
 Silent printing example (Chrome):
 
 ```sh
-open -a "Google Chrome" --args --kiosk --kiosk-printing --app=https://checkin.eventyay.com/?kiosk=true
+open -a "Google Chrome" --args --kiosk --kiosk-printing --app=https://access.eventyay.com/?kiosk=true
 ```
 
 1. Choose **Badge Station**
