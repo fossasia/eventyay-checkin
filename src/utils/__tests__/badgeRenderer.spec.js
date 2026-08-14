@@ -93,11 +93,22 @@ describe('badgeRenderer', () => {
 
   it('requires online generation only for per-attendee image areas', () => {
     const withImage = {
-      layout: [{ type: 'imagearea', content: 'question_photo', left: '10', bottom: '10', width: '30', height: '40' }]
+      layout: [
+        {
+          type: 'imagearea',
+          content: 'question_photo',
+          left: '10',
+          bottom: '10',
+          width: '30',
+          height: '40'
+        }
+      ]
     }
     expect(layoutRequiresOnlineGeneration(withImage)).toBe(true)
     expect(canRenderBadgeLocally(withImage)).toBe(false)
-    expect(layoutRequiresOnlineGeneration({ layout: [{ type: 'poweredby', content: 'dark' }] })).toBe(false)
+    expect(
+      layoutRequiresOnlineGeneration({ layout: [{ type: 'poweredby', content: 'dark' }] })
+    ).toBe(false)
     expect(canRenderBadgeLocally({ layout: [{ type: 'poweredby', content: 'dark' }] })).toBe(true)
     expect(layoutRequiresOnlineGeneration(defaultLayout)).toBe(false)
     expect(BADGE_ONLINE_ONLY_MESSAGE).toMatch(/go online/i)
