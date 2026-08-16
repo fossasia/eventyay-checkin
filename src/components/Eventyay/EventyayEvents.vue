@@ -5,6 +5,7 @@ import { useRouter } from 'vue-router'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useEventyayEventStore } from '@/stores/eventyayEvent'
+import { useleedauth } from '@/stores/leedauth'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { useLoadingStore } from '@/stores/loading'
 import { getRoleRouteName } from '@/utils/session'
@@ -17,6 +18,7 @@ const EVENTS_PER_PAGE = 8
 const loadingStore = useLoadingStore()
 const router = useRouter()
 const processApi = useEventyayApi()
+const leedauth = useleedauth()
 const eventyayEventStore = useEventyayEventStore()
 const { selectedRole, limitCheckInLists } = storeToRefs(processApi)
 const { events, error } = storeToRefs(eventyayEventStore)
@@ -201,7 +203,7 @@ const checkInListEmptyMessage = computed(() => {
   return 'No check-in lists found for this event. Create a check-in list in the event settings first.'
 })
 
-const submitForm = () => {
+const submitForm = async () => {
   if (!selectedEvent.value) {
     return
   }
@@ -214,6 +216,14 @@ const submitForm = () => {
   processApi.setEvent(selectedEventData.slug, getEventName(selectedEventData))
   if (selectedRole.value !== 'Exhibitor' && selectedCheckInListId.value) {
     processApi.setSelectedCheckInListId(selectedCheckInListId.value)
+  }
+
+  if (selectedRole.value === 'Exhibitor' && processApi.pendingExhibitorKey) {
+    const response = await leedauth.loginWithPendingKey()
+    if (response.success) {
+      router.push({ name: 'leadscan' })
+      return
+    }
   }
 
   const routeName = getRoleRouteName(selectedRole.value)

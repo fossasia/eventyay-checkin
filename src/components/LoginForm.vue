@@ -3,10 +3,13 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import QRCamera from '@/components/Utilities/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
+import OriginWebsiteField from '@/components/Common/OriginWebsiteField.vue'
 import KioskLauncherInstructions from '@/components/Common/KioskLauncherInstructions.vue'
 import { useCameraStore } from '@/stores/camera'
 import { useEventyayApi } from '@/stores/eventyayapi'
+import { useleedauth } from '@/stores/leedauth'
 import { useLoadingStore } from '@/stores/loading'
+import { DEFAULT_ORIGIN_WEBSITE, resolveOriginWebsite } from '@/utils/originWebsites'
 import { getEventyayLogoProps, getRoleLabel, getRoleRouteName, STATION_TYPE_DEFINITIONS } from '@/utils/session'
 import { isRoleAllowedForProfile, getAllowedRolesForProfile } from '@/utils/deviceProfiles'
 import { buildKioskUrl, isKioskEnvironment } from '@/utils/kioskLauncher'
@@ -14,6 +17,7 @@ import { UserGroupIcon, PrinterIcon, BuildingStorefrontIcon } from '@heroicons/v
 
 const loadingStore = useLoadingStore()
 const processApi = useEventyayApi()
+const leedauth = useleedauth()
 const cameraStore = useCameraStore()
 const router = useRouter()
 const route = useRoute()
@@ -81,6 +85,25 @@ function redirectForRole(role) {
 function redirectAfterRegistration(role) {
   if (!isRoleAllowedForProfile(role, processApi.securityProfile)) {
     router.push({ name: 'profileMismatch' })
+    return
+  }
+  redirectForRole(role)
+}
+
+async function redirectAfterExhibitorRegistration(role) {
+  if (!isRoleAllowedForProfile(role, processApi.securityProfile)) {
+    router.push({ name: 'profileMismatch' })
+    return
+  }
+
+  if (!processApi.eventSlug) {
+    redirectForRole(role)
+    return
+  }
+
+  const response = await leedauth.loginWithPendingKey()
+  if (response.success) {
+    router.push({ name: 'leadscan' })
     return
   }
   redirectForRole(role)
@@ -160,16 +183,19 @@ async function handleQrScanned() {
 }
 
 const showManualInput = ref(false)
-const manualUrl = ref('')
+const originWebsite = ref(DEFAULT_ORIGIN_WEBSITE)
+const customOriginUrl = ref('')
 const manualToken = ref('')
-const serverUrlPlaceholder = 'https://eventyay.com'
+const manualExhibitorKey = ref('')
+const isExhibitorRegistration = computed(() => pendingRole.value === 'Exhibitor')
 
 async function handleManualRegister() {
-  const urlVal = manualUrl.value.trim()
+  const urlVal = resolveOriginWebsite(originWebsite.value, customOriginUrl.value)
   const tokenVal = manualToken.value.trim()
+  const exhibitorKey = isExhibitorRegistration.value ? manualExhibitorKey.value.trim() : ''
 
   if (!urlVal || !tokenVal) {
-    errmessage.value = 'Please provide both the Server URL and Setup Token.'
+    errmessage.value = 'Please provide both the origin website and setup token.'
     showError.value = true
     return
   }
@@ -180,17 +206,23 @@ async function handleManualRegister() {
   try {
     const result = await processApi.registerDeviceManually(urlVal, tokenVal)
     if (result.success) {
+      processApi.setPendingExhibitorKey(exhibitorKey)
       showScanner.value = false
       showManualInput.value = false
-      redirectAfterRegistration(pendingRole.value || processApi.selectedRole)
+      const role = pendingRole.value || processApi.selectedRole
+      if (role === 'Exhibitor' && exhibitorKey) {
+        await redirectAfterExhibitorRegistration(role)
+      } else {
+        redirectAfterRegistration(role)
+      }
     } else if (result.error === 'invalid_url') {
-      errmessage.value = 'Invalid Server URL. Please enter a valid URL.'
+      errmessage.value = 'Invalid origin website. Please enter a valid URL.'
       showError.value = true
     } else if (result.message) {
       errmessage.value = result.message
       showError.value = true
     } else {
-      errmessage.value = 'Registration failed. Please check the Server URL and Setup Token.'
+      errmessage.value = 'Registration failed. Please check the origin website and setup token.'
       showError.value = true
     }
   } catch (error) {
@@ -314,16 +346,7 @@ loadingStore.contentLoaded()
               </p>
             </div>
             <div class="space-y-3 text-left">
-              <div>
-                <label for="manual-url" class="block text-xs font-semibold text-body-muted uppercase">Server URL</label>
-                <input
-                  id="manual-url"
-                  v-model="manualUrl"
-                  type="text"
-                  :placeholder="serverUrlPlaceholder"
-                  class="mt-1 block w-full rounded-xl border border-surface-border bg-surface-muted px-3 py-2 text-sm text-body focus:border-primary focus:outline-none"
-                />
-              </div>
+              <OriginWebsiteField v-model:selected="originWebsite" v-model:custom-url="customOriginUrl" />
               <div>
                 <label for="manual-token" class="block text-xs font-semibold text-body-muted uppercase">Setup Token</label>
                 <input
@@ -331,6 +354,19 @@ loadingStore.contentLoaded()
                   v-model="manualToken"
                   type="password"
                   placeholder="Enter your registration token"
+                  class="mt-1 block w-full rounded-xl border border-surface-border bg-surface-muted px-3 py-2 text-sm text-body focus:border-primary focus:outline-none"
+                />
+              </div>
+              <div v-if="isExhibitorRegistration">
+                <label for="manual-exhibitor-key" class="block text-xs font-semibold text-body-muted uppercase">
+                  Exhibitor key
+                </label>
+                <input
+                  id="manual-exhibitor-key"
+                  v-model="manualExhibitorKey"
+                  type="password"
+                  autocomplete="off"
+                  placeholder="Optional — you can also enter this after event selection"
                   class="mt-1 block w-full rounded-xl border border-surface-border bg-surface-muted px-3 py-2 text-sm text-body focus:border-primary focus:outline-none"
                 />
               </div>
