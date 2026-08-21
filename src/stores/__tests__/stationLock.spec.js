@@ -66,14 +66,19 @@ describe('stationLock store & crypto utilities', () => {
 
     expect(store.isEnabled).toBe(true)
     expect(store.isLocked).toBe(true)
+    expect(store.pinLength).toBe(4)
     expect(store.autoLockOnLaunch).toBe(true)
     expect(store.lockedDisplayMode).toBe('hide')
     expect(store.lockedActions.liveRegistration).toBe(true)
     expect(store.lockedActions.attendeeEdit).toBe(false)
 
+    await store.setPin('123456')
+    expect(store.pinLength).toBe(6)
+
     store.removePin()
     expect(store.isEnabled).toBe(false)
     expect(store.isLocked).toBe(false)
+    expect(store.pinLength).toBe(4)
     expect(store.pinHash).toBe('')
     expect(store.pinSalt).toBe('')
   })

@@ -152,6 +152,7 @@ export const useStationLockStore = defineStore(
   () => {
     const isEnabled = ref(false)
     const isLocked = ref(false)
+    const pinLength = ref(4)
     const pinHash = ref('')
     const pinSalt = ref('')
     const autoLockOnLaunch = ref(true)
@@ -189,6 +190,7 @@ export const useStationLockStore = defineStore(
       const salt = generateSalt()
       const hash = await hashPin(cleanPin, salt)
 
+      pinLength.value = cleanPin.length
       pinSalt.value = salt
       pinHash.value = hash
       isEnabled.value = true
@@ -213,6 +215,7 @@ export const useStationLockStore = defineStore(
     function removePin() {
       isEnabled.value = false
       isLocked.value = false
+      pinLength.value = 4
       pinHash.value = ''
       pinSalt.value = ''
       failedAttempts.value = 0
@@ -297,6 +300,7 @@ export const useStationLockStore = defineStore(
     return {
       isEnabled,
       isLocked,
+      pinLength,
       pinHash,
       pinSalt,
       autoLockOnLaunch,

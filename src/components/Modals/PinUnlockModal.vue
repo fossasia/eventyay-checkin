@@ -36,6 +36,10 @@ const tokenInput = ref(null)
 const countdownTimer = ref(null)
 const remainingCooldown = ref(0)
 
+const expectedPinLength = computed(() => {
+  return stationLock.pinLength || 4
+})
+
 const isLockedOut = computed(() => stationLock.isLockoutActive || remainingCooldown.value > 0)
 
 function updateCooldown() {
@@ -112,7 +116,7 @@ function handleKeydown(event) {
     deleteDigit()
     event.preventDefault()
   } else if (event.key === 'Enter') {
-    if (pin.value.length >= 4) {
+    if (pin.value.length >= expectedPinLength.value) {
       void submitPin()
     }
     event.preventDefault()
@@ -123,21 +127,21 @@ function handleKeydown(event) {
 }
 
 function handleDirectInputChange(event) {
-  const val = event.target.value.replace(/\D/g, '').slice(0, 6)
+  const val = event.target.value.replace(/\D/g, '').slice(0, expectedPinLength.value)
   pin.value = val
   error.value = ''
-  if (val.length === 6) {
+  if (val.length === expectedPinLength.value) {
     void submitPin()
   }
 }
 
 function appendDigit(digit) {
-  if (isLockedOut.value || isVerifying.value || pin.value.length >= 6) {
+  if (isLockedOut.value || isVerifying.value || pin.value.length >= expectedPinLength.value) {
     return
   }
   error.value = ''
   pin.value += String(digit)
-  if (pin.value.length >= 4 && pin.value.length === 6) {
+  if (pin.value.length === expectedPinLength.value) {
     void submitPin()
   }
 }
@@ -157,7 +161,7 @@ function clearPin() {
 }
 
 async function submitPin() {
-  if (pin.value.length < 4 || isLockedOut.value || isVerifying.value) {
+  if (pin.value.length < expectedPinLength.value || isLockedOut.value || isVerifying.value) {
     return
   }
 
@@ -290,7 +294,7 @@ async function submitTokenFallback() {
           @click="focusInput"
         >
           <div
-            v-for="index in 6"
+            v-for="index in expectedPinLength"
             :key="index"
             class="flex h-4 w-4 items-center justify-center rounded-full border transition-all duration-150"
             :class="[
@@ -358,7 +362,7 @@ async function submitTokenFallback() {
           variant="primary"
           block
           class="min-h-[44px]"
-          :disabled="pin.length < 4 || isLockedOut || isVerifying"
+          :disabled="pin.length < expectedPinLength || isLockedOut || isVerifying"
           @click="submitPin"
         />
 
