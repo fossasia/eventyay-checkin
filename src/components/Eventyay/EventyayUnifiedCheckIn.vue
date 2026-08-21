@@ -14,13 +14,19 @@ import {
   questionLabelForField,
   readPopupFieldValue
 } from '@/utils/attendeeEdit'
-import { getDeviceErrorMessage, handleDeviceApiError, isDeviceProfileDenied } from '@/utils/deviceErrors'
-import { MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
+import {
+  getDeviceErrorMessage,
+  handleDeviceApiError,
+  isDeviceProfileDenied
+} from '@/utils/deviceErrors'
+import { MagnifyingGlassIcon, LockClosedIcon } from '@heroicons/vue/24/outline'
 import QRCamera from '@/components/Common/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import BadgePrintPreview from '@/components/Common/BadgePrintPreview.vue'
 import AttendeeInfoModal from '@/components/Eventyay/AttendeeInfoModal.vue'
 import BadgeCustomizeModal from '@/components/Eventyay/BadgeCustomizeModal.vue'
+import PinUnlockModal from '@/components/Modals/PinUnlockModal.vue'
+import PinSetupModal from '@/components/Modals/PinSetupModal.vue'
 import { useCheckinSettingsStore } from '@/stores/checkinSettings'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useEventyayEventStore } from '@/stores/eventyayEvent'
@@ -30,20 +36,38 @@ import { useNotificationStore } from '@/stores/notification'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { useOfflineSyncStore } from '@/stores/offlineSync'
 import { useCameraStore } from '@/stores/camera'
+import { useStationLockStore } from '@/stores/stationLock'
 import { isBadgeCustomizationUnchanged } from '@/utils/badgeCustomization'
-import { downloadPdfBlob, fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME } from '@/utils/badgePdf'
+import {
+  downloadPdfBlob,
+  fetchBadgePdfWithRetry,
+  printPdfBlob,
+  PRINT_OUTCOME
+} from '@/utils/badgePdf'
 import { waitForDesignAssets } from '@/utils/waitForDesignAssets'
 import { enterKioskShell, isKioskEnvironment } from '@/utils/kioskLauncher'
 
 const notificationStore = useNotificationStore()
 const processApi = useEventyayApi()
-const { apitoken, url, organizer, eventSlug, selectedRole, selectedCheckInListId, gateName } = storeToRefs(processApi)
+const { apitoken, url, organizer, eventSlug, selectedRole, selectedCheckInListId, gateName } =
+  storeToRefs(processApi)
 const processEventyayCheckInStore = useProcessEventyayCheckInStore()
 const checkinSettings = useCheckinSettingsStore()
+const stationLock = useStationLockStore()
 const { autoPrintEnabled } = storeToRefs(checkinSettings)
-const { message, showSuccess, showError, badgeUrl, badgeAssignedLayoutId, badgeLayouts, isGeneratingBadge, availableCheckInLists, autoPrintFeedback, badgeCustomizeRequest, autoPrintCustomizeOnce } = storeToRefs(
-  processEventyayCheckInStore
-)
+const {
+  message,
+  showSuccess,
+  showError,
+  badgeUrl,
+  badgeAssignedLayoutId,
+  badgeLayouts,
+  isGeneratingBadge,
+  availableCheckInLists,
+  autoPrintFeedback,
+  badgeCustomizeRequest,
+  autoPrintCustomizeOnce
+} = storeToRefs(processEventyayCheckInStore)
 const {
   checkOutBySecret,
   checkInBySecret,
@@ -88,9 +112,23 @@ const isEditDialogOpen = ref(false)
 const isCheckoutConfirmOpen = ref(false)
 const isSavingAttendee = ref(false)
 const editError = ref('')
+const showUnlockModal = ref(false)
+const showPinResetModal = ref(false)
+const pendingGatedAction = ref(null)
+
 const isBadgeStation = computed(() => selectedRole.value === 'Badge Station')
+const isLiveRegLocked = computed(() => stationLock.isActionLocked('liveRegistration'))
+const isAttendeeEditLocked = computed(() => stationLock.isActionLocked('attendeeEdit'))
+const isBadgeCustomizeLocked = computed(() => stationLock.isActionLocked('badgeCustomize'))
+const isBadgeLayoutLocked = computed(() => stationLock.isActionLocked('badgeLayout'))
+const isSearchLocked = computed(() => stationLock.isActionLocked('search'))
+const isManualOverrideLocked = computed(() => stationLock.isActionLocked('manualOverride'))
+
 const showLiveRegistrationEntry = computed(() => {
   if (isBadgeStation.value) {
+    return false
+  }
+  if (isLiveRegLocked.value && stationLock.lockedDisplayMode === 'hide') {
     return false
   }
 
@@ -101,6 +139,57 @@ const showLiveRegistrationEntry = computed(() => {
 
   return event.plugins.includes('eventyay.plugins.manualpayment')
 })
+
+function handleLiveRegistrationClick() {
+  if (isLiveRegLocked.value) {
+    pendingGatedAction.value = { type: 'liveRegistration' }
+    showUnlockModal.value = true
+    return
+  }
+  void openLiveRegistrationDialog()
+}
+
+function handleEditClickFromModal() {
+  if (isAttendeeEditLocked.value) {
+    pendingGatedAction.value = { type: 'editAttendee' }
+    showUnlockModal.value = true
+    return
+  }
+  void openEditDialog()
+}
+
+function handleEditBadgeClickFromModal() {
+  if (isBadgeCustomizeLocked.value) {
+    pendingGatedAction.value = { type: 'badgeCustomize' }
+    showUnlockModal.value = true
+    return
+  }
+  void openBadgeEditDialog()
+}
+
+function handleSearchUnlockClick() {
+  pendingGatedAction.value = null
+  showUnlockModal.value = true
+}
+
+function onStationUnlocked() {
+  showUnlockModal.value = false
+  const action = pendingGatedAction.value
+  pendingGatedAction.value = null
+  if (action?.type === 'liveRegistration') {
+    void openLiveRegistrationDialog()
+  } else if (action?.type === 'editAttendee') {
+    void openEditDialog()
+  } else if (action?.type === 'badgeCustomize') {
+    void openBadgeEditDialog()
+  }
+}
+
+function onStationResetPin() {
+  showUnlockModal.value = false
+  showPinResetModal.value = true
+}
+
 const shouldAutoPrintBadge = computed(() => isBadgeStation.value && autoPrintEnabled.value)
 const attendeeModalPaused = computed(
   () =>
@@ -127,13 +216,13 @@ const showAttendeeModal = computed(() => {
   return showSuccess.value || showError.value
 })
 
-const configuredDisplayFields = computed(
-  () => getSelectedCheckInList()?.display_popup_fields || []
-)
+const configuredDisplayFields = computed(() => getSelectedCheckInList()?.display_popup_fields || [])
 const displayPopupFields = computed(() =>
   normalizeDisplayPopupFields(configuredDisplayFields.value)
 )
-const attendeeEditFieldKeys = computed(() => getAttendeeEditFieldKeys(configuredDisplayFields.value))
+const attendeeEditFieldKeys = computed(() =>
+  getAttendeeEditFieldKeys(configuredDisplayFields.value)
+)
 const eventQuestions = ref([])
 const questionsById = computed(() => indexQuestionsById(eventQuestions.value))
 const popupQuestionLabels = computed(() => {
@@ -252,7 +341,6 @@ watch(
     })
   }
 )
-
 
 const toggleAutoPrintCustomizeOnce = () => {
   autoPrintCustomizeOnce.value = !autoPrintCustomizeOnce.value
@@ -517,9 +605,7 @@ const getCheckedInProductName = (productId, variationId) => {
     return ''
   }
 
-  const selectedProduct = products.value.find(
-    (product) => String(product.id) === String(productId)
-  )
+  const selectedProduct = products.value.find((product) => String(product.id) === String(productId))
   if (selectedProduct) {
     let name = getProductEnglishName(selectedProduct)
     if (variationId && selectedProduct.variations) {
@@ -590,13 +676,10 @@ async function fetchLiveRegistrationTicketBlob() {
     throw new Error('No ticket download is available for this registration.')
   }
 
-  const result = await fetchBadgePdfWithRetry(
-    normalizeApiResourcePath(ticketDownloadUrl),
-    {
-      baseUrl: url.value,
-      apitoken: apitoken.value
-    }
-  )
+  const result = await fetchBadgePdfWithRetry(normalizeApiResourcePath(ticketDownloadUrl), {
+    baseUrl: url.value,
+    apitoken: apitoken.value
+  })
 
   if (result.status === 'ready') {
     return result.blob
@@ -702,7 +785,8 @@ const submitLiveRegistration = async () => {
     liveRegistrationResult.value = {
       attendeeName,
       orderCode: registrationResult.orderCode,
-      orderPositionId: registrationResult.orderPositionId || registrationResult.orderPosition?.id || null,
+      orderPositionId:
+        registrationResult.orderPositionId || registrationResult.orderPosition?.id || null,
       ticketDownloadUrl: registrationResult.ticketDownloadUrl || '',
       ticketDownloadAvailable: registrationResult.ticketDownloadAvailable === true,
       offlinePending: false
@@ -842,7 +926,11 @@ const ensureCheckinsReflectRedeem = (checkins, redeemContext) => {
   return next
 }
 
-const buildOrderUpdateFromPosition = (updatedOrderPosition, existingOrder = {}, redeemContext = null) => ({
+const buildOrderUpdateFromPosition = (
+  updatedOrderPosition,
+  existingOrder = {},
+  redeemContext = null
+) => ({
   ...existingOrder,
   ...updatedOrderPosition,
   attendee_name: updatedOrderPosition.attendee_name || existingOrder.attendee_name,
@@ -1045,8 +1133,7 @@ const searchOrders = async (query, { force = false, requestId = ++activeRequestI
   }
 
   const offlineSync = useOfflineSyncStore()
-  const offlineMode =
-    offlineSync.isOfflineCapable(processApi) && offlineSync.isOfflineMode()
+  const offlineMode = offlineSync.isOfflineCapable(processApi) && offlineSync.isOfflineMode()
 
   if (offlineMode) {
     if (!offlineSync.index) {
@@ -1169,12 +1256,8 @@ onMounted(async () => {
     checkInReady.value = true
 
     const prefetchResults = await Promise.allSettled([
-      eventyayEventStore.events.length
-        ? Promise.resolve()
-        : eventyayEventStore.fetchEvents(),
-      isBadgeStation.value
-        ? Promise.resolve()
-        : liveRegistrationStore.fetchProducts(),
+      eventyayEventStore.events.length ? Promise.resolve() : eventyayEventStore.fetchEvents(),
+      isBadgeStation.value ? Promise.resolve() : liveRegistrationStore.fetchProducts(),
       processEventyayCheckInStore.prefetchCheckInLists(),
       isBadgeStation.value ? Promise.resolve() : fetchBadgeLayouts(),
       ensureEventQuestionsLoaded()
@@ -1245,8 +1328,7 @@ watch(searchQuery, (value) => {
   }
 
   const offlineSync = useOfflineSyncStore()
-  const offlineMode =
-    offlineSync.isOfflineCapable(processApi) && offlineSync.isOfflineMode()
+  const offlineMode = offlineSync.isOfflineCapable(processApi) && offlineSync.isOfflineMode()
 
   const normalizedQuery = getNormalizedSearchQuery(value)
   if (!offlineMode && (!normalizedQuery || normalizedQuery.length < MIN_SEARCH_LENGTH)) {
@@ -1353,12 +1435,15 @@ const openAttendeeFromSearch = async (order) => {
         <StandardButton
           v-if="showLiveRegistrationEntry"
           type="button"
-          text="Live registration"
-          variant="success"
+          :text="isLiveRegLocked ? 'Live registration (Locked)' : 'Live registration'"
+          :icon="isLiveRegLocked ? LockClosedIcon : null"
+          :variant="isLiveRegLocked ? 'secondary' : 'success'"
           size="sm"
           class="w-full justify-center sm:w-auto"
-          :disabled="isRegistering"
-          @click="openLiveRegistrationDialog"
+          :disabled="
+            isRegistering || (isLiveRegLocked && stationLock.lockedDisplayMode === 'disable')
+          "
+          @click="handleLiveRegistrationClick"
         />
         <p
           v-if="showLiveRegistrationEntry && isLoadingProducts"
@@ -1366,159 +1451,186 @@ const openAttendeeFromSearch = async (order) => {
         >
           Loading ticket products…
         </p>
-        <div v-if="selectedCheckInListName || gateName" class="flex shrink-0 flex-col items-start gap-1.5 sm:items-end">
         <div
-          v-if="gateName"
-          class="rounded-xl border border-surface-border bg-surface-muted px-3.5 py-1.5 text-xs font-semibold text-body-muted"
+          v-if="selectedCheckInListName || gateName"
+          class="flex shrink-0 flex-col items-start gap-1.5 sm:items-end"
         >
-          {{ gateName }}
-        </div>
-        <div
-          v-if="selectedCheckInListName"
-          class="rounded-xl bg-primary/10 border border-primary/20 px-3.5 py-1.5 text-xs font-semibold text-primary"
-        >
-          Active List: {{ selectedCheckInListName }}
-        </div>
+          <div
+            v-if="gateName"
+            class="rounded-xl border border-surface-border bg-surface-muted px-3.5 py-1.5 text-xs font-semibold text-body-muted"
+          >
+            {{ gateName }}
+          </div>
+          <div
+            v-if="selectedCheckInListName"
+            class="rounded-xl border border-primary/20 bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary"
+          >
+            Active List: {{ selectedCheckInListName }}
+          </div>
         </div>
       </div>
     </div>
 
     <div
       class="grid min-h-0 flex-1 gap-5"
-      :class="isBadgeStation ? 'max-w-2xl mx-auto w-full' : 'lg:grid-cols-2'"
+      :class="isBadgeStation ? 'mx-auto w-full max-w-2xl' : 'lg:grid-cols-2'"
     >
       <section class="card flex min-h-0 flex-col overflow-hidden p-5 sm:p-6">
         <p class="section-title mb-4 shrink-0">QR scanner</p>
         <div class="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto">
-        <QRCamera
-          qr-type="eventyaycheckin"
-          :scan-type="isBadgeStation ? 'Badge' : 'Check-In'"
-        />
+          <QRCamera qr-type="eventyaycheckin" :scan-type="isBadgeStation ? 'Badge' : 'Check-In'" />
 
-        <div
-          v-if="isBadgeStation && autoPrintEnabled"
-          class="mt-5 flex items-center justify-between rounded-xl border border-surface-border bg-surface-muted px-4 py-3"
-        >
-          <div>
-            <p class="text-sm font-semibold text-body">Customize badge before printing</p>
-            <p class="text-xs text-body-muted">
-              {{
-                autoPrintCustomizeOnce
-                  ? 'Shows field options once, then prints.'
-                  : 'Prints immediately using the default badge layout.'
-              }}
-            </p>
-          </div>
-          <button
-            type="button"
-            class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full p-0.5 transition-colors duration-300 ease-in-out items-center focus:outline-none focus:ring-2 focus:ring-primary/20"
-            :class="autoPrintCustomizeOnce ? 'bg-primary' : 'bg-[#E9E9EB]'"
-            role="switch"
-            :aria-checked="autoPrintCustomizeOnce"
-            @click="toggleAutoPrintCustomizeOnce"
+          <div
+            v-if="isBadgeStation && autoPrintEnabled"
+            class="mt-5 flex items-center justify-between rounded-xl border border-surface-border bg-surface-muted px-4 py-3"
           >
-            <span
-              class="absolute left-2.5 h-2.5 w-0.5 rounded-full bg-white transition-opacity duration-300"
-              :class="autoPrintCustomizeOnce ? 'opacity-100' : 'opacity-0'"
-            />
-            <span
-              class="absolute right-2 h-2 w-2 rounded-full border border-body-light transition-opacity duration-300"
-              :class="autoPrintCustomizeOnce ? 'opacity-0' : 'opacity-100'"
-            />
-            <span
-              aria-hidden="true"
-              class="relative inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-300 ease-in-out z-10"
-              :class="autoPrintCustomizeOnce ? 'translate-x-5' : 'translate-x-0'"
-            />
-          </button>
-        </div>
+            <div>
+              <p class="text-sm font-semibold text-body">Customize badge before printing</p>
+              <p class="text-xs text-body-muted">
+                {{
+                  autoPrintCustomizeOnce
+                    ? 'Shows field options once, then prints.'
+                    : 'Prints immediately using the default badge layout.'
+                }}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full p-0.5 transition-colors duration-300 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary/20"
+              :class="autoPrintCustomizeOnce ? 'bg-primary' : 'bg-[#E9E9EB]'"
+              role="switch"
+              :aria-checked="autoPrintCustomizeOnce"
+              @click="toggleAutoPrintCustomizeOnce"
+            >
+              <span
+                class="absolute left-2.5 h-2.5 w-0.5 rounded-full bg-white transition-opacity duration-300"
+                :class="autoPrintCustomizeOnce ? 'opacity-100' : 'opacity-0'"
+              />
+              <span
+                class="absolute right-2 h-2 w-2 rounded-full border border-body-light transition-opacity duration-300"
+                :class="autoPrintCustomizeOnce ? 'opacity-0' : 'opacity-100'"
+              />
+              <span
+                aria-hidden="true"
+                class="relative z-10 inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition duration-300 ease-in-out"
+                :class="autoPrintCustomizeOnce ? 'translate-x-5' : 'translate-x-0'"
+              />
+            </button>
+          </div>
 
-        <div
-          v-if="isBadgeStation && autoPrintFeedback"
-          class="mt-3 rounded-xl border px-4 py-2.5 text-sm"
-          :class="{
-            'border-primary/20 bg-primary/5 text-body-muted': autoPrintFeedback.status === 'printing',
-            'border-danger/20 bg-danger/5 text-danger': autoPrintFeedback.status === 'error'
-          }"
-          role="status"
-          aria-live="polite"
-        >
-          {{ autoPrintFeedback.text }}
-        </div>
+          <div
+            v-if="isBadgeStation && autoPrintFeedback"
+            class="mt-3 rounded-xl border px-4 py-2.5 text-sm"
+            :class="{
+              'border-primary/20 bg-primary/5 text-body-muted':
+                autoPrintFeedback.status === 'printing',
+              'border-danger/20 bg-danger/5 text-danger': autoPrintFeedback.status === 'error'
+            }"
+            role="status"
+            aria-live="polite"
+          >
+            {{ autoPrintFeedback.text }}
+          </div>
         </div>
       </section>
 
       <section v-if="!isBadgeStation" class="card flex min-h-0 flex-col overflow-hidden p-5 sm:p-6">
         <p class="section-title mb-4 shrink-0">Search</p>
 
-        <div class="relative mb-4 shrink-0">
-          <MagnifyingGlassIcon class="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-body-muted" />
-          <input
-            v-model="searchQuery"
-            type="search"
-            :placeholder="searchPlaceholder"
-            class="pl-10"
+        <div
+          v-if="isSearchLocked"
+          class="flex flex-1 flex-col items-center justify-center p-6 text-center"
+        >
+          <div
+            class="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-danger/10 text-danger"
+          >
+            <LockClosedIcon class="h-6 w-6" />
+          </div>
+          <h3 class="text-base font-bold text-body">Attendee Search is Locked</h3>
+          <p class="mt-1 max-w-xs text-xs text-body-muted">
+            This station is locked by PIN. Check in attendees by scanning their ticket QR code.
+          </p>
+          <StandardButton
+            type="button"
+            text="Unlock Search"
+            variant="white"
+            size="sm"
+            class="mt-4"
+            @click="handleSearchUnlockClick"
           />
         </div>
 
-        <div class="min-h-0 flex-1 overflow-y-auto">
-          <div
-            v-if="!searchQuery && !offlineBrowseAvailable"
-            class="flex h-full items-center justify-center text-center"
-          >
-            <p class="text-sm text-body-muted">Type at least 2 characters to search attendees.</p>
+        <template v-else>
+          <div class="relative mb-4 shrink-0">
+            <MagnifyingGlassIcon
+              class="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-body-muted"
+            />
+            <input
+              v-model="searchQuery"
+              type="search"
+              :placeholder="searchPlaceholder"
+              class="pl-10"
+            />
           </div>
 
-          <div v-else-if="loading" class="py-10 text-center text-sm text-body-muted">
-            Searching...
-          </div>
-
-          <div v-else-if="orders.length === 0" class="py-10 text-center text-sm text-body-muted">
-            <p v-if="offlineBrowseAvailable && !searchQuery">
-              No synced attendees yet. Connect to the internet to sync check-in data.
-            </p>
-            <p v-else>No matching attendees found.</p>
-          </div>
-
-          <template v-else>
-            <p
-              v-if="offlineBrowseAvailable && !searchQuery"
-              class="mb-3 text-xs text-body-muted"
+          <div class="min-h-0 flex-1 overflow-y-auto">
+            <div
+              v-if="!searchQuery && !offlineBrowseAvailable"
+              class="flex h-full items-center justify-center text-center"
             >
-              Showing synced attendees. Type to filter.
-            </p>
-            <TransitionGroup name="list" tag="div" class="space-y-2">
-            <article
-              v-for="order in orders"
-              :key="order.id"
-              class="rounded-xl border border-surface-border bg-surface-muted p-4"
-            >
-              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div class="min-w-0">
-                  <h3 class="truncate font-semibold text-body">{{ order.attendee_name }}</h3>
-                  <p class="truncate text-sm text-body-muted">
-                    {{ order.attendee_email || 'No email' }}
-                  </p>
-                  <p v-if="order.company" class="truncate text-sm text-body-muted">
-                    {{ order.company }}
-                  </p>
-                  <p v-if="order.job_title" class="truncate text-sm text-body-muted">
-                    {{ order.job_title }}
-                  </p>
-                </div>
-                <StandardButton
-                  :text="getAttendeeActionLabel(order)"
-                  :variant="
-                    (isCheckedIn(order) || isPositionCanceled(order)) && !isBadgeStation ? 'white' : 'success'
-                  "
-                  size="sm"
-                  @click="openAttendeeFromSearch(order)"
-                />
-              </div>
-            </article>
-          </TransitionGroup>
-          </template>
-        </div>
+              <p class="text-sm text-body-muted">Type at least 2 characters to search attendees.</p>
+            </div>
+
+            <div v-else-if="loading" class="py-10 text-center text-sm text-body-muted">
+              Searching...
+            </div>
+
+            <div v-else-if="orders.length === 0" class="py-10 text-center text-sm text-body-muted">
+              <p v-if="offlineBrowseAvailable && !searchQuery">
+                No synced attendees yet. Connect to the internet to sync check-in data.
+              </p>
+              <p v-else>No matching attendees found.</p>
+            </div>
+
+            <template v-else>
+              <p v-if="offlineBrowseAvailable && !searchQuery" class="mb-3 text-xs text-body-muted">
+                Showing synced attendees. Type to filter.
+              </p>
+              <TransitionGroup name="list" tag="div" class="space-y-2">
+                <article
+                  v-for="order in orders"
+                  :key="order.id"
+                  class="rounded-xl border border-surface-border bg-surface-muted p-4"
+                >
+                  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div class="min-w-0">
+                      <h3 class="truncate font-semibold text-body">{{ order.attendee_name }}</h3>
+                      <p class="truncate text-sm text-body-muted">
+                        {{ order.attendee_email || 'No email' }}
+                      </p>
+                      <p v-if="order.company" class="truncate text-sm text-body-muted">
+                        {{ order.company }}
+                      </p>
+                      <p v-if="order.job_title" class="truncate text-sm text-body-muted">
+                        {{ order.job_title }}
+                      </p>
+                    </div>
+                    <StandardButton
+                      :text="getAttendeeActionLabel(order)"
+                      :variant="
+                        (isCheckedIn(order) || isPositionCanceled(order)) && !isBadgeStation
+                          ? 'white'
+                          : 'success'
+                      "
+                      size="sm"
+                      @click="openAttendeeFromSearch(order)"
+                    />
+                  </div>
+                </article>
+              </TransitionGroup>
+            </template>
+          </div>
+        </template>
       </section>
     </div>
 
@@ -1597,7 +1709,11 @@ const openAttendeeFromSearch = async (order) => {
       >
         <div class="card w-full max-w-md p-6">
           <h2 class="mb-1 text-xl text-success">
-            {{ liveRegistrationResult.offlinePending ? 'Registration queued' : 'Registration complete' }}
+            {{
+              liveRegistrationResult.offlinePending
+                ? 'Registration queued'
+                : 'Registration complete'
+            }}
           </h2>
           <p class="mb-4 text-sm text-body-muted">
             {{ liveRegistrationResult.attendeeName }}
@@ -1734,8 +1850,8 @@ const openAttendeeFromSearch = async (order) => {
       :paused="attendeeModalPaused"
       @preview="openBadgePreviewFromModal"
       @print="handleModalPrint"
-      @edit="openEditDialog"
-      @edit-badge="openBadgeEditDialog"
+      @edit="handleEditClickFromModal"
+      @edit-badge="handleEditBadgeClickFromModal"
       @exit="handleExitFromModal"
       @checkin="handleCheckInAfterCheckout"
       @checkout-confirm="isCheckoutConfirmOpen = $event"
@@ -1760,10 +1876,25 @@ const openAttendeeFromSearch = async (order) => {
       v-if="showPrintPreview && (previewBadgePath || badgeUrl)"
       :key="badgePreviewKey"
       :badge-path="previewBadgePath || badgeUrl"
-      :layouts="isBadgeStation ? [] : badgeLayouts"
+      :layouts="isBadgeStation || isBadgeLayoutLocked ? [] : badgeLayouts"
       :initial-layout-id="badgeAssignedLayoutId"
       :position="message"
       @close="handlePrintClose"
+    />
+
+    <PinUnlockModal
+      v-if="showUnlockModal"
+      :show="showUnlockModal"
+      @close="showUnlockModal = false"
+      @unlocked="onStationUnlocked"
+      @reset-pin="onStationResetPin"
+    />
+
+    <PinSetupModal
+      v-if="showPinResetModal"
+      :show="showPinResetModal"
+      @close="showPinResetModal = false"
+      @saved="showPinResetModal = false"
     />
   </div>
 </template>
