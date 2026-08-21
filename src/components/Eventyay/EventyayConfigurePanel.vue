@@ -2,11 +2,13 @@
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import StandardButton from '@/components/Common/StandardButton.vue'
+import PinSetupModal from '@/components/Modals/PinSetupModal.vue'
 import { useCameraStore } from '@/stores/camera'
 import { useCheckinSettingsStore } from '@/stores/checkinSettings'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useEventyayEventStore } from '@/stores/eventyayEvent'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
+import { useStationLockStore } from '@/stores/stationLock'
 import { formatEventDate, getEventDisplayName } from '@/utils/eventFormat'
 import { isKioskEnvironment } from '@/utils/kioskLauncher'
 import { useRoute } from 'vue-router'
@@ -18,12 +20,16 @@ const processApi = useEventyayApi()
 const eventStore = useEventyayEventStore()
 const checkinSettings = useCheckinSettingsStore()
 const processEventyayCheckInStore = useProcessEventyayCheckInStore()
+const stationLock = useStationLockStore()
 const cameraStore = useCameraStore()
+
+const showPinSetup = ref(false)
 
 const { selectedRole, limitCheckInLists, gateName, deviceName } = storeToRefs(processApi)
 const { events } = storeToRefs(eventStore)
 const { availableCheckInLists } = storeToRefs(processEventyayCheckInStore)
 const { autoPrintEnabled } = storeToRefs(checkinSettings)
+const { isEnabled: isPinLockEnabled, isLocked: isStationLocked } = storeToRefs(stationLock)
 
 const isUnlocked = ref(false)
 const setupToken = ref('')
@@ -172,7 +178,8 @@ async function applySettings() {
   try {
     const eventData = events.value.find((event) => event.slug === draftEventSlug.value)
     const eventChanged = draftEventSlug.value !== processApi.eventSlug
-    const listChanged = String(draftCheckInListId.value) !== String(processApi.selectedCheckInListId)
+    const listChanged =
+      String(draftCheckInListId.value) !== String(processApi.selectedCheckInListId)
 
     processApi.setEvent(draftEventSlug.value, getEventDisplayName(eventData))
     processApi.setSelectedCheckInListId(draftCheckInListId.value)
@@ -227,8 +234,8 @@ async function applySettings() {
           />
         </label>
         <p class="text-xs text-body-muted">
-          Copy or download this token from the device connect page in the organizer dashboard. Keep it handy if
-          you switch between events or check-in lists on this device.
+          Copy or download this token from the device connect page in the organizer dashboard. Keep
+          it handy if you switch between events or check-in lists on this device.
         </p>
         <p v-if="unlockError" class="text-sm text-danger">{{ unlockError }}</p>
       </div>
@@ -293,15 +300,57 @@ async function applySettings() {
           <p v-else class="text-sm text-danger">{{ checkInListEmptyMessage }}</p>
         </div>
 
+        <div class="space-y-3 border-t border-surface-border pt-4">
+          <p class="section-title">Security & Station Lock</p>
+          <div
+            class="flex items-center justify-between rounded-xl border border-surface-border bg-surface-muted p-4"
+          >
+            <div>
+              <p class="text-sm font-semibold text-body">
+                Station PIN Lock:
+                <span :class="isPinLockEnabled ? 'font-bold text-success' : 'text-body-muted'">
+                  {{
+                    isPinLockEnabled
+                      ? isStationLocked
+                        ? 'Enabled (Locked)'
+                        : 'Enabled (Unlocked)'
+                      : 'Disabled'
+                  }}
+                </span>
+              </p>
+              <p class="text-xs text-body-muted">
+                {{
+                  isPinLockEnabled
+                    ? 'Prevents walk-in registration, layout switching, and unauthorized attendee edits.'
+                    : 'Set a numeric PIN to protect sensitive actions on unattended devices.'
+                }}
+              </p>
+            </div>
+            <StandardButton
+              type="button"
+              :text="isPinLockEnabled ? 'Manage PIN' : 'Set PIN'"
+              variant="secondary"
+              size="sm"
+              @click="showPinSetup = true"
+            />
+          </div>
+        </div>
+
         <div v-if="isBadgeStation" class="space-y-3 border-t border-surface-border pt-4">
           <p class="section-title">Printing</p>
 
-          <label class="flex items-center justify-between gap-4 rounded-xl border border-surface-border px-4 py-3">
+          <label
+            class="flex items-center justify-between gap-4 rounded-xl border border-surface-border px-4 py-3"
+          >
             <div>
               <p class="text-sm font-semibold text-body">Auto-print badge</p>
               <p class="text-xs text-body-muted">Print immediately after each successful scan.</p>
             </div>
-            <input v-model="draftAutoPrint" type="checkbox" class="h-4 w-4 rounded border-surface-border" />
+            <input
+              v-model="draftAutoPrint"
+              type="checkbox"
+              class="h-4 w-4 rounded border-surface-border"
+            />
           </label>
 
           <p v-if="draftAutoPrint && !isKioskShell" class="text-xs text-body-muted">
@@ -342,4 +391,11 @@ async function applySettings() {
       </div>
     </div>
   </div>
+
+  <PinSetupModal
+    v-if="showPinSetup"
+    :show="showPinSetup"
+    @close="showPinSetup = false"
+    @saved="showPinSetup = false"
+  />
 </template>
