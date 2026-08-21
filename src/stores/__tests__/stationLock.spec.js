@@ -154,13 +154,16 @@ describe('stationLock store & crypto utilities', () => {
 
     expect(store.isActionLocked('liveRegistration')).toBe(true)
     expect(store.isActionLocked('search')).toBe(false)
+    expect(store.isActionLocked('configure')).toBe(true)
 
     // Unlock station
     store.unlockManual()
     expect(store.isActionLocked('liveRegistration')).toBe(false)
+    expect(store.isActionLocked('configure')).toBe(false)
 
     // Relock station
     store.lock()
     expect(store.isActionLocked('liveRegistration')).toBe(true)
+    expect(store.isActionLocked('configure')).toBe(true)
   })
 })

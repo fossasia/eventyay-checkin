@@ -128,7 +128,6 @@ export const DEFAULT_LOCKED_ACTIONS = {
   liveRegistration: true,
   attendeeEdit: true,
   badgeLayout: true,
-  configure: true,
   badgeCustomize: false,
   search: false,
   manualOverride: false,
@@ -175,6 +174,9 @@ export const useStationLockStore = defineStore(
     function isActionLocked(actionName) {
       if (!isEnabled.value || !isLocked.value) {
         return false
+      }
+      if (actionName === 'configure') {
+        return true
       }
       return Boolean(lockedActions.value[actionName])
     }

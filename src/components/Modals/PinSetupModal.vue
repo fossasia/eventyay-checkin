@@ -222,22 +222,6 @@ function removePinLock() {
               class="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-surface-border p-3 transition hover:border-primary/30 active:bg-surface-muted"
             >
               <div>
-                <p class="text-sm font-semibold text-body">Configure Panel</p>
-                <p class="text-xs text-body-muted">
-                  Require PIN or Setup Token to access device settings.
-                </p>
-              </div>
-              <input
-                v-model="actions.configure"
-                type="checkbox"
-                class="mt-1 h-4 w-4 rounded text-primary focus:ring-primary/40"
-              />
-            </label>
-
-            <label
-              class="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-surface-border p-3 transition hover:border-primary/30 active:bg-surface-muted"
-            >
-              <div>
                 <p class="text-sm font-semibold text-body">Badge Field Customization</p>
                 <p class="text-xs text-body-muted">
                   Prevent changing printed badge field overrides before printing.
