@@ -124,6 +124,10 @@ function textareaContent(element, pdfData, secret) {
 
 const ARABIC_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/
 const DEVANAGARI_RE = /[\u0900-\u097F]/
+const CJK_RE =
+  /[\u3000-\u303F\u3040-\u309F\u30A0-\u30FF\u31F0-\u31FF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]/
+const THAI_RE = /[\u0E00-\u0E7F]/
+const HEBREW_RE = /[\u0590-\u05FF\uFB1D-\uFB4F]/
 
 function scriptOfChar(ch) {
   if (ARABIC_RE.test(ch)) {
@@ -131,6 +135,15 @@ function scriptOfChar(ch) {
   }
   if (DEVANAGARI_RE.test(ch)) {
     return 'devanagari'
+  }
+  if (CJK_RE.test(ch)) {
+    return 'cjk'
+  }
+  if (THAI_RE.test(ch)) {
+    return 'thai'
+  }
+  if (HEBREW_RE.test(ch)) {
+    return 'hebrew'
   }
   return 'latin'
 }
@@ -172,23 +185,39 @@ function textWidth(font, text, fontSize) {
   }
 }
 
+const SCRIPT_FONT_KEY_MAP = {
+  arabic: (element, fonts) => (element.bold ? fonts.arabicBold : fonts.arabic) || fonts.arabic,
+  devanagari: (element, fonts) =>
+    (element.bold ? fonts.devanagariBold : fonts.devanagari) || fonts.devanagari,
+  cjk: (element, fonts) => fonts.cjk || fonts.korean,
+  korean: (element, fonts) => fonts.korean || fonts.cjk,
+  thai: (element, fonts) => fonts.thai,
+  hebrew: (element, fonts) => fonts.hebrew
+}
+
 function resolveRunFont(run, element, fonts) {
-  let font = pickFont(element, fonts)
-  if (run.script === 'arabic') {
-    font = (element.bold ? fonts.arabicBold : fonts.arabic) || fonts.arabic || font
-  } else if (run.script === 'devanagari') {
-    font = (element.bold ? fonts.devanagariBold : fonts.devanagari) || fonts.devanagari || font
+  const defaultFont = pickFont(element, fonts)
+  const scriptResolver = SCRIPT_FONT_KEY_MAP[run.script]
+  const scriptFont = scriptResolver ? scriptResolver(element, fonts) : null
+
+  const candidates = [
+    scriptFont,
+    defaultFont,
+    fonts.cjk,
+    fonts.korean,
+    fonts.thai,
+    fonts.hebrew,
+    fonts.and,
+    fonts.fallback
+  ]
+
+  for (const candidate of candidates) {
+    if (candidate && fontHasGlyphs(candidate, run.text)) {
+      return candidate
+    }
   }
-  if (fontHasGlyphs(font, run.text)) {
-    return font
-  }
-  if (fonts.and && fontHasGlyphs(fonts.and, run.text)) {
-    return fonts.and
-  }
-  if (fonts.fallback && fontHasGlyphs(fonts.fallback, run.text)) {
-    return fonts.fallback
-  }
-  return fonts.and || fonts.fallback || font
+
+  return defaultFont || fonts.and || fonts.fallback
 }
 
 function lineWidth(line, element, fonts, fontSize) {
@@ -412,6 +441,9 @@ async function embedCustomFonts(pdfDoc, printAssets = {}) {
   const arabicBold = await embed('arabicBold', arabic)
   const devanagari = await embed('devanagari', null)
   const devanagariBold = await embed('devanagariBold', devanagari)
+  const cjk = await embed('cjk', null)
+  const thai = await embed('thai', null)
+  const hebrew = await embed('hebrew', null)
   const fallback = await embed('fallback', null)
   return {
     regular,
@@ -423,6 +455,9 @@ async function embedCustomFonts(pdfDoc, printAssets = {}) {
     arabicBold,
     devanagari,
     devanagariBold,
+    cjk,
+    thai,
+    hebrew,
     fallback
   }
 }
