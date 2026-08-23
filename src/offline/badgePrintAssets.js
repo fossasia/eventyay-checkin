@@ -10,6 +10,9 @@ export const PRINT_ASSET_PATHS = {
   arabicBold: '/static/fonts/NotoNaskhArabic-Bold.ttf',
   devanagari: '/static/fonts/NotoSansDevanagari-Regular.ttf',
   devanagariBold: '/static/fonts/NotoSansDevanagari-Bold.ttf',
+  cjk: '/static/fonts/NotoSansCJKsc-Regular.otf',
+  thai: '/static/fonts/NotoSansThai-Regular.ttf',
+  hebrew: '/static/fonts/NotoSansHebrew-Regular.ttf',
   fallback: '/static/fonts/DroidSansFallbackFull.ttf',
   poweredByDark: '/static/pretixpresale/pdf/powered_by_eventyay_dark.png',
   poweredByWhite: '/static/pretixpresale/pdf/powered_by_eventyay_white.png'

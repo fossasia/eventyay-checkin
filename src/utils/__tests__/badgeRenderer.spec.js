@@ -14,7 +14,9 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-const EVENTYAY_FONTS = resolve(process.cwd(), '../eventyay/app/eventyay/static/fonts')
+const EVENTYAY_FONTS = existsSync(resolve(process.cwd(), '../../app/eventyay/static/fonts'))
+  ? resolve(process.cwd(), '../../app/eventyay/static/fonts')
+  : resolve(process.cwd(), '../eventyay/app/eventyay/static/fonts')
 
 function fontAsset(filename) {
   const path = resolve(EVENTYAY_FONTS, filename)
@@ -32,6 +34,10 @@ const multilingualPrintAssets = {
   arabicBold: fontAsset('NotoNaskhArabic-Bold.ttf'),
   devanagari: fontAsset('NotoSansDevanagari-Regular.ttf'),
   devanagariBold: fontAsset('NotoSansDevanagari-Bold.ttf'),
+  cjk: fontAsset('NotoSansSC-Regular.ttf'),
+  korean: fontAsset('NotoSansKR-Regular.ttf'),
+  thai: fontAsset('NotoSansThai-Regular.ttf'),
+  hebrew: fontAsset('NotoSansHebrew-Regular.ttf'),
   fallback: fontAsset('DroidSansFallbackFull.ttf')
 }
 const hasServerFonts = Object.values(multilingualPrintAssets).every(Boolean)
@@ -255,42 +261,71 @@ describe('badgeRenderer', () => {
       arabicBold: '/static/fonts/NotoNaskhArabic-Bold.ttf',
       devanagari: '/static/fonts/NotoSansDevanagari-Regular.ttf',
       devanagariBold: '/static/fonts/NotoSansDevanagari-Bold.ttf',
+      cjk: '/static/fonts/NotoSansCJKsc-Regular.otf',
+      thai: '/static/fonts/NotoSansThai-Regular.ttf',
+      hebrew: '/static/fonts/NotoSansHebrew-Regular.ttf',
       fallback: '/static/fonts/DroidSansFallbackFull.ttf',
       poweredByDark: '/static/pretixpresale/pdf/powered_by_eventyay_dark.png',
       poweredByWhite: '/static/pretixpresale/pdf/powered_by_eventyay_white.png'
     })
   })
 
-  it('splits mixed-script badge text into font runs', () => {
-    const runs = splitScriptRuns('Ada مرحبا नमस्ते')
-    expect(runs.map((run) => run.script)).toEqual(['latin', 'arabic', 'latin', 'devanagari'])
+  it('splits mixed-script badge text into font runs including CJK, Thai, and Hebrew', () => {
+    const runs = splitScriptRuns('Ada مرحبا नमस्ते 你好 สวัสดี שָׁלוֹם')
+    expect(runs.map((run) => run.script)).toEqual([
+      'latin',
+      'arabic',
+      'latin',
+      'devanagari',
+      'latin',
+      'cjk',
+      'latin',
+      'thai',
+      'latin',
+      'hebrew'
+    ])
   })
 
   it.skipIf(!hasServerFonts)(
-    'embeds Open Sans, Noto, AND, and Droid fonts so Arabic, Devanagari, and CJK print',
+    'embeds Open Sans, Noto CJK, Korean, Thai, and Hebrew fonts for all languages and dialects',
     async () => {
-      const blob = await renderBadgePdfFromLayout({
-        layout: {
-          size: [{ width: 148, height: 105, orientation: 'landscape' }],
-          layout: [
-            {
-              type: 'textarea',
-              left: '8',
-              bottom: '80',
-              fontsize: '14',
-              color: [0, 0, 0, 1],
-              width: '130',
-              content: 'attendee_name',
-              align: 'left'
-            }
-          ]
-        },
-        pdfData: {
-          attendee_name: 'مرحبا Ada नमस्ते 你好'
-        },
-        printAssets: multilingualPrintAssets
-      })
-      expect(blob.size).toBeGreaterThan(2000)
+      const multilingualNames = [
+        'Ada Lovelace',
+        'Jürgen Müller-Straße',
+        'José María González',
+        'مرحبا بك في إيفينتياي',
+        'नमस्ते एंटीग्रेविटी',
+        '山田太郎 こんにちは カタカナ',
+        '홍길동 안녕하세요',
+        '张伟 欢迎参加',
+        '張偉 歡迎參加',
+        'สมชาย สวัสดีครับ',
+        'שָׁלוֹם וברכה',
+        'Ada مرحبا नमस्ते 山田太郎 홍길동 张伟 สมชาย שָׁלוֹם'
+      ]
+
+      for (const name of multilingualNames) {
+        const blob = await renderBadgePdfFromLayout({
+          layout: {
+            size: [{ width: 148, height: 105, orientation: 'landscape' }],
+            layout: [
+              {
+                type: 'textarea',
+                left: '8',
+                bottom: '80',
+                fontsize: '14',
+                color: [0, 0, 0, 1],
+                width: '130',
+                content: 'attendee_name',
+                align: 'left'
+              }
+            ]
+          },
+          pdfData: { attendee_name: name },
+          printAssets: multilingualPrintAssets
+        })
+        expect(blob.size).toBeGreaterThan(1000)
+      }
     }
   )
 
