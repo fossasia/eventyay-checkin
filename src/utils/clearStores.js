@@ -3,8 +3,8 @@ import { useCameraStore } from '@/stores/camera'
 import { useEventsStore } from '@/stores/events'
 import { usePasswordModalStore } from '@/stores/passwordModal'
 import { usePrintModalStore } from '@/stores/printModal'
-import { useProcessCheckInStore } from '@/stores/processCheckIn'
 import { useSessionsStore } from '@/stores/sessions'
+import { useStationLockStore } from '@/stores/stationLock'
 import { useStationsStore } from '@/stores/stations'
 import { useStationSelectorStore } from '@/stores/stationSelector'
 import { useTicketsStore } from '@/stores/tickets'
@@ -16,8 +16,8 @@ export default function clearStores() {
   const eventsStore = useEventsStore()
   const passwordModalStore = usePasswordModalStore()
   const printModalStore = usePrintModalStore()
-  const processCheckInStore = useProcessCheckInStore()
   const sessionsStore = useSessionsStore()
+  const stationLockStore = useStationLockStore()
   const stationsStore = useStationsStore()
   const stationSelectorStore = useStationSelectorStore()
   const ticketsStore = useTicketsStore()
@@ -28,8 +28,8 @@ export default function clearStores() {
   eventsStore.$reset()
   passwordModalStore.$reset()
   printModalStore.$reset()
-  processCheckInStore.$reset()
   sessionsStore.$reset()
+  stationLockStore.$reset()
   stationsStore.$reset()
   stationSelectorStore.$reset()
   ticketsStore.$reset()

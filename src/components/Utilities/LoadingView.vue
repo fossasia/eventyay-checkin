@@ -1,10 +1,12 @@
+<script setup>
+import { getEventyayLogoProps } from '@/utils/session'
+</script>
+
 <template>
   <div
     class="fixed bottom-0 left-0 right-0 top-0 z-50 flex h-screen w-full flex-col items-center justify-center overflow-hidden bg-secondary-light"
   >
-    <!-- <svg
-      class="w-16 h-16 rounded-full animate-spin text-info" viewBox="0 0 24 24"
-    ></svg> -->
+    <img v-bind="getEventyayLogoProps('icon', 'mb-5 h-12 w-12')" />
     <svg
       class="h-16 w-16 animate-spin text-primary"
       xmlns="http://www.w3.org/2000/svg"

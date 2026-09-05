@@ -1,31 +1,63 @@
 <script setup>
-import { useLoadingStore } from '@/stores/loading'
+import { computed, onMounted, ref, watch } from 'vue'
+import { storeToRefs } from 'pinia'
+import { useRouter } from 'vue-router'
+import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useEventyayEventStore } from '@/stores/eventyayEvent'
+import { useleedauth } from '@/stores/leedauth'
+import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
+import { useLoadingStore } from '@/stores/loading'
+import { getRoleRouteName } from '@/utils/session'
+import { MagnifyingGlassIcon, CalendarDaysIcon } from '@heroicons/vue/24/outline'
 
-import { ref, computed, onMounted, watch } from 'vue'
-import { storeToRefs } from 'pinia'
-import StandardButton from '@/components/Common/StandardButton.vue'
-import { useRouter } from 'vue-router'
+const exhibitorTab = ref('upcoming')
 
 const EVENTS_PER_PAGE = 8
 
 const loadingStore = useLoadingStore()
 const router = useRouter()
-
-const selectedEvent = ref(null)
-const searchQuery = ref('')
-const currentPage = ref(1)
 const processApi = useEventyayApi()
-const { apitoken, url, organizer, selectedRole } = processApi
+const leedauth = useleedauth()
 const eventyayEventStore = useEventyayEventStore()
-onMounted(() => {
-  eventyayEventStore.fetchEvents(url, apitoken, organizer)
-})
+const { selectedRole, limitCheckInLists } = storeToRefs(processApi)
 const { events, error } = storeToRefs(eventyayEventStore)
 
+const selectedEvent = ref('')
+const searchQuery = ref('')
+const currentPage = ref(1)
 
-loadingStore.contentLoaded()
+const processEventyayCheckInStore = useProcessEventyayCheckInStore()
+const { availableCheckInLists } = storeToRefs(processEventyayCheckInStore)
+const selectedCheckInListId = ref(null)
+const loadingLists = ref(false)
+
+watch(selectedEvent, async (newVal) => {
+  selectedCheckInListId.value = null
+  if (!newVal) {
+    processEventyayCheckInStore.invalidateCheckInListCache()
+    return
+  }
+  loadingLists.value = true
+  try {
+    const eventData = events.value.find((event) => event.slug === newVal)
+    processApi.setEvent(newVal, eventData ? getEventName(eventData) : '')
+    await processEventyayCheckInStore.getCheckInLists({ force: true })
+    if (availableCheckInLists.value.length === 1) {
+      selectedCheckInListId.value = availableCheckInLists.value[0].id
+    }
+  } catch (error) {
+    console.error('Error fetching check-in lists:', error)
+  } finally {
+    loadingLists.value = false
+  }
+})
+
+onMounted(() => {
+  processApi.refreshServerUrl()
+  eventyayEventStore.fetchEvents()
+  loadingStore.contentLoaded()
+})
 
 const getEventName = (event) => {
   if (typeof event?.name === 'string') {
@@ -39,34 +71,31 @@ const getEventName = (event) => {
   return event?.slug || 'Unnamed Event'
 }
 
-// Format date with timezone indication
 const formatEventDate = (dateString) => {
   const date = new Date(dateString)
-  const localDate = date.toLocaleDateString()
-  const localTime = date.toLocaleTimeString()
-  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone
-  return `${localDate} ${localTime} (${timeZone})`
+  return date.toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  })
 }
 
-// Filter events based on selectedRole and date
 const categorizedEvents = computed(() => {
   const now = new Date()
   let filteredEvents = events.value
 
-  // Filter for exhibitor events if role is Exhibitor
-  if (selectedRole === 'Exhibitor') {
-    filteredEvents = events.value.filter((event) => event.plugins && event.plugins.includes('exhibition'))
+  if (selectedRole.value === 'Exhibitor') {
+    filteredEvents = events.value.filter(
+      (event) => event.plugins && event.plugins.includes('exhibition')
+    )
   }
 
-  // For CheckIn or Badge Station, only show upcoming events
-  if (selectedRole === 'CheckIn' || selectedRole === 'Badge Station') {
+  if (selectedRole.value === 'CheckIn' || selectedRole.value === 'Badge Station') {
     return {
       upcoming: filteredEvents.filter((event) => new Date(event.date_to) >= now),
-      past: [] // Empty array as we don't want to show past events
+      past: []
     }
   }
 
-  // For Exhibitor role, show both past and upcoming events
   return {
     upcoming: filteredEvents.filter((event) => new Date(event.date_to) > now),
     past: filteredEvents.filter((event) => new Date(event.date_to) <= now)
@@ -83,7 +112,10 @@ const filteredCategorizedEvents = computed(() => {
   const matches = (event) => {
     const eventName = getEventName(event).toLowerCase()
     const eventSlug = (event.slug || '').toLowerCase()
-    return eventName.includes(normalizedSearchQuery.value) || eventSlug.includes(normalizedSearchQuery.value)
+    return (
+      eventName.includes(normalizedSearchQuery.value) ||
+      eventSlug.includes(normalizedSearchQuery.value)
+    )
   }
 
   return {
@@ -121,6 +153,16 @@ const paginatedEvents = computed(() => {
   return { upcoming, past }
 })
 
+const visibleEvents = computed(() => {
+  if (selectedRole.value !== 'Exhibitor') {
+    return paginatedEvents.value
+  }
+  if (exhibitorTab.value === 'past') {
+    return { upcoming: [], past: paginatedEvents.value.past }
+  }
+  return { upcoming: paginatedEvents.value.upcoming, past: [] }
+})
+
 const showPagination = computed(() => flattenedFilteredEvents.value.length > EVENTS_PER_PAGE)
 const hasPreviousPage = computed(() => currentPage.value > 1)
 const hasNextPage = computed(() => currentPage.value < totalPages.value)
@@ -142,152 +184,207 @@ watch(flattenedFilteredEvents, (eventList) => {
 
   const visibleSlugs = new Set(eventList.map(({ event }) => event.slug))
   if (!visibleSlugs.has(selectedEvent.value)) {
-    selectedEvent.value = null
+    selectedEvent.value = ''
   }
 })
 
-const goToPreviousPage = () => {
-  currentPage.value = Math.max(1, currentPage.value - 1)
+const getCheckInListLabel = (list) => {
+  const eventName = getEventName(events.value.find((event) => event.slug === selectedEvent.value))
+  if (eventName) {
+    return `${list.name} - ${eventName}`
+  }
+  return list.name
 }
 
-const goToNextPage = () => {
-  currentPage.value = Math.min(totalPages.value, currentPage.value + 1)
-}
+const checkInListEmptyMessage = computed(() => {
+  if (limitCheckInLists.value?.length) {
+    return 'No check-in lists match this device restriction for the selected event. Update the device settings in the organizer dashboard.'
+  }
+  return 'No check-in lists found for this event. Create a check-in list in the event settings first.'
+})
 
-const submitForm = () => {
+const submitForm = async () => {
   if (!selectedEvent.value) {
-    console.error('Please select an event.')
     return
   }
 
-  const selectedEventData = events.value.find(event => event.slug === selectedEvent.value)
-
+  const selectedEventData = events.value.find((event) => event.slug === selectedEvent.value)
   if (!selectedEventData) {
-    console.error('Event not found.')
     return
   }
 
   processApi.setEvent(selectedEventData.slug, getEventName(selectedEventData))
-
-  const routeMap = {
-    'Exhibitor': 'eventyayleedlogin',
-    'Badge Station': 'eventyaycheckin',
-    'CheckIn': 'eventyaysearchcheckin'
+  if (selectedRole.value !== 'Exhibitor' && selectedCheckInListId.value) {
+    processApi.setSelectedCheckInListId(selectedCheckInListId.value)
   }
 
-  const routeName = routeMap[selectedRole]
+  if (selectedRole.value === 'Exhibitor' && processApi.pendingExhibitorKey) {
+    const response = await leedauth.loginWithPendingKey()
+    if (response.success) {
+      router.push({ name: 'leadscan' })
+      return
+    }
+  }
+
+  const routeName = getRoleRouteName(selectedRole.value)
   if (routeName) {
     router.push({ name: routeName })
-  } else {
-    console.warn('Unhandled role:', selectedRole)
   }
 }
-
 </script>
 
 <template>
-  <div class="-mt-16 flex h-screen flex-col items-center justify-center">
-    <div v-if="error" class="text-danger">{{ error }}</div>
-    <form v-if="events.length" @submit.prevent="submitForm">
-      <!-- Role-specific heading -->
-      <div class="mb-4 text-center">
-        <h1 class="text-xl font-bold">
-          {{
-            selectedRole === 'Exhibitor' ? 'Exhibitor Events' : 'Select Event to Perform Checkin'
-          }}
+  <div class="page-shell py-8">
+    <div class="mx-auto max-w-2xl">
+      <div class="mb-6 text-center">
+        <h1>
+          {{ selectedRole === 'Exhibitor' ? 'Select exhibitor event' : 'Select event' }}
         </h1>
+        <p class="mt-2 text-sm text-body-muted">Choose the event you are working on today.</p>
       </div>
 
-      <div class="mb-4">
-        <input
-          v-model="searchQuery"
-          type="search"
-          placeholder="Search events by name or slug..."
-          class="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-        />
+      <div v-if="error" class="mb-4 rounded-xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">
+        {{ error }}
       </div>
 
-      <!-- Upcoming Events Section -->
-      <div v-if="paginatedEvents.upcoming.length" class="mb-6">
-        <h2 class="mb-3 text-center text-lg font-semibold">Upcoming/Current Events</h2>
-        <div v-for="event in paginatedEvents.upcoming" :key="event.slug" class="mb-2">
-          <label class="flex items-center space-x-2">
-            <input v-model="selectedEvent" type="radio" :value="event.slug" />
-            <span class="text-xl">
-              {{ getEventName(event) }}
-              <div class="text-gray-600 text-sm">
-                {{ formatEventDate(event.date_from) }}
-              </div>
-            </span>
-          </label>
+      <form v-if="events.length" class="card p-5 sm:p-6" @submit.prevent="submitForm">
+        <div v-if="selectedRole === 'Exhibitor'" class="mb-5 flex gap-2 border-b border-surface-border pb-4">
+          <button
+            type="button"
+            class="rounded-full px-4 py-2 text-sm font-semibold transition"
+            :class="exhibitorTab === 'upcoming' ? 'bg-primary text-white' : 'bg-surface-muted text-body-muted'"
+            @click="exhibitorTab = 'upcoming'"
+          >
+            Current / Upcoming
+          </button>
+          <button
+            type="button"
+            class="rounded-full px-4 py-2 text-sm font-semibold transition"
+            :class="exhibitorTab === 'past' ? 'bg-primary text-white' : 'bg-surface-muted text-body-muted'"
+            @click="exhibitorTab = 'past'"
+          >
+            Past
+          </button>
         </div>
-      </div>
 
-      <!-- Past Events Section - Only shown for Exhibitor role -->
-      <div v-if="selectedRole === 'Exhibitor' && paginatedEvents.past.length" class="mb-6">
-        <h2 class="mb-3 text-center text-lg font-semibold">Past Events</h2>
-        <div v-for="event in paginatedEvents.past" :key="event.slug" class="mb-2">
-          <label class="flex items-center space-x-2">
-            <input v-model="selectedEvent" type="radio" :value="event.slug" />
-            <span class="text-lg">
-              {{ getEventName(event) }}
-              <div class="text-gray-600 text-sm">
-                {{ formatEventDate(event.date_from) }}
-              </div>
-            </span>
-          </label>
+        <div class="relative mb-5">
+          <MagnifyingGlassIcon class="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-body-muted" />
+          <input
+            v-model="searchQuery"
+            type="search"
+            placeholder="Search by name or slug..."
+            class="pl-10"
+          />
         </div>
-      </div>
 
-      <div
-        v-if="!paginatedEvents.upcoming.length && !paginatedEvents.past.length"
-        class="mb-6 rounded border border-gray-200 p-4 text-center text-gray-500"
-      >
-        No events match your search.
-      </div>
+        <div v-if="visibleEvents.upcoming.length" class="mb-5">
+          <p class="section-title mb-3">Upcoming / current</p>
+          <div class="space-y-2">
+            <label
+              v-for="event in visibleEvents.upcoming"
+              :key="event.slug"
+              class="flex cursor-pointer items-start gap-3 rounded-xl border p-4 transition"
+              :class="selectedEvent === event.slug ? 'border-primary bg-primary/5' : 'border-surface-border hover:border-primary/30'"
+            >
+              <input v-model="selectedEvent" type="radio" :value="event.slug" class="mt-1" />
+              <div class="min-w-0 flex-1">
+                <p class="font-semibold text-body">{{ getEventName(event) }}</p>
+                <p class="mt-1 flex items-center gap-1.5 text-xs text-body-muted">
+                  <CalendarDaysIcon class="h-4 w-4 shrink-0" />
+                  {{ formatEventDate(event.date_from) }}
+                </p>
+              </div>
+            </label>
+          </div>
+        </div>
 
-      <div v-if="showPagination" class="mb-2 flex items-center justify-between">
-        <button
-          v-if="hasPreviousPage"
-          type="button"
-          aria-label="Previous page"
-          class="text-xl leading-none text-black"
-          @click="goToPreviousPage"
+        <div v-if="selectedRole === 'Exhibitor' && visibleEvents.past.length" class="mb-5">
+          <p class="section-title mb-3">Past events</p>
+          <div class="space-y-2">
+            <label
+              v-for="event in visibleEvents.past"
+              :key="event.slug"
+              class="flex cursor-pointer items-start gap-3 rounded-xl border border-surface-border p-4 transition hover:border-primary/30"
+            >
+              <input v-model="selectedEvent" type="radio" :value="event.slug" class="mt-1" />
+              <div>
+                <p class="font-medium text-body">{{ getEventName(event) }}</p>
+                <p class="mt-1 text-xs text-body-muted">{{ formatEventDate(event.date_from) }}</p>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div
+          v-if="!visibleEvents.upcoming.length && !visibleEvents.past.length"
+          class="rounded-xl border border-dashed border-surface-border px-4 py-8 text-center text-sm text-body-muted"
         >
-          ‹
-        </button>
-        <div v-else class="h-8 w-8"></div>
+          No events match your search.
+        </div>
 
-        <p class="text-sm text-gray-600">Page {{ currentPage }} of {{ totalPages }}</p>
+        <div v-if="showPagination" class="mb-4 flex items-center justify-between text-sm text-body-muted">
+          <button
+            type="button"
+            class="btn-white px-3 py-1.5"
+            :disabled="!hasPreviousPage"
+            @click="currentPage = Math.max(1, currentPage - 1)"
+          >
+            Previous
+          </button>
+          <span>Page {{ currentPage }} of {{ totalPages }}</span>
+          <button
+            type="button"
+            class="btn-white px-3 py-1.5"
+            :disabled="!hasNextPage"
+            @click="currentPage = Math.min(totalPages, currentPage + 1)"
+          >
+            Next
+          </button>
+        </div>
 
-        <button
-          v-if="hasNextPage"
-          type="button"
-          aria-label="Next page"
-          class="text-xl leading-none text-black"
-          @click="goToNextPage"
-        >
-          ›
-        </button>
-        <div v-else class="h-8 w-8"></div>
-      </div>
+        <!-- Check-in List Selector -->
+        <div v-if="selectedEvent && selectedRole !== 'Exhibitor'" class="border-t border-surface-border mt-5 pt-5 mb-5">
+          <p class="section-title mb-3">Select check-in list</p>
+          <div v-if="loadingLists" class="text-xs text-body-muted flex items-center gap-2">
+            <span class="animate-spin rounded-full h-3.5 w-3.5 border-2 border-primary border-t-transparent"></span>
+            Loading lists...
+          </div>
+          <div v-else-if="availableCheckInLists.length" class="space-y-2">
+            <label
+              v-for="list in availableCheckInLists"
+              :key="list.id"
+              class="flex cursor-pointer items-center gap-3 rounded-xl border p-4 transition"
+              :class="selectedCheckInListId === list.id ? 'border-primary bg-primary/5' : 'border-surface-border hover:border-primary/30'"
+            >
+              <input v-model="selectedCheckInListId" type="radio" :value="list.id" />
+              <div>
+                <p class="font-medium text-body">{{ getCheckInListLabel(list) }}</p>
+                <p v-if="list.all_products" class="mt-1 text-xs text-body-muted">All products allowed</p>
+                <p v-else class="mt-1 text-xs text-body-muted">Restricted products list</p>
+              </div>
+            </label>
+          </div>
+          <div v-else class="rounded-xl border border-dashed border-danger/20 bg-danger/5 px-4 py-3 text-xs text-danger">
+            {{ checkInListEmptyMessage }}
+          </div>
+        </div>
 
-      <div>
         <StandardButton
           type="submit"
-          text="Select Event"
-          class="btn-primary mt-6 w-full justify-center"
+          text="Continue"
+          class="btn-primary w-full justify-center py-2.5"
+          :disabled="!selectedEvent || (selectedRole !== 'Exhibitor' && !selectedCheckInListId)"
+        />
+      </form>
+
+      <div v-else-if="!error" class="card p-8 text-center">
+        <p class="text-body-muted">No events available for this organizer.</p>
+        <StandardButton
+          text="Refresh"
+          class="btn-primary mx-auto mt-4 justify-center"
+          @click="eventyayEventStore.fetchEvents()"
         />
       </div>
-    </form>
-
-    <div v-if="!events.length && !error" class="text-center">
-      <div class="mb-4">No events available</div>
-      <StandardButton
-        text="Refresh"
-        class="btn-primary mt-6 w-1/2 justify-center"
-        @click="eventyayEventStore.fetchEvents(url, apitoken, organizer)"
-      />
     </div>
   </div>
 </template>
