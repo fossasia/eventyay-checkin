@@ -64,7 +64,7 @@ npm run format:check  # Check formatting for unit-test files with Prettier
 npm run format        # Auto-format files
 
 # Unit Tests
-npm run test:unit     # Run unit tests with Vitest
+npm run test:unit -- --run     # Run unit tests with Vitest
 
 # Production Build Check
 npm run build         # Build the production bundle
