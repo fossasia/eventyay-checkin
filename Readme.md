@@ -21,7 +21,7 @@ Register a device from the organizer **Connected devices** screen, then choose a
 
 Ensure you have the following installed on your local environment:
 
-- **Node.js**: `v18.x` or `v20.x` (LTS recommended)
+- **Node.js**: `v20.x` or newer (LTS recommended)
 - **npm**: `v9.x` or higher (or compatible package manager like Yarn / pnpm)
 - **Eventyay Backend** (optional for local full-stack dev): Running locally at `http://127.0.0.1:8000` (or configured proxy target)
 
