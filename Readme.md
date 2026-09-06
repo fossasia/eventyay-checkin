@@ -1,6 +1,6 @@
 # Eventyay Check-In
 
-Check-in, badge printing, and attendee lead scanning client for [Eventyay](https://eventyay.com).
+Check-in, badge printing, and exhibitor lead scanning client for [Eventyay](https://eventyay.com).
 
 - **Production App**: [https://access.eventyay.com](https://access.eventyay.com)
 - **Operator Guides**: [Check-in Staff & Kiosks](docs/checkin.md) · [Exhibitor Lead Retrieval](docs/exhibitor.md)
