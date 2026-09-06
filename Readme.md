@@ -60,7 +60,7 @@ npm run lint          # Check code with ESLint
 npm run lint:fix      # Automatically fix ESLint issues
 
 # Formatting
-npm run format:check  # Check formatting with Prettier
+npm run format:check  # Check formatting for unit-test files with Prettier
 npm run format        # Auto-format files
 
 # Unit Tests
