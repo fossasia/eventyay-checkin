@@ -38,3 +38,18 @@ Badge Station stays **online-only**. Check-In Staff can continue after a first s
 4. Live registration while offline is queued; the real ticket secret exists only after sync succeeds. Print after sync.
 5. Badges print from synced **layout JSON** + per-attendee **field data** (`pdf_data`), not from cached full PDF files.
 6. Sign out wipes the encrypted snapshot from the device.
+
+## Kiosk Mode & Badge Station Setup
+
+Badge Stations automatically trigger badge printing upon ticket scan when running in Kiosk Mode (`?kiosk=true`).
+
+### Desktop Kiosk Setup (Chrome / Firefox)
+- **Chrome**: Launch with `--kiosk --kiosk-printing "https://access.eventyay.com/?kiosk=true"`.
+- **Firefox**: Launch with `-kiosk -pref "print.always_print_silent,true" "https://access.eventyay.com/?kiosk=true"`.
+
+### Tablet & Mobile Kiosk Setup (Android & iPadOS)
+1. Open the check-in web application in your tablet browser.
+2. Tap **Add to Home screen** / **Install app** to launch the web app in standalone fullscreen kiosk mode.
+3. Configure your default badge printer in device system settings (**Settings > Connected devices > Printing**).
+4. Append `?kiosk=true` to your Badge Station URL. Badges queue and print via the web app's silent iframe print stream post-scan.
+

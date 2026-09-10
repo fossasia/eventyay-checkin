@@ -20,15 +20,29 @@ export function isKioskEnvironment(route = null) {
   return new URLSearchParams(window.location.search).get('kiosk') === 'true'
 }
 
-/** Silent iframe printing only works reliably in kiosk mode with kiosk-printing. */
+/** Silent iframe printing works in kiosk mode (?kiosk=true). */
 export function shouldUseSilentPrint(route = null) {
   return isKioskEnvironment(route)
 }
 
 export function detectPlatform() {
+  if (typeof navigator === 'undefined') {
+    return 'unknown'
+  }
   const ua = navigator.userAgent.toLowerCase()
   const platform = navigator.platform?.toLowerCase() || ''
 
+  if (ua.includes('android')) {
+    return 'android'
+  }
+  if (
+    ua.includes('ipad') ||
+    ua.includes('iphone') ||
+    ua.includes('ipod') ||
+    (platform.includes('mac') && navigator.maxTouchPoints > 1)
+  ) {
+    return 'ios'
+  }
   if (platform.includes('mac') || ua.includes('mac os')) {
     return 'mac'
   }
@@ -41,6 +55,19 @@ export function detectPlatform() {
   return 'unknown'
 }
 
+export function isMobileOrTablet(platform = detectPlatform()) {
+  if (platform === 'android' || platform === 'ios') {
+    return true
+  }
+  if (typeof navigator !== 'undefined') {
+    const ua = navigator.userAgent.toLowerCase()
+    if (ua.includes('android') || ua.includes('ipad') || ua.includes('iphone') || ua.includes('mobile')) {
+      return true
+    }
+  }
+  return false
+}
+
 export function getPlatformLabel(platform = detectPlatform()) {
   if (platform === 'mac') {
     return 'macOS'
@@ -50,6 +77,12 @@ export function getPlatformLabel(platform = detectPlatform()) {
   }
   if (platform === 'linux') {
     return 'Linux'
+  }
+  if (platform === 'android') {
+    return 'Android Tablet'
+  }
+  if (platform === 'ios') {
+    return 'iPadOS / iOS'
   }
   return 'Unknown'
 }
@@ -61,8 +94,22 @@ export function getShellLabel(platform = detectPlatform()) {
   return 'Terminal'
 }
 
-export function buildChromeKioskCommand(url, platform = detectPlatform()) {
+export function getKioskInfo(route = null) {
+  const isKiosk = isKioskEnvironment(route)
+  const platform = detectPlatform()
+  const mobileTablet = isMobileOrTablet(platform)
 
+  return {
+    isKiosk,
+    isMobileOrTablet: mobileTablet,
+    platform,
+    platformLabel: getPlatformLabel(platform),
+    shellLabel: getShellLabel(platform),
+    supportsDesktopFlags: !mobileTablet && (platform === 'mac' || platform === 'windows' || platform === 'linux')
+  }
+}
+
+export function buildChromeKioskCommand(url, platform = detectPlatform()) {
   if (platform === 'windows') {
     return `"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --kiosk --kiosk-printing "${url}"`
   }
@@ -93,3 +140,4 @@ export async function enterKioskShell() {
     // Fullscreen may require a user gesture on some browsers.
   }
 }
+

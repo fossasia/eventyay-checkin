@@ -45,7 +45,7 @@ import {
   PRINT_OUTCOME
 } from '@/utils/badgePdf'
 import { waitForDesignAssets } from '@/utils/waitForDesignAssets'
-import { enterKioskShell, isKioskEnvironment } from '@/utils/kioskLauncher'
+import { enterKioskShell, getKioskInfo, isKioskEnvironment } from '@/utils/kioskLauncher'
 
 const notificationStore = useNotificationStore()
 const processApi = useEventyayApi()
@@ -90,6 +90,7 @@ const cameraStore = useCameraStore()
 
 const route = useRoute()
 const isKioskShell = computed(() => isKioskEnvironment(route))
+const kioskInfo = computed(() => getKioskInfo(route))
 const checkInReady = ref(false)
 const selectedCheckInListName = computed(() => {
   const list = availableCheckInLists.value.find(
@@ -1452,9 +1453,16 @@ const openAttendeeFromSearch = async (order) => {
           Loading ticket products…
         </p>
         <div
-          v-if="selectedCheckInListName || gateName"
+          v-if="selectedCheckInListName || gateName || (isKioskShell && isBadgeStation && kioskInfo.isMobileOrTablet)"
           class="flex shrink-0 flex-col items-start gap-1.5 sm:items-end"
         >
+          <div
+            v-if="isKioskShell && isBadgeStation && kioskInfo.isMobileOrTablet"
+            class="flex items-center gap-1.5 rounded-xl border border-primary/20 bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary"
+          >
+            <span class="h-2 w-2 rounded-full bg-primary" aria-hidden="true" />
+            <span>Tablet Kiosk (Auto-Print)</span>
+          </div>
           <div
             v-if="gateName"
             class="rounded-xl border border-surface-border bg-surface-muted px-3.5 py-1.5 text-xs font-semibold text-body-muted"
