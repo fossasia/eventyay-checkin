@@ -1,4 +1,5 @@
 import { useEventyayApi } from '@/stores/eventyayapi'
+import { logOperational } from '@/utils/operationalLog'
 import { createAuthorizedDeviceApi, exhibitorApiPath } from '@/utils/serverUrl'
 import {
   getDeviceErrorMessage,
@@ -37,6 +38,7 @@ export const useleedauth = defineStore('leedauth', () => {
       })
 
       if (!response?.success) {
+        logOperational({ action: 'auth.exhibitor', outcome: 'failure', error_code: 'invalid_credentials' })
         return {
           success: false,
           error: String(response?.error || 'Invalid exhibitor key or exhibitor not found.')
@@ -50,9 +52,17 @@ export const useleedauth = defineStore('leedauth', () => {
         response.booth_id
       )
 
+      logOperational({ action: 'auth.exhibitor', outcome: 'success' })
       return response
     } catch (error) {
       console.error('Exhibitor login failed:', error)
+      const status = error?.response?.status ?? error?.status ?? 0
+      logOperational({
+        action: 'auth.exhibitor',
+        outcome: 'failure',
+        error_code: status === 401 || status === 403 ? 'invalid_credentials' : 'request_error',
+        status: status || undefined
+      })
 
       if (isDeviceProfileDenied(error)) {
         return {
@@ -61,7 +71,6 @@ export const useleedauth = defineStore('leedauth', () => {
         }
       }
 
-      const status = error?.response?.status ?? error?.status ?? 0
       if (status === 401 || status === 403) {
         return {
           success: false,

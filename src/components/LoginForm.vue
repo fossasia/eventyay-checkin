@@ -12,6 +12,7 @@ import { useEventyayApi } from '@/stores/eventyayapi'
 import { useleedauth } from '@/stores/leedauth'
 import { useLoadingStore } from '@/stores/loading'
 import { DEFAULT_ORIGIN_WEBSITE, resolveOriginWebsite } from '@/utils/originWebsites'
+import { logOperational } from '@/utils/operationalLog'
 import { getEventyayLogoProps, getRoleLabel, getRoleRouteName, STATION_TYPE_DEFINITIONS } from '@/utils/session'
 import { isRoleAllowedForProfile, getAllowedRolesForProfile } from '@/utils/deviceProfiles'
 import { buildKioskUrl, isKioskEnvironment } from '@/utils/kioskLauncher'
@@ -189,6 +190,7 @@ async function handleQrScanned() {
     }
   } catch (error) {
     console.error('Scan registration error:', error)
+    logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'registration_failed' })
     errmessage.value = t('auth.error_device_failed')
     showError.value = true
   } finally {
@@ -242,6 +244,7 @@ async function handleManualRegister() {
     }
   } catch (error) {
     console.error('Manual registration error:', error)
+    logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'registration_failed' })
     errmessage.value = t('auth.error_device_failed')
     showError.value = true
   } finally {
