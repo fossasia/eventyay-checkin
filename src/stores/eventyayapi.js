@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { redirectToUserAuth } from '@/utils/authRedirect'
+import { logOperational } from '@/utils/operationalLog'
 import { deviceApi, createAuthorizedDeviceApi, resolveServerUrl } from '@/utils/serverUrl'
 
 export const useEventyayApi = defineStore(
@@ -225,8 +226,10 @@ export const useEventyayApi = defineStore(
         setLimitCheckInLists(response.limit_checkin_lists || [])
         setDeviceInfo({ name: response.name, gate: response.gate })
         setSecurityProfile(response.security_profile)
+        logOperational({ action: 'checkin.register', outcome: 'success' })
         return { success: true }
       }
+      logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'registration_failed' })
       return { success: false, error: 'registration_failed' }
     }
 
@@ -242,15 +245,18 @@ export const useEventyayApi = defineStore(
           qrData = JSON.parse(String(qrString || '').trim())
         } catch {
           console.error('Device registration failed: QR payload is not valid JSON')
+          logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'invalid_qr' })
           return { success: false, error: 'invalid_qr' }
         }
 
         if (!qrData.url || !qrData.token) {
           console.error('Device registration failed: QR payload is missing url or token')
+          logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'invalid_qr' })
           return { success: false, error: 'invalid_qr' }
         }
 
         if (qrData.handshake_version && Number(qrData.handshake_version) > 1) {
+          logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'unsupported_handshake' })
           return { success: false, error: 'unsupported_handshake' }
         }
 
@@ -258,6 +264,12 @@ export const useEventyayApi = defineStore(
       } catch (error) {
         const message = parseRegistrationError(error)
         console.error('Device registration failed:', error)
+        logOperational({
+          action: 'checkin.register',
+          outcome: 'failure',
+          error_code: 'registration_failed',
+          status: error?.response?.status
+        })
         return {
           success: false,
           error: 'registration_failed',
@@ -279,6 +291,12 @@ export const useEventyayApi = defineStore(
       } catch (error) {
         const message = parseRegistrationError(error)
         console.error('Device registration failed:', error)
+        logOperational({
+          action: 'checkin.register',
+          outcome: 'failure',
+          error_code: 'registration_failed',
+          status: error?.response?.status
+        })
         return {
           success: false,
           error: 'registration_failed',

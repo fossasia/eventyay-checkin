@@ -34,11 +34,14 @@ export const useApiStore = defineStore('api', () => {
     instance.options.headers['Accept'] = 'application/vnd.api+json'
     const started = Date.now()
     try {
+      let response
       if (payload) {
-        return await instance.get(path)
+        response = await instance.get(path)
       } else {
-        return await instance.get(path, payload)
+        response = await instance.get(path, payload)
       }
+      logApiResult({ outcome: 'success', duration_ms: Date.now() - started })
+      return response
     } catch (error) {
       logApiResult({
         outcome: 'failure',
@@ -54,23 +57,23 @@ export const useApiStore = defineStore('api', () => {
     newSession(requiresAuth)
     const started = Date.now()
     try {
+      let response
       if (hasBody) {
         delete defaults.headers['Content-Type']
         const options = instance.options
         options['body'] = payload
-        const response = await instance.post(path)
-        return response
+        response = await instance.post(path)
       } else {
         if (payload) {
           instance.options.headers['Accept'] = 'application/vnd.api+json'
           instance.options.headers['Content-Type'] = 'application/vnd.api+json'
-          const response = await instance.post(path, payload)
-          return response
+          response = await instance.post(path, payload)
         } else {
-          const response = await instance.post(path)
-          return response
+          response = await instance.post(path)
         }
       }
+      logApiResult({ outcome: 'success', duration_ms: Date.now() - started })
+      return response
     } catch (error) {
       logApiResult({
         outcome: 'failure',

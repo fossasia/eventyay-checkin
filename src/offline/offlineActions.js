@@ -178,6 +178,12 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
       )
       const created = await createResp.json().catch(() => ({}))
       if (!createResp.ok) {
+        logApiResult({
+          action: 'checkin.register',
+          outcome: 'failure',
+          status: createResp.status,
+          error_code: createResp.status >= 500 ? 'http_error' : 'rejected'
+        })
         if (createResp.status >= 500) {
           remaining.push(item)
         } else {
@@ -203,6 +209,12 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
         )
         paid = await paidResp.json().catch(() => ({}))
         if (!paidResp.ok || paid.status !== 'p') {
+          logApiResult({
+            action: 'checkin.register',
+            outcome: 'failure',
+            status: paidResp.status,
+            error_code: 'mark_paid_failed'
+          })
           remaining.push({ ...item, lastError: 'mark_paid_failed', createdCode: created.code })
           continue
         }
@@ -216,7 +228,9 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
         }
       }
       flushed += 1
+      logApiResult({ action: 'checkin.register', outcome: 'success', status: createResp.status })
     } catch {
+      logApiResult({ action: 'checkin.register', outcome: 'failure', error_code: 'request_error' })
       remaining.push(item)
     }
   }
