@@ -1,13 +1,12 @@
-import { logApiResult } from '@/utils/operationalLog'
-import { resolveServerUrl } from '@/utils/serverUrl'
-import { computeSyncPercent, pageFraction } from '@/offline/syncProgress'
+import { flushPendingPrintSync } from '@/offline/badgePrintAssets'
+import { createMemoryIndex, memoryIndexToSnapshot } from '@/offline/memoryIndex'
 import {
   createEmptySnapshot,
   mergeLayoutsIntoSnapshot,
   mergeOrdersIntoSnapshot,
   mergeRevokedIntoSnapshot
 } from '@/offline/normalize'
-import { createMemoryIndex, memoryIndexToSnapshot } from '@/offline/memoryIndex'
+import { flushPendingRedeems, flushPendingRegistrations } from '@/offline/offlineActions'
 import { decryptJson, deriveSnapshotKey, encryptJson } from '@/offline/snapshotCrypto'
 import {
   ensureDeviceSalt,
@@ -15,8 +14,9 @@ import {
   saveEncryptedSnapshot,
   wipeAllEncryptedSnapshots
 } from '@/offline/snapshotStore'
-import { flushPendingRedeems, flushPendingRegistrations } from '@/offline/offlineActions'
-import { flushPendingPrintSync } from '@/offline/badgePrintAssets'
+import { computeSyncPercent, pageFraction } from '@/offline/syncProgress'
+import { logApiResult } from '@/utils/operationalLog'
+import { resolveServerUrl } from '@/utils/serverUrl'
 
 const MAX_PAGES = 50
 
@@ -33,7 +33,11 @@ export function canUseOfflineSync(selectedRole, securityProfile) {
   if (selectedRole === 'Badge Station' || securityProfile === 'eventyay_checkin_online_kiosk') {
     return false
   }
-  return selectedRole === 'CheckIn' || securityProfile === 'eventyay_checkin' || securityProfile === 'full'
+  return (
+    selectedRole === 'CheckIn' ||
+    securityProfile === 'eventyay_checkin' ||
+    securityProfile === 'full'
+  )
 }
 
 function joinUrl(baseUrl, path) {
@@ -51,27 +55,56 @@ function joinUrl(baseUrl, path) {
 
 async function fetchJsonPage(baseUrl, apitoken, path) {
   const started = Date.now()
-  const response = await fetch(joinUrl(baseUrl, path), {
-    credentials: 'omit',
-    headers: {
-      Authorization: `Device ${apitoken}`,
-      Accept: 'application/json'
-    }
-  })
-  logApiResult({
-    outcome: response.ok ? 'success' : 'failure',
-    status: response.status,
-    duration_ms: Date.now() - started,
-    error_code: response.ok ? null : 'http_error',
-    action: 'checkin.fetch'
-  })
+  let response
+  try {
+    response = await fetch(joinUrl(baseUrl, path), {
+      credentials: 'omit',
+      headers: {
+        Authorization: `Device ${apitoken}`,
+        Accept: 'application/json'
+      }
+    })
+  } catch (error) {
+    logApiResult({
+      outcome: 'failure',
+      duration_ms: Date.now() - started,
+      error_code: 'request_error',
+      action: 'checkin.fetch'
+    })
+    throw error
+  }
   if (!response.ok) {
+    logApiResult({
+      outcome: 'failure',
+      status: response.status,
+      duration_ms: Date.now() - started,
+      error_code: 'http_error',
+      action: 'checkin.fetch'
+    })
     const detail = await response.text().catch(() => '')
     const error = new Error(detail || `HTTP ${response.status}`)
     error.status = response.status
     throw error
   }
-  const body = await response.json()
+  let body
+  try {
+    body = await response.json()
+  } catch (error) {
+    logApiResult({
+      outcome: 'failure',
+      status: response.status,
+      duration_ms: Date.now() - started,
+      error_code: 'invalid_payload',
+      action: 'checkin.fetch'
+    })
+    throw error
+  }
+  logApiResult({
+    outcome: 'success',
+    status: response.status,
+    duration_ms: Date.now() - started,
+    action: 'checkin.fetch'
+  })
   return {
     body,
     pageGenerated: response.headers.get('X-Page-Generated')
@@ -98,7 +131,11 @@ async function fetchAllPages(
       url.searchParams.set(sinceParam, sinceValue)
       requestPath = `${url.pathname}${url.search}`
     }
-    const { body, pageGenerated: headerCursor } = await fetchJsonPage(baseUrl, apitoken, requestPath)
+    const { body, pageGenerated: headerCursor } = await fetchJsonPage(
+      baseUrl,
+      apitoken,
+      requestPath
+    )
     pageGenerated = headerCursor || pageGenerated
     const batch = Array.isArray(body) ? body : body.results || []
     results.push(...batch)
@@ -277,9 +314,16 @@ export async function runOfflineSync({
   reportPhaseProgress(onProgress, 'flush', 0.5)
   await flushPendingRegistrations(nextIndex, { url, apitoken, organizer, eventSlug })
 
-  const followUp = await syncOrders(url, apitoken, organizer, eventSlug, memoryIndexToSnapshot(nextIndex), {
-    onPage: trackPagedPhase('flush')
-  })
+  const followUp = await syncOrders(
+    url,
+    apitoken,
+    organizer,
+    eventSlug,
+    memoryIndexToSnapshot(nextIndex),
+    {
+      onPage: trackPagedPhase('flush')
+    }
+  )
   if (!followUp.error && followUp.results.length) {
     const followSnapshot = memoryIndexToSnapshot(nextIndex)
     mergeOrdersIntoSnapshot(followSnapshot, followUp.results)

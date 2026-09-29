@@ -13,7 +13,12 @@ import { useleedauth } from '@/stores/leedauth'
 import { useLoadingStore } from '@/stores/loading'
 import { DEFAULT_ORIGIN_WEBSITE, resolveOriginWebsite } from '@/utils/originWebsites'
 import { logOperational } from '@/utils/operationalLog'
-import { getEventyayLogoProps, getRoleLabel, getRoleRouteName, STATION_TYPE_DEFINITIONS } from '@/utils/session'
+import {
+  getEventyayLogoProps,
+  getRoleLabel,
+  getRoleRouteName,
+  STATION_TYPE_DEFINITIONS
+} from '@/utils/session'
 import { isRoleAllowedForProfile, getAllowedRolesForProfile } from '@/utils/deviceProfiles'
 import { buildKioskUrl, isKioskEnvironment } from '@/utils/kioskLauncher'
 import { UserGroupIcon, PrinterIcon, BuildingStorefrontIcon } from '@heroicons/vue/24/outline'
@@ -78,9 +83,7 @@ const pendingStationLabel = computed(() => {
   return station?.title || getRoleLabel(pendingRole.value)
 })
 
-const isRegisteringDevice = computed(
-  () => showScanner.value || showKioskPrereq.value
-)
+const isRegisteringDevice = computed(() => showScanner.value || showKioskPrereq.value)
 
 function redirectForRole(role) {
   const routeName = getRoleRouteName(role)
@@ -190,7 +193,11 @@ async function handleQrScanned() {
     }
   } catch (error) {
     console.error('Scan registration error:', error)
-    logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'registration_failed' })
+    logOperational({
+      action: 'checkin.register',
+      outcome: 'failure',
+      error_code: 'registration_failed'
+    })
     errmessage.value = t('auth.error_device_failed')
     showError.value = true
   } finally {
@@ -244,7 +251,11 @@ async function handleManualRegister() {
     }
   } catch (error) {
     console.error('Manual registration error:', error)
-    logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'registration_failed' })
+    logOperational({
+      action: 'checkin.register',
+      outcome: 'failure',
+      error_code: 'registration_failed'
+    })
     errmessage.value = t('auth.error_device_failed')
     showError.value = true
   } finally {
@@ -307,10 +318,7 @@ loadingStore.contentLoaded()
             </p>
           </div>
 
-          <KioskLauncherInstructions
-            :target-url="kioskLoginUrl"
-            :show-registration-steps="true"
-          />
+          <KioskLauncherInstructions :target-url="kioskLoginUrl" :show-registration-steps="true" />
 
           <StandardButton
             type="button"
@@ -348,7 +356,7 @@ loadingStore.contentLoaded()
               </p>
             </div>
             <QRCamera @scanned="handleQrScanned" />
-            <div class="text-center py-1">
+            <div class="py-1 text-center">
               <button
                 type="button"
                 class="text-sm font-semibold text-primary hover:underline focus:outline-none"
@@ -367,9 +375,16 @@ loadingStore.contentLoaded()
               </p>
             </div>
             <div class="space-y-3 text-left">
-              <OriginWebsiteField v-model:selected="originWebsite" v-model:custom-url="customOriginUrl" />
+              <OriginWebsiteField
+                v-model:selected="originWebsite"
+                v-model:custom-url="customOriginUrl"
+              />
               <div>
-                <label for="manual-token" class="block text-xs font-semibold text-body-muted uppercase">{{ t('auth.setup_token') }}</label>
+                <label
+                  for="manual-token"
+                  class="block text-xs font-semibold uppercase text-body-muted"
+                  >{{ t('auth.setup_token') }}</label
+                >
                 <input
                   id="manual-token"
                   v-model="manualToken"
@@ -379,7 +394,10 @@ loadingStore.contentLoaded()
                 />
               </div>
               <div v-if="isExhibitorRegistration">
-                <label for="manual-exhibitor-key" class="block text-xs font-semibold text-body-muted uppercase">
+                <label
+                  for="manual-exhibitor-key"
+                  class="block text-xs font-semibold uppercase text-body-muted"
+                >
                   {{ t('auth.exhibitor_key') }}
                 </label>
                 <input
@@ -420,8 +438,16 @@ loadingStore.contentLoaded()
             class="btn-role"
             @click="handleRoleSelection(role.id)"
           >
-            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-              <component :is="role.icon" class="h-5 w-5" width="20" height="20" style="width: 20px; height: 20px;" />
+            <div
+              class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary"
+            >
+              <component
+                :is="role.icon"
+                class="h-5 w-5"
+                width="20"
+                height="20"
+                style="width: 20px; height: 20px"
+              />
             </div>
             <div>
               <p class="font-semibold text-body">{{ role.buttonLabel }}</p>

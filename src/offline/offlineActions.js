@@ -1,6 +1,6 @@
-import { logApiResult } from '@/utils/operationalLog'
 import { lookupBySecret, upsertPosition } from '@/offline/memoryIndex'
 import { normalizePositionFromOrder } from '@/offline/normalize'
+import { logApiResult } from '@/utils/operationalLog'
 
 export const MISSING_OFFLINE_DATA_MESSAGE =
   'Please connect to the internet to fetch the latest check-in data, then try again.'
@@ -52,7 +52,11 @@ export function evaluateLocalRedeem(index, secret, { listId, type = 'entry' } = 
   return { ok: true, alreadyRedeemed: false, position, status: 'ok' }
 }
 
-export function applyLocalCheckin(index, position, { listId, type = 'entry', datetime = null } = {}) {
+export function applyLocalCheckin(
+  index,
+  position,
+  { listId, type = 'entry', datetime = null } = {}
+) {
   const next = {
     ...position,
     checkins: [
@@ -90,35 +94,43 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
   let flushed = 0
 
   for (const item of pending) {
+    const started = Date.now()
     try {
-      const started = Date.now()
-      const response = await fetch(`${String(url).replace(/\/+$/, '')}/api/v1/organizers/${organizer}/checkin/redeem/`, {
-        method: 'POST',
-        credentials: 'omit',
-        headers: {
-          Authorization: `Device ${apitoken}`,
-          Accept: 'application/json',
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          secret: item.secret,
-          source_type: 'barcode',
-          lists: item.lists,
-          type: item.type || 'entry',
-          force: false,
-          ignore_unpaid: false,
-          nonce: item.nonce,
-          datetime: item.datetime || null,
-          questions_supported: false
-        })
-      })
+      const response = await fetch(
+        `${String(url).replace(/\/+$/, '')}/api/v1/organizers/${organizer}/checkin/redeem/`,
+        {
+          method: 'POST',
+          credentials: 'omit',
+          headers: {
+            Authorization: `Device ${apitoken}`,
+            Accept: 'application/json',
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            secret: item.secret,
+            source_type: 'barcode',
+            lists: item.lists,
+            type: item.type || 'entry',
+            force: false,
+            ignore_unpaid: false,
+            nonce: item.nonce,
+            datetime: item.datetime || null,
+            questions_supported: false
+          })
+        }
+      )
       const body = await response.json().catch(() => ({}))
+      const accepted =
+        response.ok &&
+        (body.status === 'ok' ||
+          body.status === 'redeemed' ||
+          (body.status === 'error' && body.reason === 'already_redeemed'))
       logApiResult({
         action: 'checkin.redeem',
-        outcome: response.ok && body.status !== 'error' ? 'success' : 'failure',
+        outcome: accepted ? 'success' : 'failure',
         status: response.status,
         duration_ms: Date.now() - started,
-        error_code: response.ok && body.status !== 'error' ? null : body.reason || 'http_error'
+        error_code: accepted ? null : body.reason || 'http_error'
       })
       if (response.ok && (body.status === 'ok' || body.status === 'redeemed')) {
         flushed += 1
@@ -143,6 +155,12 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
       }
       remaining.push({ ...item, lastError: body.reason || `HTTP ${response.status}` })
     } catch {
+      logApiResult({
+        action: 'checkin.redeem',
+        outcome: 'failure',
+        duration_ms: Date.now() - started,
+        error_code: 'request_error'
+      })
       remaining.push(item)
     }
   }

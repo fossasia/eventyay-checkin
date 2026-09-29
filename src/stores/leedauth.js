@@ -1,12 +1,12 @@
 import { useEventyayApi } from '@/stores/eventyayapi'
-import { logOperational } from '@/utils/operationalLog'
-import { createAuthorizedDeviceApi, exhibitorApiPath } from '@/utils/serverUrl'
 import {
   getDeviceErrorMessage,
   getExhibitorErrorMessage,
   isDeviceProfileDenied,
   LEAD_SCAN_PROFILE_DENIED_MESSAGE
 } from '@/utils/deviceErrors'
+import { logOperational } from '@/utils/operationalLog'
+import { createAuthorizedDeviceApi, exhibitorApiPath } from '@/utils/serverUrl'
 import { defineStore } from 'pinia'
 
 export const useleedauth = defineStore('leedauth', () => {
@@ -38,7 +38,11 @@ export const useleedauth = defineStore('leedauth', () => {
       })
 
       if (!response?.success) {
-        logOperational({ action: 'auth.exhibitor', outcome: 'failure', error_code: 'invalid_credentials' })
+        logOperational({
+          action: 'auth.exhibitor',
+          outcome: 'failure',
+          error_code: 'invalid_credentials'
+        })
         return {
           success: false,
           error: String(response?.error || 'Invalid exhibitor key or exhibitor not found.')
