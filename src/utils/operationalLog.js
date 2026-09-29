@@ -40,7 +40,13 @@ export function logOperational({
   }
 }
 
-export function logApiResult({ outcome, status, duration_ms, error_code, action = 'connection.request' } = {}) {
+export function logApiResult({
+  outcome,
+  status,
+  duration_ms,
+  error_code,
+  action = 'connection.request'
+} = {}) {
   logOperational({
     action,
     outcome,

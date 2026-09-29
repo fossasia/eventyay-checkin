@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import { logApiResult, logOperational } from '@/utils/operationalLog'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 describe('operationalLog', () => {
   afterEach(() => {
@@ -29,8 +29,10 @@ describe('operationalLog', () => {
 
   it('ignores unsafe action names', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     logOperational({ action: 'bad action', outcome: 'failure', error_code: 'nope value' })
     expect(warn).not.toHaveBeenCalled()
+    expect(info).not.toHaveBeenCalled()
   })
 
   it('logs API failures with a safe error code', () => {

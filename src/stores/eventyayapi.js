@@ -1,8 +1,8 @@
-import { defineStore } from 'pinia'
-import { ref } from 'vue'
 import { redirectToUserAuth } from '@/utils/authRedirect'
 import { logOperational } from '@/utils/operationalLog'
-import { deviceApi, createAuthorizedDeviceApi, resolveServerUrl } from '@/utils/serverUrl'
+import { createAuthorizedDeviceApi, deviceApi, resolveServerUrl } from '@/utils/serverUrl'
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
 
 export const useEventyayApi = defineStore(
   'processApi',
@@ -63,7 +63,9 @@ export const useEventyayApi = defineStore(
           return String(body.detail)
         }
         if (body.non_field_errors) {
-          const msg = Array.isArray(body.non_field_errors) ? body.non_field_errors[0] : body.non_field_errors
+          const msg = Array.isArray(body.non_field_errors)
+            ? body.non_field_errors[0]
+            : body.non_field_errors
           return String(msg)
         }
         const firstKey = Object.keys(body)[0]
@@ -75,7 +77,10 @@ export const useEventyayApi = defineStore(
           }
         }
       }
-      if (!error?.response && (error?.message === 'Failed to fetch' || error?.name === 'TypeError')) {
+      if (
+        !error?.response &&
+        (error?.message === 'Failed to fetch' || error?.name === 'TypeError')
+      ) {
         return 'Could not reach the server. Open the check-in app from the same host as the device setup URL (e.g. https://dev.eventyay.com), or check network and CORS settings.'
       }
       return ''
@@ -229,7 +234,11 @@ export const useEventyayApi = defineStore(
         logOperational({ action: 'checkin.register', outcome: 'success' })
         return { success: true }
       }
-      logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'registration_failed' })
+      logOperational({
+        action: 'checkin.register',
+        outcome: 'failure',
+        error_code: 'registration_failed'
+      })
       return { success: false, error: 'registration_failed' }
     }
 
@@ -245,18 +254,30 @@ export const useEventyayApi = defineStore(
           qrData = JSON.parse(String(qrString || '').trim())
         } catch {
           console.error('Device registration failed: QR payload is not valid JSON')
-          logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'invalid_qr' })
+          logOperational({
+            action: 'checkin.register',
+            outcome: 'failure',
+            error_code: 'invalid_qr'
+          })
           return { success: false, error: 'invalid_qr' }
         }
 
         if (!qrData.url || !qrData.token) {
           console.error('Device registration failed: QR payload is missing url or token')
-          logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'invalid_qr' })
+          logOperational({
+            action: 'checkin.register',
+            outcome: 'failure',
+            error_code: 'invalid_qr'
+          })
           return { success: false, error: 'invalid_qr' }
         }
 
         if (qrData.handshake_version && Number(qrData.handshake_version) > 1) {
-          logOperational({ action: 'checkin.register', outcome: 'failure', error_code: 'unsupported_handshake' })
+          logOperational({
+            action: 'checkin.register',
+            outcome: 'failure',
+            error_code: 'unsupported_handshake'
+          })
           return { success: false, error: 'unsupported_handshake' }
         }
 
@@ -397,7 +418,7 @@ export const useEventyayApi = defineStore(
       gateName,
       setDeviceInfo,
       securityProfile,
-      setSecurityProfile,
+      setSecurityProfile
     }
   },
   {
