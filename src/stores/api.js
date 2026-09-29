@@ -1,3 +1,4 @@
+import { logApiResult } from '@/utils/operationalLog'
 import { defaults, mande } from 'mande'
 import { defineStore } from 'pinia'
 
@@ -31,6 +32,7 @@ export const useApiStore = defineStore('api', () => {
   async function get(requiresAuth, path, payload) {
     newSession(requiresAuth)
     instance.options.headers['Accept'] = 'application/vnd.api+json'
+    const started = Date.now()
     try {
       if (payload) {
         return await instance.get(path)
@@ -38,12 +40,19 @@ export const useApiStore = defineStore('api', () => {
         return await instance.get(path, payload)
       }
     } catch (error) {
+      logApiResult({
+        outcome: 'failure',
+        status: error?.response?.status,
+        duration_ms: Date.now() - started,
+        error_code: 'http_error'
+      })
       return Promise.reject(error)
     }
   }
 
   async function post(requiresAuth, path, payload = false, hasBody = false) {
     newSession(requiresAuth)
+    const started = Date.now()
     try {
       if (hasBody) {
         delete defaults.headers['Content-Type']
@@ -63,6 +72,12 @@ export const useApiStore = defineStore('api', () => {
         }
       }
     } catch (error) {
+      logApiResult({
+        outcome: 'failure',
+        status: error?.response?.status,
+        duration_ms: Date.now() - started,
+        error_code: 'http_error'
+      })
       return Promise.reject(error)
     }
   }
