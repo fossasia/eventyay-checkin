@@ -1,3 +1,4 @@
+import { logApiResult } from '@/utils/operationalLog'
 import { lookupBySecret, upsertPosition } from '@/offline/memoryIndex'
 import { normalizePositionFromOrder } from '@/offline/normalize'
 
@@ -90,6 +91,7 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
 
   for (const item of pending) {
     try {
+      const started = Date.now()
       const response = await fetch(`${String(url).replace(/\/+$/, '')}/api/v1/organizers/${organizer}/checkin/redeem/`, {
         method: 'POST',
         credentials: 'omit',
@@ -111,6 +113,13 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
         })
       })
       const body = await response.json().catch(() => ({}))
+      logApiResult({
+        action: 'checkin.redeem',
+        outcome: response.ok && body.status !== 'error' ? 'success' : 'failure',
+        status: response.status,
+        duration_ms: Date.now() - started,
+        error_code: response.ok && body.status !== 'error' ? null : body.reason || 'http_error'
+      })
       if (response.ok && (body.status === 'ok' || body.status === 'redeemed')) {
         flushed += 1
         if (body.position) {

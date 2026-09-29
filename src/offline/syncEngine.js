@@ -1,3 +1,4 @@
+import { logApiResult } from '@/utils/operationalLog'
 import { resolveServerUrl } from '@/utils/serverUrl'
 import { computeSyncPercent, pageFraction } from '@/offline/syncProgress'
 import {
@@ -49,12 +50,20 @@ function joinUrl(baseUrl, path) {
 }
 
 async function fetchJsonPage(baseUrl, apitoken, path) {
+  const started = Date.now()
   const response = await fetch(joinUrl(baseUrl, path), {
     credentials: 'omit',
     headers: {
       Authorization: `Device ${apitoken}`,
       Accept: 'application/json'
     }
+  })
+  logApiResult({
+    outcome: response.ok ? 'success' : 'failure',
+    status: response.status,
+    duration_ms: Date.now() - started,
+    error_code: response.ok ? null : 'http_error',
+    action: 'checkin.fetch'
   })
   if (!response.ok) {
     const detail = await response.text().catch(() => '')
