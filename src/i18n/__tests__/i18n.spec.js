@@ -101,14 +101,29 @@ describe('i18n infrastructure', () => {
     expect(t('common.save')).toBe('Salvar')
   })
 
-  it('correctly sets document language and direction attribute for RTL', () => {
+  it('correctly sets document language and direction attribute for RTL and BCP 47 tags', () => {
     setLocale('ar')
     expect(document.documentElement.dir).toBe('rtl')
     expect(document.documentElement.lang).toBe('ar')
 
+    setLocale('zh_Hans')
+    expect(document.documentElement.lang).toBe('zh-Hans')
+
+    setLocale('pt_BR')
+    expect(document.documentElement.lang).toBe('pt-BR')
+
     setLocale('en')
     expect(document.documentElement.dir).toBe('ltr')
     expect(document.documentElement.lang).toBe('en')
+  })
+
+  it('rejects unsupported locales in setLocale without falling back to en', () => {
+    setLocale('vi')
+    expect(getCurrentLocale()).toBe('vi')
+
+    // Calling setLocale with unsupported code should be ignored/rejected
+    setLocale('unsupported_locale_xyz')
+    expect(getCurrentLocale()).toBe('vi')
   })
 
   it('persists selected locale to localStorage', () => {

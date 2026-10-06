@@ -90,10 +90,26 @@ function runCheck() {
   const enKeyItems = flattenKeys(enContent)
   const enKeys = new Set(enKeyItems.map((k) => k.key))
   const enParamMap = new Map(enKeyItems.map((k) => [k.key, extractParams(k.value)]))
+
+  if (enKeys.size === 0) {
+    console.error('❌ Error: Base locale (en.json) contains 0 translation keys.')
+    process.exit(1)
+  }
+
   console.log(`✅ Base locale (en) loaded with ${enKeys.size} translation keys.`)
 
   // 3. Scan all locale files
   const files = readdirSync(LOCALES_DIR).filter((f) => f.endsWith('.json'))
+  const discoveredCodes = new Set(files.map((f) => basename(f, '.json')))
+
+  // Verify that all core translated locales exist
+  for (const coreCode of CORE_TRANSLATED_LOCALES) {
+    if (!discoveredCodes.has(coreCode)) {
+      console.error(`❌ Missing core translated locale file: src/locales/${coreCode}.json`)
+      hasErrors = true
+    }
+  }
+
   let translatedCount = 0
   let pendingCount = 0
 
@@ -145,6 +161,19 @@ function runCheck() {
       }
     } else {
       pendingCount++
+      // Validate placeholders for any translated keys present in pending locales
+      for (const item of keyItems) {
+        if (enParamMap.has(item.key)) {
+          const expectedParams = enParamMap.get(item.key) || []
+          const actualParams = extractParams(item.value)
+          if (expectedParams.join(',') !== actualParams.join(',')) {
+            console.error(
+              `❌ [${localeCode}] Param mismatch in "${item.key}": expected {${expectedParams.join(', ')}}, found {${actualParams.join(', ')}}`
+            )
+            hasErrors = true
+          }
+        }
+      }
     }
   }
 

@@ -241,7 +241,7 @@ async function submitTokenFallback() {
     v-if="show"
     role="dialog"
     aria-modal="true"
-    :aria-label="title"
+    :aria-label="modalTitle"
     class="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
   >
     <div

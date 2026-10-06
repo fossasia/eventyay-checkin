@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   GlobeAltIcon,
@@ -70,6 +70,12 @@ watch(isOpen, (val) => {
   if (val && window.innerWidth < 640) {
     document.body.style.overflow = 'hidden'
   } else {
+    document.body.style.overflow = ''
+  }
+})
+
+onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') {
     document.body.style.overflow = ''
   }
 })

@@ -46,8 +46,8 @@ export function detectUserLocale() {
     const navLangs = navigator.languages || [navigator.language || '']
     for (const raw of navLangs) {
       if (!raw) continue
-      const norm = normalizeLocale(raw)
-      if (isSupportedLocale(norm)) {
+      const norm = normalizeLocale(raw, null)
+      if (norm) {
         return norm
       }
     }
@@ -64,7 +64,7 @@ export function updateDocumentAttributes(locale) {
   }
   const norm = normalizeLocale(locale)
   const dir = getLocaleDirection(norm)
-  document.documentElement.lang = norm
+  document.documentElement.lang = norm.replace(/_/g, '-')
   document.documentElement.dir = dir
 }
 
@@ -81,8 +81,8 @@ export const i18n = createI18n({
 })
 
 export function setLocale(newLocale) {
-  const norm = normalizeLocale(newLocale)
-  if (!isSupportedLocale(norm)) {
+  const norm = normalizeLocale(newLocale, null)
+  if (!norm) {
     console.warn(`[i18n] Unsupported locale: ${newLocale}`)
     return
   }

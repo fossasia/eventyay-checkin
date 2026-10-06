@@ -67,8 +67,8 @@ export const LOCALE_ALIASES = {
   'pt-pt': 'pt_PT'
 }
 
-export function normalizeLocale(code) {
-  if (!code) return DEFAULT_LOCALE
+export function normalizeLocale(code, fallback = DEFAULT_LOCALE) {
+  if (!code) return fallback
   const clean = String(code).trim()
   if (SUPPORTED_LOCALES.some((l) => l.code === clean)) {
     return clean
@@ -84,7 +84,7 @@ export function normalizeLocale(code) {
   const match = SUPPORTED_LOCALES.find(
     (l) => l.code.toLowerCase() === lower || l.code.toLowerCase() === langOnly
   )
-  return match?.code || DEFAULT_LOCALE
+  return match ? match.code : fallback
 }
 
 export function getLocaleDirection(localeCode) {
@@ -95,11 +95,7 @@ export function getLocaleDirection(localeCode) {
 
 export function isSupportedLocale(localeCode) {
   if (!localeCode) return false
-  const clean = String(localeCode).trim()
-  return (
-    SUPPORTED_LOCALES.some((l) => l.code === clean) ||
-    Boolean(LOCALE_ALIASES[clean.toLowerCase()])
-  )
+  return normalizeLocale(localeCode, null) !== null
 }
 
 export function isRtlLocale(localeCode) {
