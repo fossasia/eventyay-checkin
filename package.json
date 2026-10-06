@@ -43,7 +43,7 @@
     "cypress": "^15.18.0",
     "eslint": "^8.57.1",
     "eslint-plugin-cypress": "^2.15.2",
-    "eslint-plugin-vue": "^9.33.0",
+    "eslint-plugin-vue": "^10.11.1",
     "jsdom": "^26.0.0",
     "postcss": "^8.5.25",
     "prettier": "^3.5.0",
@@ -52,7 +52,7 @@
     "prettier-plugin-tailwindcss": "^0.5.14",
     "start-server-and-test": "^2.1.5",
     "svelte": "^5.56.8",
-    "tailwindcss": "^3.4.19",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5.8.3",
     "vite": "^6.4.3",
     "vitest": "^4.1.11"
