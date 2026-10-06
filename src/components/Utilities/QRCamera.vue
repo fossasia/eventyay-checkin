@@ -199,9 +199,9 @@ onUnmounted(() => {
       >
         <VideoCameraIcon class="h-8 w-8 text-body-muted" aria-hidden="true" />
         <div>
-          <p class="text-sm font-medium text-body">Camera is off</p>
+          <p class="text-sm font-medium text-body">{{ $t('camera.off') }}</p>
           <p class="mt-1 text-xs leading-relaxed text-body-muted">
-            Turn on the camera to scan QR codes for check-in and registration.
+            {{ $t('camera.off_description') }}
           </p>
         </div>
       </div>
@@ -216,14 +216,14 @@ onUnmounted(() => {
 
     <div class="mt-4 flex flex-wrap justify-center gap-2">
       <StandardButton
-        :text="isCameraOn ? 'Turn off' : 'Turn on'"
+        :text="isCameraOn ? $t('camera.turn_off') : $t('camera.turn_on')"
         :icon="VideoCameraIcon"
         variant="primary"
         size="sm"
         @click="toggleCamera"
       />
       <StandardButton
-        text="Switch"
+        :text="$t('camera.switch')"
         :icon="ArrowsRightLeftIcon"
         variant="white"
         size="sm"

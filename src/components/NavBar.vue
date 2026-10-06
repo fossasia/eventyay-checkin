@@ -1,11 +1,13 @@
 <script setup>
 import { computed, ref, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { LockClosedIcon, LockOpenIcon } from '@heroicons/vue/24/outline'
 import EventyayConfigurePanel from '@/components/Eventyay/EventyayConfigurePanel.vue'
 import PinUnlockModal from '@/components/Modals/PinUnlockModal.vue'
 import PinSetupModal from '@/components/Modals/PinSetupModal.vue'
 import OfflineSyncStatus from '@/components/Utilities/OfflineSyncStatus.vue'
+import LanguageSelector from '@/components/Common/LanguageSelector.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useLoadingStore } from '@/stores/loading'
 import { useOfflineSyncStore } from '@/stores/offlineSync'
@@ -13,6 +15,7 @@ import { useStationLockStore } from '@/stores/stationLock'
 import { getEventyayLogoProps, getRoleLabel } from '@/utils/session'
 import { isKioskEnvironment } from '@/utils/kioskLauncher'
 
+const { t } = useI18n()
 const route = useRoute()
 const processApi = useEventyayApi()
 const loadingStore = useLoadingStore()
@@ -139,7 +142,7 @@ function closeConfigure() {
         <p v-if="contextLabel && !isKioskShell" class="min-w-0 truncate text-sm text-body-muted">
           {{ contextLabel }}
         </p>
-        <p v-else-if="isKioskShell" class="text-sm font-medium text-body">Check-in</p>
+        <p v-else-if="isKioskShell" class="text-sm font-medium text-body">{{ t('navbar.check_in') }}</p>
       </div>
 
       <div class="flex shrink-0 items-center gap-3 sm:gap-4">
@@ -155,17 +158,19 @@ function closeConfigure() {
           ]"
           :aria-label="
             stationLock.isLocked
-              ? 'Station locked. Click to unlock.'
-              : 'Station unlocked. Click to lock.'
+              ? t('navbar.station_locked_aria')
+              : t('navbar.station_unlocked_aria')
           "
           @click="handleLockToggle"
         >
           <LockClosedIcon v-if="stationLock.isLocked" class="h-3.5 w-3.5 shrink-0" />
           <LockOpenIcon v-else class="h-3.5 w-3.5 shrink-0" />
-          <span>{{ stationLock.isLocked ? 'Locked' : 'Unlocked' }}</span>
+          <span>{{ stationLock.isLocked ? t('navbar.locked') : t('navbar.unlocked') }}</span>
         </button>
 
         <OfflineSyncStatus />
+
+        <LanguageSelector />
 
         <button
           v-if="showConfigure"
@@ -173,7 +178,7 @@ function closeConfigure() {
           class="text-sm font-medium text-primary transition hover:text-primary/80"
           @click="handleConfigureClick"
         >
-          Configure
+          {{ t('navbar.configure') }}
         </button>
         <button
           v-if="!isKioskShell"
@@ -181,7 +186,7 @@ function closeConfigure() {
           class="text-sm text-body-muted transition hover:text-body"
           @click="handleSignOutClick"
         >
-          Sign out
+          {{ t('navbar.sign_out') }}
         </button>
       </div>
     </div>

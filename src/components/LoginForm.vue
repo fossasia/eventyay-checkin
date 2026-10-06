@@ -1,10 +1,12 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import QRCamera from '@/components/Utilities/QRCamera.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import OriginWebsiteField from '@/components/Common/OriginWebsiteField.vue'
 import KioskLauncherInstructions from '@/components/Common/KioskLauncherInstructions.vue'
+import LanguageSelector from '@/components/Common/LanguageSelector.vue'
 import { useCameraStore } from '@/stores/camera'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useleedauth } from '@/stores/leedauth'
@@ -14,6 +16,8 @@ import { getEventyayLogoProps, getRoleLabel, getRoleRouteName, STATION_TYPE_DEFI
 import { isRoleAllowedForProfile, getAllowedRolesForProfile } from '@/utils/deviceProfiles'
 import { buildKioskUrl, isKioskEnvironment } from '@/utils/kioskLauncher'
 import { UserGroupIcon, PrinterIcon, BuildingStorefrontIcon } from '@heroicons/vue/24/outline'
+
+const { t } = useI18n()
 
 const loadingStore = useLoadingStore()
 const processApi = useEventyayApi()
@@ -37,8 +41,16 @@ const ROLE_ICONS = {
 }
 
 const roles = computed(() => {
+  const roleLabelMap = {
+    CheckIn: { buttonLabel: t('auth.checkin_staff_button'), description: t('auth.checkin_staff_description') },
+    'Badge Station': { buttonLabel: t('auth.badge_station_button'), description: t('auth.badge_station_description') },
+    Exhibitor: { buttonLabel: t('auth.lead_scanner_button'), description: t('auth.lead_scanner_description') }
+  }
+
   const allRoles = STATION_TYPE_DEFINITIONS.map((station) => ({
     ...station,
+    buttonLabel: roleLabelMap[station.id]?.buttonLabel || station.buttonLabel,
+    description: roleLabelMap[station.id]?.description || station.description,
     icon: ROLE_ICONS[station.id]
   }))
 
@@ -58,6 +70,9 @@ const pendingStationLabel = computed(() => {
   if (!pendingRole.value) {
     return ''
   }
+  if (pendingRole.value === 'CheckIn') return t('auth.checkin_staff_button')
+  if (pendingRole.value === 'Badge Station') return t('auth.badge_station_button')
+  if (pendingRole.value === 'Exhibitor') return t('auth.lead_scanner_button')
   const station = STATION_TYPE_DEFINITIONS.find((item) => item.id === pendingRole.value)
   return station?.title || getRoleLabel(pendingRole.value)
 })
@@ -163,18 +178,18 @@ async function handleQrScanned() {
       showScanner.value = false
       redirectAfterRegistration(pendingRole.value || processApi.selectedRole)
     } else if (result.error === 'unsupported_handshake') {
-      errmessage.value = 'This QR code requires a newer version of the check-in app.'
+      errmessage.value = t('auth.error_unsupported_handshake')
       showError.value = true
     } else if (result.message) {
       errmessage.value = result.message
       showError.value = true
     } else {
-      errmessage.value = 'Invalid device QR code. Please scan the registration QR from your organizer dashboard.'
+      errmessage.value = t('auth.error_invalid_qr')
       showError.value = true
     }
   } catch (error) {
     console.error('Scan registration error:', error)
-    errmessage.value = 'Failed to register this device.'
+    errmessage.value = t('auth.error_device_failed')
     showError.value = true
   } finally {
     cameraStore.clearLastScan()
@@ -195,7 +210,7 @@ async function handleManualRegister() {
   const exhibitorKey = isExhibitorRegistration.value ? manualExhibitorKey.value.trim() : ''
 
   if (!urlVal || !tokenVal) {
-    errmessage.value = 'Please provide both the origin website and setup token.'
+    errmessage.value = t('auth.error_missing_fields')
     showError.value = true
     return
   }
@@ -216,18 +231,18 @@ async function handleManualRegister() {
         redirectAfterRegistration(role)
       }
     } else if (result.error === 'invalid_url') {
-      errmessage.value = 'Invalid origin website. Please enter a valid URL.'
+      errmessage.value = t('auth.error_invalid_url')
       showError.value = true
     } else if (result.message) {
       errmessage.value = result.message
       showError.value = true
     } else {
-      errmessage.value = 'Registration failed. Please check the origin website and setup token.'
+      errmessage.value = t('auth.error_registration_failed')
       showError.value = true
     }
   } catch (error) {
     console.error('Manual registration error:', error)
-    errmessage.value = 'Failed to register this device.'
+    errmessage.value = t('auth.error_device_failed')
     showError.value = true
   } finally {
     loadingStore.contentLoaded()
@@ -246,14 +261,18 @@ loadingStore.contentLoaded()
 <template>
   <div class="page-shell flex min-h-screen items-center justify-center py-10">
     <div class="card w-full max-w-lg p-6 sm:p-8">
+      <div class="mb-4 flex justify-end">
+        <LanguageSelector />
+      </div>
+
       <div class="mb-8 text-center">
         <img v-bind="getEventyayLogoProps('full', 'mx-auto mb-4 h-10 w-auto max-w-[220px]')" />
-        <h1>Check-in</h1>
+        <h1>{{ t('auth.check_in_title') }}</h1>
         <p class="mt-2 text-sm text-body-muted">
           {{
             isRegisteringDevice
-              ? `Register this device as ${pendingStationLabel}.`
-              : 'Choose a station type to get started.'
+              ? t('auth.register_as_subtitle', { station: pendingStationLabel })
+              : t('auth.station_type_subtitle')
           }}
         </p>
       </div>
@@ -265,7 +284,7 @@ loadingStore.contentLoaded()
             class="flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2"
           >
             <p class="min-w-0 text-sm text-body">
-              <span class="text-body-muted">Station type</span>
+              <span class="text-body-muted">{{ t('auth.station_type') }}</span>
               <span class="mx-1.5 text-body-muted">·</span>
               <span class="font-semibold">{{ pendingStationLabel }}</span>
             </p>
@@ -274,15 +293,14 @@ loadingStore.contentLoaded()
               class="shrink-0 text-xs font-semibold text-primary hover:underline focus:outline-none"
               @click="backToStationSelection"
             >
-              Change
+              {{ t('common.change') }}
             </button>
           </div>
 
           <div class="rounded-xl border border-surface-border bg-surface-muted p-4 text-center">
-            <p class="text-sm font-medium text-body">Set up kiosk mode before registering</p>
+            <p class="text-sm font-medium text-body">{{ t('auth.setup_kiosk_title') }}</p>
             <p class="mt-1 text-xs text-body-muted">
-              Kiosk mode enables silent badge printing. Run the command below, then register in that
-              window.
+              {{ t('auth.setup_kiosk_description') }}
             </p>
           </div>
 
@@ -293,7 +311,7 @@ loadingStore.contentLoaded()
 
           <StandardButton
             type="button"
-            text="I'm in kiosk mode — register device"
+            :text="t('auth.kiosk_registered_button')"
             variant="primary"
             block
             @click="proceedToDeviceRegistration"
@@ -306,7 +324,7 @@ loadingStore.contentLoaded()
             class="flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2"
           >
             <p class="min-w-0 text-sm text-body">
-              <span class="text-body-muted">Station type</span>
+              <span class="text-body-muted">{{ t('auth.station_type') }}</span>
               <span class="mx-1.5 text-body-muted">·</span>
               <span class="font-semibold">{{ pendingStationLabel }}</span>
             </p>
@@ -315,15 +333,15 @@ loadingStore.contentLoaded()
               class="shrink-0 text-xs font-semibold text-primary hover:underline focus:outline-none"
               @click="backToStationSelection"
             >
-              Change
+              {{ t('common.change') }}
             </button>
           </div>
 
           <div v-if="!showManualInput" class="space-y-4">
             <div class="rounded-xl border border-surface-border bg-surface-muted p-4 text-center">
-              <p class="text-sm font-medium text-body">Scan device registration QR</p>
+              <p class="text-sm font-medium text-body">{{ t('auth.scan_qr_title') }}</p>
               <p class="mt-1 text-xs text-body-muted">
-                The QR code includes your server URL and setup token from the Eventyay organizer dashboard.
+                {{ t('auth.scan_qr_description') }}
               </p>
             </div>
             <QRCamera @scanned="handleQrScanned" />
@@ -333,40 +351,40 @@ loadingStore.contentLoaded()
                 class="text-sm font-semibold text-primary hover:underline focus:outline-none"
                 @click="showManualInput = true"
               >
-                Or enter URL and Token manually
+                {{ t('auth.enter_manually_button') }}
               </button>
             </div>
           </div>
 
           <div v-else class="space-y-4">
             <div class="rounded-xl border border-surface-border bg-surface-muted p-4 text-center">
-              <p class="text-sm font-medium text-body">Manual Device Registration</p>
+              <p class="text-sm font-medium text-body">{{ t('auth.manual_registration_title') }}</p>
               <p class="mt-1 text-xs text-body-muted">
-                Use the same URL as shown in the organizer device setup page (System URL), not the check-in app address.
+                {{ t('auth.manual_registration_description') }}
               </p>
             </div>
             <div class="space-y-3 text-left">
               <OriginWebsiteField v-model:selected="originWebsite" v-model:custom-url="customOriginUrl" />
               <div>
-                <label for="manual-token" class="block text-xs font-semibold text-body-muted uppercase">Setup Token</label>
+                <label for="manual-token" class="block text-xs font-semibold text-body-muted uppercase">{{ t('auth.setup_token') }}</label>
                 <input
                   id="manual-token"
                   v-model="manualToken"
                   type="password"
-                  placeholder="Enter your registration token"
+                  :placeholder="t('auth.setup_token_placeholder')"
                   class="mt-1 block w-full rounded-xl border border-surface-border bg-surface-muted px-3 py-2 text-sm text-body focus:border-primary focus:outline-none"
                 />
               </div>
               <div v-if="isExhibitorRegistration">
                 <label for="manual-exhibitor-key" class="block text-xs font-semibold text-body-muted uppercase">
-                  Exhibitor key
+                  {{ t('auth.exhibitor_key') }}
                 </label>
                 <input
                   id="manual-exhibitor-key"
                   v-model="manualExhibitorKey"
                   type="password"
                   autocomplete="off"
-                  placeholder="Optional — you can also enter this after event selection"
+                  :placeholder="t('auth.exhibitor_key_placeholder')"
                   class="mt-1 block w-full rounded-xl border border-surface-border bg-surface-muted px-3 py-2 text-sm text-body focus:border-primary focus:outline-none"
                 />
               </div>
@@ -374,14 +392,14 @@ loadingStore.contentLoaded()
             <div class="flex gap-2">
               <StandardButton
                 type="button"
-                text="Scan QR"
+                :text="t('auth.scan_qr_button')"
                 variant="white"
                 block
                 @click="showManualInput = false"
               />
               <StandardButton
                 type="button"
-                text="Register"
+                :text="t('auth.register_button')"
                 variant="primary"
                 block
                 @click="handleManualRegister"
@@ -391,7 +409,7 @@ loadingStore.contentLoaded()
         </div>
 
         <div v-else key="roles" class="space-y-3">
-          <p class="section-title">Station type</p>
+          <p class="section-title">{{ t('auth.station_type') }}</p>
           <button
             v-for="role in roles"
             :key="role.id"

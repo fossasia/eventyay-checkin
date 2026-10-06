@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { DialogTitle } from '@headlessui/vue'
+import { useI18n } from 'vue-i18n'
 import { PrinterIcon } from '@heroicons/vue/24/outline'
 import { usePrintModalStore } from '@/stores/printModal'
 import { useNotificationStore } from '@/stores/notification'
@@ -8,6 +9,7 @@ import ModalBaseTemplate from '@/components/Modals/ModalBaseTemplate.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import MultiListSelector from '@/components/Common/MultiListSelector.vue'
 
+const { t } = useI18n()
 const printModalStore = usePrintModalStore()
 const notificationStore = useNotificationStore()
 
@@ -16,7 +18,7 @@ function printDelay(delayHideModal, delayPrint) {
   setTimeout(() => (printModalStore.showPrintModal = false), delayHideModal)
   setTimeout(() => {
     notificationStore.addNotification(
-      ['Successfully printed!', 'Please collect your ticket.'],
+      [t('printModal.successfully_printed'), t('printModal.collect_ticket')],
       'success'
     )
     disableButton.value = false
@@ -44,18 +46,18 @@ function print() {
       <!--Title-->
       <div class="mt-3 sm:mt-5">
         <div v-if="printModalStore.hasOptions">
-          <DialogTitle as="h3" class="text-center">Select Fields to Print </DialogTitle>
+          <DialogTitle as="h3" class="text-center">{{ t('printModal.select_fields_title') }}</DialogTitle>
 
           <!--Checklist-->
           <fieldset v-if="printModalStore.printOptions.length > 0">
             <div class="mt-3 space-x-3">
               <StandardButton
-                :text="'Select All'"
+                :text="t('printModal.select_all')"
                 class="bg-primary"
                 @click="printModalStore.selectAll"
               />
               <StandardButton
-                :text="'Deselect All'"
+                :text="t('printModal.deselect_all')"
                 class="bg-secondary"
                 @click="printModalStore.selectedOptions = []"
               />
@@ -67,11 +69,11 @@ function print() {
               @update-selected="(n) => (printModalStore.selectedOptions = n)"
             ></MultiListSelector>
           </fieldset>
-          <p v-else class="text-center">No fields to select. Please proceed to print</p>
-          <p v-if="printModalStore.printingText" class="my-3 text-center">Printing your pass...</p>
+          <p v-else class="text-center">{{ t('printModal.no_fields_to_select') }}</p>
+          <p v-if="printModalStore.printingText" class="my-3 text-center">{{ t('printModal.printing_pass') }}</p>
         </div>
         <div v-else>
-          <DialogTitle as="h3" class="text-center">No Fields to Print</DialogTitle>
+          <DialogTitle as="h3" class="text-center">{{ t('printModal.no_fields_title') }}</DialogTitle>
         </div>
       </div>
     </div>
@@ -82,13 +84,13 @@ function print() {
       <div :class="[printModalStore.hasOptions ? 'grid-cols-2' : '', 'grid gap-3']">
         <StandardButton
           :type="'button'"
-          :text="'Close'"
+          :text="t('common.close')"
           class="btn-secondary w-full justify-center"
           @click="printModalStore.showPrintModal = false"
         />
         <StandardButton
           v-if="printModalStore.hasOptions"
-          :text="'Print'"
+          :text="t('common.print')"
           :disabled="disableButton"
           :class="[
             disableButton && 'cursor-not-allowed opacity-20',

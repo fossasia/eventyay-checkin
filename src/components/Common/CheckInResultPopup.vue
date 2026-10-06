@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { PencilSquareIcon } from '@heroicons/vue/20/solid'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useLiveRegistrationStore } from '@/stores/liveRegistration'
@@ -17,6 +18,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'print', 'edit', 'interact'])
 
+const { t } = useI18n()
 const liveRegistrationStore = useLiveRegistrationStore()
 const { products } = storeToRefs(liveRegistrationStore)
 
@@ -91,17 +93,17 @@ const isErrorState = computed(() => props.showError)
       </div>
 
       <div v-if="!isErrorState">
-        <p><b>Name:</b> {{ message.attendee_name || message.attendee }}</p>
-        <p v-if="resolvedProductName"><b>Product:</b> {{ resolvedProductName }}</p>
-        <p v-if="message.company"><b>Company:</b> {{ message.company }}</p>
-        <p v-if="message.job_title"><b>Job Title:</b> {{ message.job_title }}</p>
+        <p><b>{{ t('attendee.name') }}:</b> {{ message.attendee_name || message.attendee }}</p>
+        <p v-if="resolvedProductName"><b>{{ t('liveRegistration.product') }}:</b> {{ resolvedProductName }}</p>
+        <p v-if="message.company"><b>{{ t('liveRegistration.company') }}:</b> {{ message.company }}</p>
+        <p v-if="message.job_title"><b>{{ t('liveRegistration.job_title') }}:</b> {{ message.job_title }}</p>
       </div>
 
       <div class="mt-4 flex flex-col space-y-3">
         <StandardButton
           v-if="badgeUrl && showSuccess"
           type="button"
-          :text="isGeneratingBadge ? 'Generating Badge...' : 'Generate Badge'"
+          :text="isGeneratingBadge ? t('attendee.preparing_badge') : t('attendee.print_badge')"
           :disabled="isGeneratingBadge"
           class="btn-primary w-full justify-center"
           @click.stop="emit('print')"
@@ -112,7 +114,7 @@ const isErrorState = computed(() => props.showError)
             v-if="showEditButton && (message?.secret || message?.orderPositionId) && !isErrorState"
             type="button"
             class="inline-flex items-center rounded bg-success px-3 py-2 text-white hover:opacity-90"
-            aria-label="Edit attendee details"
+            :aria-label="t('attendee.edit_attendee')"
             @click.stop="emit('edit')"
           >
             <PencilSquareIcon class="h-5 w-5" />
@@ -120,7 +122,7 @@ const isErrorState = computed(() => props.showError)
           
           <StandardButton
             type="button"
-            text="Done"
+            :text="t('common.done')"
             class="btn-info flex-1 justify-center"
             @click.stop="emit('close')"
           />

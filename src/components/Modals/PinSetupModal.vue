@@ -1,5 +1,6 @@
 <script setup>
 import { reactive, ref, onMounted, onUnmounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { LockClosedIcon } from '@heroicons/vue/24/outline'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useStationLockStore, DEFAULT_LOCKED_ACTIONS } from '@/stores/stationLock'
@@ -13,6 +14,7 @@ const props = defineProps({
 
 const emit = defineEmits(['close', 'saved'])
 
+const { t } = useI18n()
 const stationLock = useStationLockStore()
 
 const pin = ref('')
@@ -54,12 +56,12 @@ async function savePinSettings() {
 
   if (!stationLock.isEnabled || cleanPin) {
     if (!/^\d{4,6}$/.test(cleanPin)) {
-      error.value = 'PIN must be between 4 and 6 numeric digits.'
+      error.value = t('stationLock.pin_validation_length')
       return
     }
 
     if (cleanPin !== cleanConfirm) {
-      error.value = 'PIN and Confirmation PIN do not match.'
+      error.value = t('stationLock.pin_validation_match')
       return
     }
   }
@@ -82,7 +84,7 @@ async function savePinSettings() {
     emit('close')
   } catch (err) {
     console.error('Failed to save PIN:', err)
-    error.value = err.message || 'Failed to save PIN settings.'
+    error.value = err.message || t('configure.error_save_failed')
   } finally {
     isSaving.value = false
   }
@@ -100,7 +102,7 @@ function removePinLock() {
     v-if="show"
     role="dialog"
     aria-modal="true"
-    aria-label="Station PIN Lock Settings"
+    :aria-label="t('stationLock.settings_title')"
     class="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
   >
     <div
@@ -115,9 +117,9 @@ function removePinLock() {
             <LockClosedIcon class="h-6 w-6" />
           </div>
           <div>
-            <h3 class="text-base font-bold text-body sm:text-lg">Station PIN Lock Settings</h3>
+            <h3 class="text-base font-bold text-body sm:text-lg">{{ t('stationLock.settings_title') }}</h3>
             <p class="text-xs text-body-muted">
-              Prevent unauthorized actions when the check-in station is unattended.
+              {{ t('stationLock.settings_subtitle') }}
             </p>
           </div>
         </div>
@@ -128,12 +130,12 @@ function removePinLock() {
         <!-- PIN Input Fields -->
         <div class="space-y-3 rounded-2xl border border-surface-border bg-surface-muted p-4">
           <h4 class="text-xs font-bold uppercase tracking-wider text-body-muted">
-            {{ stationLock.isEnabled ? 'Change Station PIN' : 'Set Station PIN' }}
+            {{ stationLock.isEnabled ? t('stationLock.change_pin') : t('stationLock.set_pin') }}
           </h4>
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div>
               <label class="mb-1 block text-xs font-semibold text-body">
-                {{ stationLock.isEnabled ? 'New PIN (4–6 digits)' : 'Station PIN (4–6 digits)' }}
+                {{ stationLock.isEnabled ? t('stationLock.new_pin_label') : t('stationLock.station_pin_label') }}
               </label>
               <input
                 v-model="pin"
@@ -141,32 +143,32 @@ function removePinLock() {
                 inputmode="numeric"
                 pattern="[0-9]*"
                 maxlength="6"
-                placeholder="4–6 digit PIN"
+                :placeholder="t('stationLock.pin_placeholder')"
                 class="w-full rounded-xl border border-surface-border bg-surface px-3 py-2.5 text-sm text-body focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
             <div>
-              <label class="mb-1 block text-xs font-semibold text-body">Confirm PIN</label>
+              <label class="mb-1 block text-xs font-semibold text-body">{{ t('stationLock.confirm_pin_label') }}</label>
               <input
                 v-model="confirmPin"
                 type="password"
                 inputmode="numeric"
                 pattern="[0-9]*"
                 maxlength="6"
-                placeholder="Re-enter PIN"
+                :placeholder="t('stationLock.confirm_pin_placeholder')"
                 class="w-full rounded-xl border border-surface-border bg-surface px-3 py-2.5 text-sm text-body focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
               />
             </div>
           </div>
           <p v-if="stationLock.isEnabled" class="text-[11px] text-body-muted">
-            Leave PIN fields blank if you only wish to update locked actions or launch preferences.
+            {{ t('stationLock.pin_leave_blank_note') }}
           </p>
         </div>
 
         <!-- Locked Action Toggles -->
         <div class="space-y-3">
           <h4 class="text-xs font-bold uppercase tracking-wider text-body-muted">
-            Protected Actions (When Station is Locked)
+            {{ t('stationLock.protected_actions_heading') }}
           </h4>
 
           <div class="space-y-2">
@@ -174,9 +176,9 @@ function removePinLock() {
               class="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-surface-border p-3 transition hover:border-primary/30 active:bg-surface-muted"
             >
               <div>
-                <p class="text-sm font-semibold text-body">Live Registration</p>
+                <p class="text-sm font-semibold text-body">{{ t('stationLock.action_live_registration') }}</p>
                 <p class="text-xs text-body-muted">
-                  Prevent walk-in ticket orders and registration.
+                  {{ t('stationLock.action_live_registration_desc') }}
                 </p>
               </div>
               <input
@@ -190,9 +192,9 @@ function removePinLock() {
               class="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-surface-border p-3 transition hover:border-primary/30 active:bg-surface-muted"
             >
               <div>
-                <p class="text-sm font-semibold text-body">Attendee Details Editing</p>
+                <p class="text-sm font-semibold text-body">{{ t('stationLock.action_attendee_edit') }}</p>
                 <p class="text-xs text-body-muted">
-                  Block editing attendee name, email, or question fields.
+                  {{ t('stationLock.action_attendee_edit_desc') }}
                 </p>
               </div>
               <input
@@ -206,9 +208,9 @@ function removePinLock() {
               class="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-surface-border p-3 transition hover:border-primary/30 active:bg-surface-muted"
             >
               <div>
-                <p class="text-sm font-semibold text-body">Badge Layout Selection</p>
+                <p class="text-sm font-semibold text-body">{{ t('stationLock.action_badge_layout') }}</p>
                 <p class="text-xs text-body-muted">
-                  Lock printing to the default badge layout only.
+                  {{ t('stationLock.action_badge_layout_desc') }}
                 </p>
               </div>
               <input
@@ -222,9 +224,9 @@ function removePinLock() {
               class="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-surface-border p-3 transition hover:border-primary/30 active:bg-surface-muted"
             >
               <div>
-                <p class="text-sm font-semibold text-body">Badge Field Customization</p>
+                <p class="text-sm font-semibold text-body">{{ t('stationLock.action_badge_customize') }}</p>
                 <p class="text-xs text-body-muted">
-                  Prevent changing printed badge field overrides before printing.
+                  {{ t('stationLock.action_badge_customize_desc') }}
                 </p>
               </div>
               <input
@@ -238,9 +240,9 @@ function removePinLock() {
               class="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-surface-border p-3 transition hover:border-primary/30 active:bg-surface-muted"
             >
               <div>
-                <p class="text-sm font-semibold text-body">Attendee Search List</p>
+                <p class="text-sm font-semibold text-body">{{ t('stationLock.action_search') }}</p>
                 <p class="text-xs text-body-muted">
-                  Restrict check-in to QR/barcode scanning only (hide search table).
+                  {{ t('stationLock.action_search_desc') }}
                 </p>
               </div>
               <input
@@ -254,9 +256,9 @@ function removePinLock() {
               class="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-surface-border p-3 transition hover:border-primary/30 active:bg-surface-muted"
             >
               <div>
-                <p class="text-sm font-semibold text-body">Manual Check-In / Check-Out Override</p>
+                <p class="text-sm font-semibold text-body">{{ t('stationLock.action_manual_override') }}</p>
                 <p class="text-xs text-body-muted">
-                  Prevent manually re-checking in or checking out attendees.
+                  {{ t('stationLock.action_manual_override_desc') }}
                 </p>
               </div>
               <input
@@ -270,8 +272,8 @@ function removePinLock() {
               class="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-surface-border p-3 transition hover:border-primary/30 active:bg-surface-muted"
             >
               <div>
-                <p class="text-sm font-semibold text-body">Sign Out / Disconnect</p>
-                <p class="text-xs text-body-muted">Block signing out the device while locked.</p>
+                <p class="text-sm font-semibold text-body">{{ t('stationLock.action_sign_out') }}</p>
+                <p class="text-xs text-body-muted">{{ t('stationLock.action_sign_out_desc') }}</p>
               </div>
               <input
                 v-model="actions.signOut"
@@ -284,15 +286,15 @@ function removePinLock() {
 
         <!-- Launch & Display Preferences -->
         <div class="space-y-3 border-t border-surface-border pt-4">
-          <h4 class="text-xs font-bold uppercase tracking-wider text-body-muted">Preferences</h4>
+          <h4 class="text-xs font-bold uppercase tracking-wider text-body-muted">{{ t('stationLock.preferences_heading') }}</h4>
 
           <label
             class="flex cursor-pointer items-start justify-between gap-3 rounded-xl border border-surface-border p-3 transition hover:border-primary/30 active:bg-surface-muted"
           >
             <div>
-              <p class="text-sm font-semibold text-body">Auto-lock on App Launch</p>
+              <p class="text-sm font-semibold text-body">{{ t('stationLock.auto_lock_label') }}</p>
               <p class="text-xs text-body-muted">
-                Always start the station locked upon page refresh or reboot.
+                {{ t('stationLock.auto_lock_desc') }}
               </p>
             </div>
             <input
@@ -304,15 +306,15 @@ function removePinLock() {
 
           <div>
             <label class="mb-1 block text-xs font-semibold text-body"
-              >Locked Controls Appearance</label
+              >{{ t('stationLock.controls_appearance_label') }}</label
             >
             <select
               v-model="displayMode"
               class="w-full rounded-xl border border-surface-border bg-surface px-3 py-2.5 text-sm text-body focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             >
-              <option value="badge">Show Lock Badge (Clicking prompts PIN unlock)</option>
-              <option value="hide">Hide Protected Controls</option>
-              <option value="disable">Disable / Gray Out Controls</option>
+              <option value="badge">{{ t('stationLock.appearance_badge') }}</option>
+              <option value="hide">{{ t('stationLock.appearance_hide') }}</option>
+              <option value="disable">{{ t('stationLock.appearance_disable') }}</option>
             </select>
           </div>
         </div>
@@ -327,7 +329,7 @@ function removePinLock() {
         <StandardButton
           v-if="stationLock.isEnabled"
           type="button"
-          text="Disable Lock"
+          :text="t('stationLock.disable_lock')"
           variant="danger"
           size="sm"
           class="min-h-[40px]"
@@ -339,7 +341,7 @@ function removePinLock() {
         <div class="flex gap-2">
           <StandardButton
             type="button"
-            text="Cancel"
+            :text="t('common.cancel')"
             variant="white"
             size="sm"
             class="min-h-[40px] flex-1 sm:flex-initial"
@@ -349,7 +351,7 @@ function removePinLock() {
           <StandardButton
             type="button"
             :text="
-              isSaving ? 'Saving…' : stationLock.isEnabled ? 'Update Settings' : 'Enable PIN Lock'
+              isSaving ? t('common.saving') : stationLock.isEnabled ? t('stationLock.update_settings') : t('stationLock.enable_pin_lock')
             "
             variant="primary"
             size="sm"

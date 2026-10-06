@@ -1,8 +1,11 @@
 <script setup>
 import { computed, ref, watch, onBeforeUnmount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { PencilSquareIcon, XMarkIcon } from '@heroicons/vue/20/solid'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { normalizeDisplayPopupFields, questionLabelForField, readPopupFieldValue } from '@/utils/attendeeEdit'
+
+const { t } = useI18n()
 
 const props = defineProps({
   message: {
@@ -190,7 +193,7 @@ const countdownLabel = computed(() => {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return ''
   }
-  return `Closing in ${seconds}`
+  return t('attendee.closing_in', { seconds })
 })
 
 const showEcoReminder = computed(
@@ -198,67 +201,67 @@ const showEcoReminder = computed(
 )
 
 const paperSavingMessage = computed(
-  () => 'Help us save paper — please reprint badges only when explicitly needed. Thank you.'
+  () => t('attendee.eco_reminder')
 )
 
 const resultLabel = computed(() => {
   if (props.message?.alreadyCheckedIn) {
-    return 'Already checked in'
+    return t('attendee.already_checked_in')
   }
   if (props.showError) {
     if (props.message?.errorLabel) {
       return props.message.errorLabel
     }
     if (props.message?.checkoutRequired) {
-      return 'Check-out required'
+      return t('attendee.checkout_required')
     }
     if (props.message?.errorReason === 'invalid_time') {
       const kind = getInvalidTimeKind(props.message)
       if (kind === 'not_yet') {
-        return 'Ticket not yet valid'
+        return t('attendee.ticket_not_yet_valid')
       }
       if (kind === 'expired') {
-        return 'Ticket no longer valid'
+        return t('attendee.ticket_expired')
       }
-      return 'Ticket not valid'
+      return t('attendee.ticket_not_valid')
     }
     if (props.message?.errorReason === 'invalid') {
-      return 'Ticket not found'
+      return t('attendee.ticket_not_found')
     }
     if (props.message?.errorReason === 'product') {
-      return 'Wrong check-in list'
+      return t('attendee.wrong_checkin_list')
     }
     if (props.message?.errorReason === 'subevent') {
-      return 'Wrong date or session'
+      return t('attendee.wrong_date_session')
     }
     if (props.message?.errorReason === 'unpaid') {
-      return 'Payment required'
+      return t('attendee.payment_required')
     }
     if (props.message?.errorReason === 'rules') {
-      return 'Check-in blocked'
+      return t('attendee.checkin_blocked')
     }
     if (props.message?.errorReason === 'canceled' || props.message?.positionCanceled || props.message?.orderCanceled) {
       if (props.message?.orderCanceled) {
-        return 'Order canceled'
+        return t('attendee.order_canceled')
       }
-      return 'Ticket canceled'
+      return t('attendee.ticket_canceled')
     }
-    return props.badgeStation ? 'Badge issue' : 'Check-in issue'
+    return props.badgeStation ? t('attendee.badge_issue') : t('attendee.checkin_issue')
   }
   if (props.message?.offerCheckInAtGate) {
-    return 'Check-in available'
+    return t('attendee.checkin_available')
   }
   if (props.message?.checkedOut) {
-    return 'Checked out'
+    return t('attendee.checked_out')
   }
   if (props.showSuccess) {
     const detail = String(props.message?.message || '').trim()
     if (detail) {
       return detail
     }
-    return 'Check-in successful!'
+    return t('attendee.checkin_success')
   }
-  return props.badgeStation ? 'Badge station' : 'Check-in result'
+  return props.badgeStation ? t('checkin.badge_station') : t('checkin.check_in')
 })
 
 function detailRepeatsLabel(label, detail) {
@@ -492,9 +495,9 @@ watch(
 const checkoutConfirmTitle = computed(() => {
   const name = props.message?.attendee_name || props.message?.attendee
   if (props.message?.checkoutRequired) {
-    return 'Check-out required'
+    return t('attendee.checkout_required')
   }
-  return name ? `Check out ${name}?` : 'Check out attendee?'
+  return name ? t('attendee.confirm_checkout_named', { name }) : t('attendee.confirm_checkout_title')
 })
 
 const checkoutConfirmMessage = computed(() => {
@@ -502,7 +505,7 @@ const checkoutConfirmMessage = computed(() => {
     return ''
   }
   const detail = String(props.message?.message || '').trim()
-  return detail || 'Check out this attendee before continuing.'
+  return detail || t('attendee.confirm_checkout_message')
 })
 
 onBeforeUnmount(() => {
@@ -527,7 +530,7 @@ onBeforeUnmount(() => {
           <button
             type="button"
             class="flex h-10 w-10 items-center justify-center rounded-full bg-surface-muted text-body transition hover:bg-surface-border hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-            aria-label="Close"
+            :aria-label="t('common.close')"
             @click="handleCloseClick"
           >
             <XMarkIcon class="h-7 w-7" />
@@ -547,24 +550,24 @@ onBeforeUnmount(() => {
           class="space-y-2 border-t border-surface-border pt-4 text-sm"
         >
           <div class="flex justify-between gap-4">
-            <dt class="text-body-muted">Name</dt>
+            <dt class="text-body-muted">{{ t('attendee.name') }}</dt>
             <dd class="text-right font-medium text-body">
               {{ message.attendee_name || message.attendee }}
             </dd>
           </div>
           <div v-if="productName" class="flex justify-between gap-4">
-            <dt class="text-body-muted">Ticket</dt>
+            <dt class="text-body-muted">{{ t('attendee.ticket') }}</dt>
             <dd class="text-right text-body">{{ productName }}</dd>
           </div>
           <div
             v-if="message?.positionCanceled || message?.orderCanceled || message?.errorReason === 'canceled'"
             class="flex justify-between gap-4"
           >
-            <dt class="text-body-muted">Status</dt>
-            <dd class="text-right font-medium text-danger">Canceled</dd>
+            <dt class="text-body-muted">{{ t('attendee.status') }}</dt>
+            <dd class="text-right font-medium text-danger">{{ t('attendee.canceled') }}</dd>
           </div>
           <div v-if="validityDisplayText" class="flex justify-between gap-4">
-            <dt class="text-body-muted">Valid</dt>
+            <dt class="text-body-muted">{{ t('attendee.valid') }}</dt>
             <dd class="text-right text-body">{{ validityDisplayText }}</dd>
           </div>
           <div
@@ -581,15 +584,14 @@ onBeforeUnmount(() => {
           v-if="badgeStation && showSuccess && !badgeUrl"
           class="mt-4 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-dark"
         >
-          No badge download is available. Enable the Badges plugin and configure a badge layout for
-          this event.
+          {{ t('attendee.no_badge_download') }}
         </p>
 
         <p
           v-else-if="badgeStation && showSuccess && isGeneratingBadge"
           class="mt-4 text-center text-sm text-body-muted"
         >
-          Preparing badge for printing...
+          {{ t('attendee.preparing_badge') }}
         </p>
 
         <div
@@ -618,7 +620,7 @@ onBeforeUnmount(() => {
           <StandardButton
             v-if="canCheckOut"
             type="button"
-            text="Check out"
+            :text="t('attendee.check_out')"
             variant="danger"
             block
             @click="handleExitClick"
@@ -626,7 +628,7 @@ onBeforeUnmount(() => {
           <StandardButton
             v-else-if="message?.checkoutRequired"
             type="button"
-            text="Check out"
+            :text="t('attendee.check_out')"
             variant="danger"
             block
             @click="handleExitClick"
@@ -634,14 +636,14 @@ onBeforeUnmount(() => {
           <template v-else-if="message?.offerCheckInAtGate">
             <StandardButton
               type="button"
-              text="Check in"
+              :text="t('attendee.check_in')"
               variant="primary"
               block
               @click="handleCheckInClick"
             />
             <StandardButton
               type="button"
-              text="Not now"
+              :text="t('attendee.not_now')"
               variant="white"
               block
               @click="handleCloseClick"
@@ -650,14 +652,14 @@ onBeforeUnmount(() => {
           <template v-if="badgeStation && canShowBadgeActions">
             <StandardButton
               type="button"
-              text="Print preview"
+              :text="t('attendee.print_preview')"
               :variant="autoPrintEnabled ? 'white' : 'primary'"
               block
               @click="handlePreviewClick"
             />
             <StandardButton
               type="button"
-              :text="isGeneratingBadge ? 'Sending to printer...' : 'Print badge'"
+              :text="isGeneratingBadge ? t('attendee.sending_to_printer') : t('attendee.print_badge')"
               :disabled="isGeneratingBadge"
               :variant="autoPrintEnabled ? 'primary' : 'white'"
               block
@@ -668,7 +670,7 @@ onBeforeUnmount(() => {
           <template v-else-if="canShowBadgeActions">
             <StandardButton
               type="button"
-              :text="isGeneratingBadge ? 'Preparing badge...' : 'Print badge'"
+              :text="isGeneratingBadge ? t('attendee.preparing_badge') : t('attendee.print_badge')"
               :disabled="isGeneratingBadge"
               variant="primary"
               block
@@ -684,7 +686,7 @@ onBeforeUnmount(() => {
               :icon="PencilSquareIcon"
               variant="success"
               size="sm"
-              aria-label="Edit badge"
+              :aria-label="t('attendee.edit_badge')"
               @click="handleEditBadgeClick"
             />
             <StandardButton
@@ -694,12 +696,12 @@ onBeforeUnmount(() => {
               :icon="PencilSquareIcon"
               variant="success"
               size="sm"
-              aria-label="Edit attendee"
+              :aria-label="t('attendee.edit_attendee')"
               @click="handleEditClick"
             />
             <StandardButton
               type="button"
-              text="Done"
+              :text="t('common.done')"
               variant="white"
               block
               @click="handleCloseClick"
@@ -723,14 +725,14 @@ onBeforeUnmount(() => {
         <div class="mt-6 space-y-2">
           <StandardButton
             type="button"
-            text="Check out"
+            :text="t('attendee.check_out')"
             variant="danger"
             block
             @click="confirmCheckout"
           />
           <StandardButton
             type="button"
-            text="Cancel"
+            :text="t('common.cancel')"
             variant="white"
             block
             @click="cancelCheckout"

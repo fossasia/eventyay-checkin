@@ -1,5 +1,8 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { getEventyayLogoProps } from '@/utils/session'
+
+const { t } = useI18n()
 </script>
 
 <template>
@@ -10,9 +13,9 @@ import { getEventyayLogoProps } from '@/utils/session'
       </div>
       <div class="py-16">
         <div class="text-center">
-          <h1 class="font-semibold text-primary">404</h1>
-          <h1 class="mt-2">Page not found.</h1>
-          <p class="mt-2 text-base">Sorry, we couldn’t find the page you’re looking for.</p>
+          <h1 class="font-semibold text-primary">{{ t('notFound.code') }}</h1>
+          <h1 class="mt-2">{{ t('notFound.title') }}</h1>
+          <p class="mt-2 text-base">{{ t('notFound.description') }}</p>
         </div>
       </div>
     </main>

@@ -35,7 +35,7 @@ onMounted(() => {
               class="inline-flex rounded-md bg-white text-secondary hover:text-secondary-dark"
               @click="show = false"
             >
-              <span class="sr-only">Close</span>
+              <span class="sr-only">{{ $t('common.close') }}</span>
               <XMarkIcon class="h-5 w-5" aria-hidden="true" />
             </button>
           </div>

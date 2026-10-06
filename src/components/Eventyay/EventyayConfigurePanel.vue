@@ -1,7 +1,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useI18n } from 'vue-i18n'
 import StandardButton from '@/components/Common/StandardButton.vue'
+import LanguageSelector from '@/components/Common/LanguageSelector.vue'
 import PinSetupModal from '@/components/Modals/PinSetupModal.vue'
 import { useCameraStore } from '@/stores/camera'
 import { useCheckinSettingsStore } from '@/stores/checkinSettings'
@@ -15,6 +17,7 @@ import { useRoute } from 'vue-router'
 
 const emit = defineEmits(['close'])
 
+const { t } = useI18n()
 const route = useRoute()
 const processApi = useEventyayApi()
 const eventStore = useEventyayEventStore()
@@ -53,9 +56,9 @@ const selectableEvents = computed(() => {
 
 const checkInListEmptyMessage = computed(() => {
   if (limitCheckInLists.value?.length) {
-    return 'No check-in lists match this device restriction for the selected event.'
+    return t('events.restricted_device_list_empty')
   }
-  return 'No check-in lists found for this event.'
+  return t('events.no_checkin_lists_found')
 })
 
 function resetDraftFromStore() {
@@ -93,7 +96,7 @@ async function loadListsForDraftEvent() {
     }
   } catch (error) {
     console.error('Failed to load check-in lists:', error)
-    errorMessage.value = 'Could not load check-in lists for this event.'
+    errorMessage.value = t('configure.error_load_lists')
   } finally {
     loadingLists.value = false
   }
@@ -119,7 +122,7 @@ void openPanel()
 async function unlockPanel() {
   const token = setupToken.value.trim()
   if (!token) {
-    unlockError.value = 'Enter the device setup token to continue.'
+    unlockError.value = t('configure.error_enter_token')
     return
   }
 
@@ -130,11 +133,11 @@ async function unlockPanel() {
     const result = await processApi.verifySetupToken(token)
     if (!result.success) {
       if (result.error === 'missing_credentials') {
-        unlockError.value = 'Enter the device setup token to continue.'
+        unlockError.value = t('configure.error_enter_token')
       } else {
         unlockError.value =
           result.message ||
-          'Could not verify the setup token. Check the token on the organizer device connect page and try again.'
+          t('configure.error_verify_failed')
       }
       return
     }
@@ -148,7 +151,7 @@ async function unlockPanel() {
     }
   } catch (error) {
     console.error('Failed to verify setup token:', error)
-    unlockError.value = 'Could not verify the setup token. Try again.'
+    unlockError.value = t('configure.error_verify_failed')
   } finally {
     unlocking.value = false
   }
@@ -163,12 +166,12 @@ async function closePanel() {
 
 async function applySettings() {
   if (!draftEventSlug.value) {
-    errorMessage.value = 'Select an event to continue.'
+    errorMessage.value = t('configure.error_select_event')
     return
   }
 
   if (!draftCheckInListId.value) {
-    errorMessage.value = 'Select a check-in list to continue.'
+    errorMessage.value = t('configure.error_select_list')
     return
   }
 
@@ -200,7 +203,7 @@ async function applySettings() {
     emit('close')
   } catch (error) {
     console.error('Failed to apply check-in settings:', error)
-    errorMessage.value = 'Could not save settings. Try again.'
+    errorMessage.value = t('configure.error_save_failed')
   } finally {
     saving.value = false
   }
@@ -211,31 +214,30 @@ async function applySettings() {
   <div class="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4">
     <div class="card flex max-h-[min(90dvh,720px)] w-full max-w-lg flex-col overflow-hidden">
       <div class="border-b border-surface-border px-5 py-4 sm:px-6">
-        <h2 class="text-lg font-semibold text-body">Configure</h2>
+        <h2 class="text-lg font-semibold text-body">{{ t('configure.title') }}</h2>
         <p v-if="isUnlocked" class="mt-1 text-sm text-body-muted">
-          Event, check-in list, and printing options for this device.
+          {{ t('configure.subtitle_unlocked') }}
         </p>
         <p v-else class="mt-1 text-sm text-body-muted">
-          Enter the device setup token from the organizer connect page to change settings.
+          {{ t('configure.subtitle_locked') }}
         </p>
       </div>
 
       <div v-if="!isUnlocked" class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
         <label class="block">
-          <span class="section-title mb-2 block">Setup token</span>
+          <span class="section-title mb-2 block">{{ t('configure.setup_token_heading') }}</span>
           <input
             v-model="setupToken"
             type="password"
             autocomplete="off"
             class="w-full rounded-xl border border-surface-border bg-surface px-3 py-2 text-sm text-body"
-            placeholder="Paste or type the setup token"
+            :placeholder="t('configure.setup_token_placeholder')"
             :disabled="unlocking"
             @keyup.enter="unlockPanel"
           />
         </label>
         <p class="text-xs text-body-muted">
-          Copy or download this token from the device connect page in the organizer dashboard. Keep
-          it handy if you switch between events or check-in lists on this device.
+          {{ t('configure.setup_token_help') }}
         </p>
         <p v-if="unlockError" class="text-sm text-danger">{{ unlockError }}</p>
       </div>
@@ -245,16 +247,16 @@ async function applySettings() {
           v-if="gateName || deviceName"
           class="rounded-xl border border-surface-border bg-surface-muted px-4 py-3 text-sm text-body-muted"
         >
-          <p v-if="gateName"><span class="font-medium text-body">Gate:</span> {{ gateName }}</p>
+          <p v-if="gateName"><span class="font-medium text-body">{{ t('configure.gate_label') }}</span> {{ gateName }}</p>
           <p v-if="deviceName" class="mt-1">
-            <span class="font-medium text-body">Device:</span> {{ deviceName }}
+            <span class="font-medium text-body">{{ t('configure.device_label') }}</span> {{ deviceName }}
           </p>
         </div>
 
         <div>
-          <p class="section-title mb-3">Event</p>
+          <p class="section-title mb-3">{{ t('configure.event_heading') }}</p>
           <div v-if="!selectableEvents.length" class="text-sm text-body-muted">
-            No upcoming events available.
+            {{ t('configure.no_upcoming_events') }}
           </div>
           <div v-else class="max-h-48 space-y-2 overflow-y-auto">
             <label
@@ -277,8 +279,8 @@ async function applySettings() {
         </div>
 
         <div v-if="draftEventSlug">
-          <p class="section-title mb-3">Check-in list</p>
-          <div v-if="loadingLists" class="text-sm text-body-muted">Loading lists…</div>
+          <p class="section-title mb-3">{{ t('configure.checkin_list_heading') }}</p>
+          <div v-if="loadingLists" class="text-sm text-body-muted">{{ t('configure.loading_lists') }}</div>
           <div v-else-if="availableCheckInLists.length" class="max-h-40 space-y-2 overflow-y-auto">
             <label
               v-for="list in availableCheckInLists"
@@ -293,7 +295,7 @@ async function applySettings() {
               <input v-model="draftCheckInListId" type="radio" :value="list.id" />
               <div>
                 <p class="font-medium text-body">{{ list.name }}</p>
-                <p v-if="list.all_products" class="mt-0.5 text-xs text-body-muted">All products</p>
+                <p v-if="list.all_products" class="mt-0.5 text-xs text-body-muted">{{ t('configure.all_products') }}</p>
               </div>
             </label>
           </div>
@@ -301,34 +303,34 @@ async function applySettings() {
         </div>
 
         <div class="space-y-3 border-t border-surface-border pt-4">
-          <p class="section-title">Security & Station Lock</p>
+          <p class="section-title">{{ t('configure.security_lock_heading') }}</p>
           <div
             class="flex items-center justify-between rounded-xl border border-surface-border bg-surface-muted p-4"
           >
             <div>
               <p class="text-sm font-semibold text-body">
-                Station PIN Lock:
+                {{ t('configure.pin_lock_status_label') }}
                 <span :class="isPinLockEnabled ? 'font-bold text-success' : 'text-body-muted'">
                   {{
                     isPinLockEnabled
                       ? isStationLocked
-                        ? 'Enabled (Locked)'
-                        : 'Enabled (Unlocked)'
-                      : 'Disabled'
+                        ? t('configure.enabled_locked')
+                        : t('configure.enabled_unlocked')
+                      : t('configure.disabled')
                   }}
                 </span>
               </p>
               <p class="text-xs text-body-muted">
                 {{
                   isPinLockEnabled
-                    ? 'Prevents walk-in registration, layout switching, and unauthorized attendee edits.'
-                    : 'Set a numeric PIN to protect sensitive actions on unattended devices.'
+                    ? t('configure.pin_lock_active_desc')
+                    : t('configure.pin_lock_inactive_desc')
                 }}
               </p>
             </div>
             <StandardButton
               type="button"
-              :text="isPinLockEnabled ? 'Manage PIN' : 'Set PIN'"
+              :text="isPinLockEnabled ? t('stationLock.manage_pin') : t('stationLock.set_pin_button')"
               variant="secondary"
               size="sm"
               @click="showPinSetup = true"
@@ -336,15 +338,22 @@ async function applySettings() {
           </div>
         </div>
 
+        <div class="flex items-center justify-between border-t border-surface-border pt-4">
+          <div>
+            <p class="section-title mb-0.5">{{ t('navbar.select_language') }}</p>
+          </div>
+          <LanguageSelector />
+        </div>
+
         <div v-if="isBadgeStation" class="space-y-3 border-t border-surface-border pt-4">
-          <p class="section-title">Printing</p>
+          <p class="section-title">{{ t('configure.printing_heading') }}</p>
 
           <label
             class="flex items-center justify-between gap-4 rounded-xl border border-surface-border px-4 py-3"
           >
             <div>
-              <p class="text-sm font-semibold text-body">Auto-print badge</p>
-              <p class="text-xs text-body-muted">Print immediately after each successful scan.</p>
+              <p class="text-sm font-semibold text-body">{{ t('configure.auto_print_badge') }}</p>
+              <p class="text-xs text-body-muted">{{ t('configure.auto_print_desc') }}</p>
             </div>
             <input
               v-model="draftAutoPrint"
@@ -354,7 +363,7 @@ async function applySettings() {
           </label>
 
           <p v-if="draftAutoPrint && !isKioskShell" class="text-xs text-body-muted">
-            For silent printing without dialogs, run the app in kiosk mode (`?kiosk=true`).
+            {{ t('configure.kiosk_silent_hint') }}
           </p>
         </div>
 
@@ -364,7 +373,7 @@ async function applySettings() {
       <div class="flex gap-2 border-t border-surface-border px-5 py-4 sm:px-6">
         <StandardButton
           type="button"
-          text="Cancel"
+          :text="t('common.cancel')"
           variant="white"
           block
           :disabled="saving || unlocking"
@@ -373,7 +382,7 @@ async function applySettings() {
         <StandardButton
           v-if="!isUnlocked"
           type="button"
-          :text="unlocking ? 'Verifying…' : 'Continue'"
+          :text="unlocking ? t('stationLock.verifying') : t('common.continue')"
           variant="primary"
           block
           :disabled="unlocking || !setupToken.trim()"
@@ -382,7 +391,7 @@ async function applySettings() {
         <StandardButton
           v-else
           type="button"
-          :text="saving ? 'Saving…' : 'Save'"
+          :text="saving ? t('common.saving') : t('common.save')"
           variant="primary"
           block
           :disabled="saving || !draftEventSlug || !draftCheckInListId"

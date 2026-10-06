@@ -2,12 +2,14 @@
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { XMarkIcon } from '@heroicons/vue/20/solid'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { printPdfBlob, cancelActivePrint } from '@/utils/badgePdf'
 import { isKioskEnvironment } from '@/utils/kioskLauncher'
 
+const { t } = useI18n()
 const route = useRoute()
 const processEventyayCheckInStore = useProcessEventyayCheckInStore()
 
@@ -146,30 +148,30 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="absolute right-4 top-4 flex h-10 w-10 items-center justify-center rounded-full bg-surface-muted text-body transition hover:bg-surface-border hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-        aria-label="Close preview"
+        :aria-label="t('badgePreview.close_aria')"
         @click="emit('close')"
       >
         <XMarkIcon class="h-7 w-7" />
       </button>
-      <h2 class="mb-4">Badge preview</h2>
+      <h2 class="mb-4">{{ t('badgePreview.title') }}</h2>
 
       <div v-if="showLayoutSelect" class="mb-4">
         <label for="badge-print-layout-select" class="text-sm font-medium text-body">
-          Badge layout
+          {{ t('badgePreview.layout_label') }}
         </label>
         <select
           id="badge-print-layout-select"
           v-model="selectedLayoutId"
           class="mt-1 w-full"
-          aria-label="Badge layout"
+          :aria-label="t('badgePreview.layout_label')"
         >
           <option v-for="layout in layouts" :key="layout.id" :value="String(layout.id)">
-            {{ layout.name }}{{ layout.default ? ' (default)' : '' }}
+            {{ layout.name }}{{ layout.default ? t('badgePreview.default_suffix') : '' }}
           </option>
         </select>
       </div>
 
-      <div v-if="isLoading" class="py-10 text-center text-sm text-body-muted">Loading badge...</div>
+      <div v-if="isLoading" class="py-10 text-center text-sm text-body-muted">{{ t('badgePreview.loading') }}</div>
 
       <div
         v-else-if="printError"
@@ -182,26 +184,26 @@ onBeforeUnmount(() => {
         v-else-if="pdfUrl"
         :src="pdfUrl"
         type="application/pdf"
-        title="Badge preview"
+        :title="t('badgePreview.title')"
         class="mb-4 h-[28rem] w-full rounded-xl border border-surface-border"
       />
 
       <div class="flex flex-wrap gap-2">
         <StandardButton
           type="button"
-          text="Print"
+          :text="t('badgePreview.print')"
           class="btn-primary"
           :disabled="isLoading || !pdfUrl"
           @click="handlePrint"
         />
         <StandardButton
           type="button"
-          text="Download"
+          :text="t('badgePreview.download')"
           class="btn-white"
           :disabled="isLoading || !pdfBlob"
           @click="handleDownload"
         />
-        <StandardButton type="button" text="Close" class="btn-white" @click="emit('close')" />
+        <StandardButton type="button" :text="t('badgePreview.close')" class="btn-white" @click="emit('close')" />
       </div>
     </div>
   </div>

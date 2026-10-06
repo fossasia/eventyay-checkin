@@ -10,7 +10,7 @@ function onRefresh() {
 </script>
 <template>
   <StandardButton
-    text="Refresh"
+    :text="$t('common.refresh')"
     :icon="ArrowPathIcon"
     variant="white"
     size="sm"

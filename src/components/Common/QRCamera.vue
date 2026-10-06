@@ -41,7 +41,7 @@ async function processQR() {
 <template>
   <div class="text-center">
     <h3 v-if="scanType" class="mb-3 text-sm font-medium text-body-muted">
-      Scan QR · {{ scanType }}
+      {{ $t('checkin.qr_scanner') }} · {{ scanType }}
     </h3>
     <p v-if="details" class="mb-3 text-sm text-body-muted">{{ details }}</p>
     <QRCamera @scanned="processQR" />

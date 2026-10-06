@@ -1,6 +1,9 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import StandardButton from '@/components/Common/StandardButton.vue'
+
+const { t } = useI18n()
 
 const props = defineProps({
   fields: {
@@ -59,23 +62,25 @@ watch(
 const isEditMode = computed(() => props.mode === 'edit')
 
 const headingText = computed(() =>
-  isEditMode.value ? 'Edit badge' : 'Customize your badge before printing'
+  isEditMode.value ? t('badgeCustomize.title_edit') : t('badgeCustomize.title_customize')
 )
 
 const helperText = computed(() => {
   if (isEditMode.value) {
     if (props.allowBadgeEditing) {
-      return 'Choose which fields to show on the badge and edit the printed text.'
+      return t('badgeCustomize.helper_edit_allow')
     }
-    return 'Uncheck fields if you want to hide them on the badge.'
+    return t('badgeCustomize.helper_edit_disallow')
   }
   if (props.allowBadgeEditing) {
-    return 'Choose which fields to show and edit the text that will appear on the printed badge.'
+    return t('badgeCustomize.helper_customize_allow')
   }
-  return 'Uncheck fields if you want to hide them on the printed badge.'
+  return t('badgeCustomize.helper_customize_disallow')
 })
 
-const confirmButtonText = computed(() => (isEditMode.value ? 'Save badge' : 'Continue to print'))
+const confirmButtonText = computed(() =>
+  isEditMode.value ? t('badgeCustomize.save_badge') : t('badgeCustomize.continue_to_print')
+)
 
 const visibleFields = computed(() =>
   props.fields.filter((field) => !selectedHidden.value.includes(field.key))
@@ -154,14 +159,14 @@ function handleCancel() {
       </ul>
 
       <p v-if="visibleFields.length === 0" class="mt-4 text-sm text-warning-dark">
-        At least one field should remain visible on the badge.
+        {{ t('badgeCustomize.min_one_field_warning') }}
       </p>
 
       <div class="mt-6 space-y-2">
         <StandardButton
           v-if="showPreview"
           type="button"
-          text="Preview badge"
+          :text="t('badgeCustomize.preview_badge')"
           variant="white"
           block
           :disabled="visibleFields.length === 0"
@@ -175,7 +180,7 @@ function handleCancel() {
           :disabled="visibleFields.length === 0"
           @click="handleConfirm"
         />
-        <StandardButton type="button" text="Cancel" variant="white" block @click="handleCancel" />
+        <StandardButton type="button" :text="t('common.cancel')" variant="white" block @click="handleCancel" />
       </div>
     </div>
   </div>

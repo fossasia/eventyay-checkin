@@ -1,5 +1,6 @@
 <script setup>
 import { DialogTitle } from '@headlessui/vue'
+import { useI18n } from 'vue-i18n'
 import ModalBaseTemplate from '@/components/Modals/ModalBaseTemplate.vue'
 import { KeyIcon } from '@heroicons/vue/24/outline'
 import StandardButton from '@/components/Common/StandardButton.vue'
@@ -8,6 +9,7 @@ import { useLoadingStore } from '@/stores/loading'
 import { usePasswordModalStore } from '@/stores/passwordModal'
 import { useRouter } from 'vue-router'
 
+const { t } = useI18n()
 const authStore = useAuthStore()
 const loadingStore = useLoadingStore()
 const passwordModalStore = usePasswordModalStore()
@@ -50,7 +52,7 @@ async function checkPassword() {
           <KeyIcon class="h-6 w-6 text-info-dark" aria-hidden="true" />
         </div>
         <div class="mt-5 text-center">
-          <DialogTitle as="h3">Please Input Your Password</DialogTitle>
+          <DialogTitle as="h3">{{ t('passwordModal.title') }}</DialogTitle>
           <div class="mt-6">
             <input
               id="password"
@@ -67,7 +69,7 @@ async function checkPassword() {
             "
             class="mt-2 text-left text-sm text-danger"
           >
-            Incorrect Password
+            {{ t('passwordModal.incorrect_password') }}
           </p>
         </div>
       </div>
@@ -75,13 +77,13 @@ async function checkPassword() {
         <div class="grid grid-cols-2 gap-3">
           <StandardButton
             :type="'submit'"
-            :text="'Sign Out'"
+            :text="t('passwordModal.sign_out')"
             :disabled="passwordModalStore.passwordField === ''"
             class="btn-primary w-full justify-center"
           />
           <StandardButton
             :type="'button'"
-            :text="'Cancel'"
+            :text="t('common.cancel')"
             class="btn-secondary w-full justify-center"
             @click="passwordModalStore.$reset()"
           />
