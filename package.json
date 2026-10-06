@@ -27,7 +27,7 @@
     "pinia": "^2.3.1",
     "pinia-plugin-persistedstate": "^4.1.2",
     "qrcode": "^1.5.4",
-    "vue": "^3.5.38",
+    "vue": "^3.5.43",
     "vue-qrcode-reader": "^5.7.3",
     "vue-router": "^4.5.0"
   },
