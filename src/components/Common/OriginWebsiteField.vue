@@ -1,11 +1,13 @@
 <script setup>
 import { computed } from 'vue'
+import { useI18n } from 'vue-i18n'
 import {
   CUSTOM_ORIGIN_WEBSITE,
   DEFAULT_ORIGIN_WEBSITE,
   ORIGIN_WEBSITE_OPTIONS
 } from '@/utils/originWebsites'
 
+const { t } = useI18n()
 const selected = defineModel('selected', { type: String, default: DEFAULT_ORIGIN_WEBSITE })
 const customUrl = defineModel('customUrl', { type: String, default: '' })
 
@@ -16,7 +18,7 @@ const isCustom = computed(() => selected.value === CUSTOM_ORIGIN_WEBSITE)
   <div class="space-y-3">
     <div>
       <label for="origin-website" class="block text-xs font-semibold text-body-muted uppercase">
-        Origin website
+        {{ t('auth.origin_website') }}
       </label>
       <select
         id="origin-website"
@@ -30,7 +32,7 @@ const isCustom = computed(() => selected.value === CUSTOM_ORIGIN_WEBSITE)
     </div>
     <div v-if="isCustom">
       <label for="custom-origin-url" class="block text-xs font-semibold text-body-muted uppercase">
-        Custom URL
+        {{ t('auth.custom_url') }}
       </label>
       <input
         id="custom-origin-url"

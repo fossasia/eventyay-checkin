@@ -40,7 +40,7 @@ const showProgress = computed(() => isSyncing.value || syncProgressPercent.value
         :aria-valuenow="Math.round(syncProgressPercent)"
         aria-valuemin="0"
         aria-valuemax="100"
-        :aria-label="`Offline sync ${progressText}`"
+        :aria-label="`${$t('offlineSync.syncing')}: ${progressText}`"
         :aria-busy="isSyncing"
       >
         <div

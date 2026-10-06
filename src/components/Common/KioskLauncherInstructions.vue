@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import {
   buildChromeKioskCommand,
@@ -24,6 +25,7 @@ const props = defineProps({
   }
 })
 
+const { t } = useI18n()
 const notificationStore = useNotificationStore()
 const copiedKioskCommand = ref('')
 const chromeKioskCommand = computed(() => buildChromeKioskCommand(props.targetUrl))
@@ -40,7 +42,7 @@ async function copyKioskCommand(command, label) {
     }, 2000)
   } catch {
     notificationStore.addNotification(
-      ['Copy failed', 'Select the command below and copy it manually.'],
+      [t('kiosk.copy_failed_title'), t('kiosk.copy_failed_desc')],
       'warning'
     )
   }
@@ -53,29 +55,29 @@ async function copyKioskCommand(command, label) {
       {{ intro }}
     </p>
     <p v-else class="text-center text-xs text-body-muted leading-relaxed">
-      Commands for {{ kioskPlatformLabel }}. Run one in {{ kioskShellLabel }}, then continue below.
+      {{ t('kiosk.platform_commands', { platform: kioskPlatformLabel, shell: kioskShellLabel }) }}
     </p>
 
     <ol
       v-if="showRegistrationSteps"
       class="mt-3 space-y-2 text-left text-xs leading-relaxed text-body-muted list-decimal list-inside"
     >
-      <li>Copy and run the Chrome command below to open kiosk mode.</li>
-      <li>In that window, register this device.</li>
+      <li>{{ t('kiosk.step_copy_chrome') }}</li>
+      <li>{{ t('kiosk.step_register_in_window') }}</li>
     </ol>
 
     <ul v-else class="mt-3 space-y-1.5 text-left text-xs leading-relaxed text-body-muted">
       <li class="flex gap-2">
         <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-        <span>Fullscreen kiosk mode</span>
+        <span>{{ t('kiosk.feature_fullscreen') }}</span>
       </li>
       <li class="flex gap-2">
         <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-        <span>Silent printing without a print dialog</span>
+        <span>{{ t('kiosk.feature_silent_print') }}</span>
       </li>
       <li class="flex gap-2">
         <span class="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-primary" aria-hidden="true" />
-        <span>Use the same browser profile you register in</span>
+        <span>{{ t('kiosk.feature_browser_profile') }}</span>
       </li>
     </ul>
 
@@ -86,7 +88,7 @@ async function copyKioskCommand(command, label) {
           <span
             class="rounded-full bg-primary/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-primary"
           >
-            Recommended
+            {{ t('common.recommended') }}
           </span>
         </div>
         <pre
@@ -94,7 +96,7 @@ async function copyKioskCommand(command, label) {
         >{{ chromeKioskCommand }}</pre>
         <StandardButton
           type="button"
-          :text="copiedKioskCommand === 'chrome' ? 'Copied' : 'Copy Chrome command'"
+          :text="copiedKioskCommand === 'chrome' ? t('common.copied') : t('kiosk.copy_chrome_command')"
           class="btn-primary mt-2 w-full justify-center"
           size="sm"
           @click="copyKioskCommand(chromeKioskCommand, 'chrome')"
@@ -108,7 +110,7 @@ async function copyKioskCommand(command, label) {
         >{{ firefoxKioskCommand }}</pre>
         <StandardButton
           type="button"
-          :text="copiedKioskCommand === 'firefox' ? 'Copied' : 'Copy Firefox command'"
+          :text="copiedKioskCommand === 'firefox' ? t('common.copied') : t('kiosk.copy_firefox_command')"
           class="btn-white mt-2 w-full justify-center"
           size="sm"
           @click="copyKioskCommand(firefoxKioskCommand, 'firefox')"

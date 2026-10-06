@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import { apiV1Path, createAuthorizedDeviceApi, normalizeApiResourcePath } from '@/utils/serverUrl'
 import {
@@ -47,6 +48,7 @@ import {
 import { waitForDesignAssets } from '@/utils/waitForDesignAssets'
 import { enterKioskShell, isKioskEnvironment } from '@/utils/kioskLauncher'
 
+const { t } = useI18n()
 const notificationStore = useNotificationStore()
 const processApi = useEventyayApi()
 const { apitoken, url, organizer, eventSlug, selectedRole, selectedCheckInListId, gateName } =
@@ -272,7 +274,7 @@ const offlineBrowseAvailable = computed(() => {
 })
 
 const searchPlaceholder = computed(() =>
-  offlineBrowseAvailable.value ? 'Search synced attendees...' : 'Search by name or email...'
+  offlineBrowseAvailable.value ? t('checkin.synced_attendees_hint') : t('checkin.search_placeholder')
 )
 
 watch(eventSlug, () => {
@@ -357,7 +359,7 @@ const printBadgeDirect = async () => {
   }
   const outcome = await processEventyayCheckInStore.printBadge(badgeUrl.value)
   if (outcome === PRINT_OUTCOME.PRINTED) {
-    notificationStore.addNotification(['Success', 'Badge sent to printer'], 'success')
+    notificationStore.addNotification([t('common.success'), t('notifications.badge_sent_to_printer')], 'success')
   } else if (outcome !== PRINT_OUTCOME.CANCELLED) {
     notificationStore.addNotification(
       ['Badge print', 'Badge is still generating or could not be printed. Try Print preview.'],
@@ -411,11 +413,11 @@ const openBadgeEditDialog = async () => {
     }
     applyBadgeCustomizationResult(customization, customizationResult)
     if (!isBadgeCustomizationUnchanged(customization, customizationResult)) {
-      notificationStore.addNotification(['Badge', 'Badge updated'], 'success')
+      notificationStore.addNotification([t('common.success'), t('notifications.badge_updated')], 'success')
     }
   } catch (error) {
     console.error('Error editing badge:', error)
-    notificationStore.addNotification(['Badge', 'Unable to update badge'], 'error')
+    notificationStore.addNotification([t('common.error'), t('notifications.unable_to_update_badge')], 'error')
   }
 }
 
@@ -436,7 +438,7 @@ const handleModalPrint = async () => {
       processEventyayCheckInStore.markPrintedBadge(message.value.orderPositionId)
     }
     if (outcome === PRINT_OUTCOME.PRINTED) {
-      notificationStore.addNotification(['Success', 'Badge sent to printer'], 'success')
+      notificationStore.addNotification([t('common.success'), t('notifications.badge_sent_to_printer')], 'success')
     } else if (outcome !== PRINT_OUTCOME.CANCELLED) {
       notificationStore.addNotification(
         ['Badge print', 'Badge is still generating or could not be printed. Try Print preview.'],
@@ -1069,7 +1071,7 @@ const saveAttendeeDetails = async () => {
     const updatedOrderPosition = await patchAttendeeDetails(orderPositionId, patchPayload)
     updatePopupAttendee(updatedOrderPosition)
     updateOrderInSearchResults(updatedOrderPosition)
-    notificationStore.addNotification(['Attendee', 'Details updated'], 'success')
+    notificationStore.addNotification([t('common.success'), t('notifications.attendee_details_updated')], 'success')
     isEditDialogOpen.value = false
   } catch (error) {
     console.error('Error saving attendee details:', error)
@@ -1372,12 +1374,12 @@ const isPositionCanceled = (order) =>
 
 const getAttendeeActionLabel = (order) => {
   if (isPositionCanceled(order)) {
-    return 'Canceled'
+    return t('checkin.action_canceled')
   }
   if (isBadgeStation.value) {
-    return isCheckedIn(order) ? 'View & print' : 'Check in & print'
+    return isCheckedIn(order) ? t('checkin.action_view_and_print') : t('checkin.action_checkin_and_print')
   }
-  return isCheckedIn(order) ? 'Checked in' : 'Check in'
+  return isCheckedIn(order) ? t('checkin.action_checked_in') : t('checkin.action_check_in')
 }
 
 const openAttendeeFromSearch = async (order) => {
@@ -1398,7 +1400,7 @@ const openAttendeeFromSearch = async (order) => {
     })
     if (!response || (response.status !== 'ok' && response.status !== 'redeemed')) {
       if (!showSuccess.value && !showError.value) {
-        notificationStore.addNotification(['Error', 'Unable to open attendee details'], 'error')
+        notificationStore.addNotification([t('common.error'), t('notifications.unable_to_open_attendee')], 'error')
       }
       return
     }
@@ -1422,12 +1424,12 @@ const openAttendeeFromSearch = async (order) => {
   >
     <div class="mb-3 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
       <div class="min-w-0">
-        <h1>{{ isBadgeStation ? 'Badge Station' : 'Check-in' }}</h1>
+        <h1>{{ isBadgeStation ? t('checkin.badge_station') : t('checkin.check_in') }}</h1>
         <p class="mt-1 text-sm text-body-muted">
           {{
             isBadgeStation
-              ? 'Scan tickets to print badges. Already checked-in attendees can reprint.'
-              : 'Scan tickets on the left or search attendees on the right.'
+              ? t('checkin.subtitle_badge')
+              : t('checkin.subtitle_staff')
           }}
         </p>
       </div>
@@ -1435,7 +1437,7 @@ const openAttendeeFromSearch = async (order) => {
         <StandardButton
           v-if="showLiveRegistrationEntry"
           type="button"
-          :text="isLiveRegLocked ? 'Live registration (Locked)' : 'Live registration'"
+          :text="isLiveRegLocked ? t('checkin.live_registration_locked') : t('checkin.live_registration')"
           :icon="isLiveRegLocked ? LockClosedIcon : null"
           :variant="isLiveRegLocked ? 'secondary' : 'success'"
           size="sm"
@@ -1449,7 +1451,7 @@ const openAttendeeFromSearch = async (order) => {
           v-if="showLiveRegistrationEntry && isLoadingProducts"
           class="text-center text-xs text-body-muted sm:text-right"
         >
-          Loading ticket products…
+          {{ t('checkin.loading_ticket_products') }}
         </p>
         <div
           v-if="selectedCheckInListName || gateName"
@@ -1465,7 +1467,7 @@ const openAttendeeFromSearch = async (order) => {
             v-if="selectedCheckInListName"
             class="rounded-xl border border-primary/20 bg-primary/10 px-3.5 py-1.5 text-xs font-semibold text-primary"
           >
-            Active List: {{ selectedCheckInListName }}
+            {{ t('checkin.active_list', { name: selectedCheckInListName }) }}
           </div>
         </div>
       </div>
@@ -1476,7 +1478,7 @@ const openAttendeeFromSearch = async (order) => {
       :class="isBadgeStation ? 'mx-auto w-full max-w-2xl' : 'lg:grid-cols-2'"
     >
       <section class="card flex min-h-0 flex-col overflow-hidden p-5 sm:p-6">
-        <p class="section-title mb-4 shrink-0">QR scanner</p>
+        <p class="section-title mb-4 shrink-0">{{ t('checkin.qr_scanner') }}</p>
         <div class="flex min-h-0 flex-1 flex-col justify-center overflow-y-auto">
           <QRCamera qr-type="eventyaycheckin" :scan-type="isBadgeStation ? 'Badge' : 'Check-In'" />
 
@@ -1485,12 +1487,12 @@ const openAttendeeFromSearch = async (order) => {
             class="mt-5 flex items-center justify-between rounded-xl border border-surface-border bg-surface-muted px-4 py-3"
           >
             <div>
-              <p class="text-sm font-semibold text-body">Customize badge before printing</p>
+              <p class="text-sm font-semibold text-body">{{ t('checkin.customize_badge_before_printing') }}</p>
               <p class="text-xs text-body-muted">
                 {{
                   autoPrintCustomizeOnce
-                    ? 'Shows field options once, then prints.'
-                    : 'Prints immediately using the default badge layout.'
+                    ? t('checkin.customize_badge_hint_on')
+                    : t('checkin.customize_badge_hint_off')
                 }}
               </p>
             </div>
@@ -1535,7 +1537,7 @@ const openAttendeeFromSearch = async (order) => {
       </section>
 
       <section v-if="!isBadgeStation" class="card flex min-h-0 flex-col overflow-hidden p-5 sm:p-6">
-        <p class="section-title mb-4 shrink-0">Search</p>
+        <p class="section-title mb-4 shrink-0">{{ t('checkin.search_title') }}</p>
 
         <div
           v-if="isSearchLocked"
@@ -1546,13 +1548,13 @@ const openAttendeeFromSearch = async (order) => {
           >
             <LockClosedIcon class="h-6 w-6" />
           </div>
-          <h3 class="text-base font-bold text-body">Attendee Search is Locked</h3>
+          <h3 class="text-base font-bold text-body">{{ t('checkin.search_locked_title') }}</h3>
           <p class="mt-1 max-w-xs text-xs text-body-muted">
-            This station is locked by PIN. Check in attendees by scanning their ticket QR code.
+            {{ t('checkin.search_locked_description') }}
           </p>
           <StandardButton
             type="button"
-            text="Unlock Search"
+            :text="t('checkin.unlock_search')"
             variant="white"
             size="sm"
             class="mt-4"
@@ -1578,23 +1580,23 @@ const openAttendeeFromSearch = async (order) => {
               v-if="!searchQuery && !offlineBrowseAvailable"
               class="flex h-full items-center justify-center text-center"
             >
-              <p class="text-sm text-body-muted">Type at least 2 characters to search attendees.</p>
+              <p class="text-sm text-body-muted">{{ t('checkin.search_prompt') }}</p>
             </div>
 
             <div v-else-if="loading" class="py-10 text-center text-sm text-body-muted">
-              Searching...
+              {{ t('checkin.searching') }}
             </div>
 
             <div v-else-if="orders.length === 0" class="py-10 text-center text-sm text-body-muted">
               <p v-if="offlineBrowseAvailable && !searchQuery">
-                No synced attendees yet. Connect to the internet to sync check-in data.
+                {{ t('checkin.no_synced_attendees') }}
               </p>
-              <p v-else>No matching attendees found.</p>
+              <p v-else>{{ t('checkin.no_matching_attendees') }}</p>
             </div>
 
             <template v-else>
               <p v-if="offlineBrowseAvailable && !searchQuery" class="mb-3 text-xs text-body-muted">
-                Showing synced attendees. Type to filter.
+                {{ t('checkin.synced_attendees_hint') }}
               </p>
               <TransitionGroup name="list" tag="div" class="space-y-2">
                 <article
@@ -1606,7 +1608,7 @@ const openAttendeeFromSearch = async (order) => {
                     <div class="min-w-0">
                       <h3 class="truncate font-semibold text-body">{{ order.attendee_name }}</h3>
                       <p class="truncate text-sm text-body-muted">
-                        {{ order.attendee_email || 'No email' }}
+                        {{ order.attendee_email || t('checkin.no_email') }}
                       </p>
                       <p v-if="order.company" class="truncate text-sm text-body-muted">
                         {{ order.company }}
@@ -1640,40 +1642,40 @@ const openAttendeeFromSearch = async (order) => {
         class="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
       >
         <div class="card w-full max-w-md p-6">
-          <h2 class="mb-4">Register attendee</h2>
+          <h2 class="mb-4">{{ t('liveRegistration.dialog_title') }}</h2>
           <div class="space-y-3">
             <div>
-              <label>Name</label>
+              <label>{{ t('liveRegistration.name') }}</label>
               <input v-model="liveRegistrationForm.attendee_name" type="text" class="mt-1" />
             </div>
             <div>
-              <label>Email</label>
+              <label>{{ t('liveRegistration.email') }}</label>
               <input v-model="liveRegistrationForm.attendee_email" type="email" class="mt-1" />
             </div>
             <div>
-              <label>Company</label>
+              <label>{{ t('liveRegistration.company') }}</label>
               <input v-model="liveRegistrationForm.company" type="text" class="mt-1" />
             </div>
             <div>
-              <label>Job title</label>
+              <label>{{ t('liveRegistration.job_title') }}</label>
               <input v-model="liveRegistrationForm.job_title" type="text" class="mt-1" />
             </div>
             <div>
-              <label>Product</label>
+              <label>{{ t('liveRegistration.product') }}</label>
               <select
                 v-model="liveRegistrationForm.product_id"
                 class="mt-1"
                 :disabled="isLoadingProducts || !products.length"
               >
                 <option disabled value="">
-                  {{ isLoadingProducts ? 'Loading products…' : 'Select product' }}
+                  {{ isLoadingProducts ? t('liveRegistration.loading_products') : t('liveRegistration.select_product') }}
                 </option>
                 <option v-for="product in products" :key="product.id" :value="String(product.id)">
                   {{ getProductDisplayLabel(product) }}
                 </option>
               </select>
               <p v-if="!isLoadingProducts && !products.length" class="mt-1 text-xs text-danger">
-                No ticket products are available for this event.
+                {{ t('liveRegistration.no_products_available') }}
               </p>
             </div>
           </div>
@@ -1685,14 +1687,14 @@ const openAttendeeFromSearch = async (order) => {
           <div class="mt-6 flex justify-end gap-2">
             <StandardButton
               type="button"
-              text="Cancel"
+              :text="t('common.cancel')"
               variant="white"
               :disabled="isRegistering"
               @click="closeLiveRegistrationDialog"
             />
             <StandardButton
               type="button"
-              :text="isRegistering ? 'Registering...' : 'Register'"
+              :text="isRegistering ? t('liveRegistration.registering') : t('liveRegistration.register')"
               variant="primary"
               :disabled="isRegistering || isLoadingProducts || !products.length"
               @click="submitLiveRegistration"
@@ -1711,14 +1713,14 @@ const openAttendeeFromSearch = async (order) => {
           <h2 class="mb-1 text-xl text-success">
             {{
               liveRegistrationResult.offlinePending
-                ? 'Registration queued'
-                : 'Registration complete'
+                ? t('liveRegistration.result_queued')
+                : t('liveRegistration.result_complete')
             }}
           </h2>
           <p class="mb-4 text-sm text-body-muted">
             {{ liveRegistrationResult.attendeeName }}
             <span v-if="liveRegistrationResult.orderCode">
-              · Order {{ liveRegistrationResult.orderCode }}
+              · {{ t('liveRegistration.order_label', { code: liveRegistrationResult.orderCode }) }}
             </span>
           </p>
 
@@ -1726,16 +1728,14 @@ const openAttendeeFromSearch = async (order) => {
             v-if="liveRegistrationResult.offlinePending"
             class="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-dark"
           >
-            You are offline. This registration will sync when connectivity returns. Printing is
-            available after a successful sync.
+            {{ t('liveRegistration.offline_notice') }}
           </p>
 
           <p
             v-else-if="!liveRegistrationResult.ticketDownloadAvailable"
             class="rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning-dark"
           >
-            Ticket PDF download is not configured for this event. Enable the PDF ticket output
-            plugin and ensure a Celery worker is running for ticket generation.
+            {{ t('liveRegistration.no_pdf_notice') }}
           </p>
 
           <p v-if="liveRegistrationTicketError" class="mt-3 text-sm text-danger">
@@ -1746,7 +1746,7 @@ const openAttendeeFromSearch = async (order) => {
             <StandardButton
               v-if="liveRegistrationResult.ticketDownloadAvailable"
               type="button"
-              :text="isLoadingLiveRegistrationTicket ? 'Preparing ticket…' : 'Print ticket'"
+              :text="isLoadingLiveRegistrationTicket ? t('liveRegistration.preparing_ticket') : t('liveRegistration.print_ticket')"
               variant="primary"
               block
               :disabled="isLoadingLiveRegistrationTicket"
@@ -1755,7 +1755,7 @@ const openAttendeeFromSearch = async (order) => {
             <StandardButton
               v-if="liveRegistrationResult.ticketDownloadAvailable"
               type="button"
-              :text="isLoadingLiveRegistrationTicket ? 'Preparing ticket…' : 'Download ticket'"
+              :text="isLoadingLiveRegistrationTicket ? t('liveRegistration.preparing_ticket') : t('liveRegistration.download_ticket')"
               variant="white"
               block
               :disabled="isLoadingLiveRegistrationTicket"
@@ -1763,7 +1763,7 @@ const openAttendeeFromSearch = async (order) => {
             />
             <StandardButton
               type="button"
-              text="Done"
+              :text="t('common.done')"
               variant="white"
               block
               @click="closeLiveRegistrationSuccess"
@@ -1779,10 +1779,10 @@ const openAttendeeFromSearch = async (order) => {
         class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
       >
         <div class="card w-full max-w-md p-6">
-          <h2 class="mb-4">Edit attendee</h2>
+          <h2 class="mb-4">{{ t('attendee.edit_attendee') }}</h2>
           <div class="space-y-3">
             <div>
-              <label>Name</label>
+              <label>{{ t('attendee.name') }}</label>
               <input v-model="editableAttendee.attendee_name" type="text" class="mt-1" />
             </div>
             <div
@@ -1795,7 +1795,7 @@ const openAttendeeFromSearch = async (order) => {
                 v-model="editableAttendee.fields[fieldKey]"
                 class="mt-1"
               >
-                <option value="">Select an option</option>
+                <option value="">{{ t('attendee.select_option') }}</option>
                 <option
                   v-for="option in choiceOptionsForField(fieldKey)"
                   :key="option.id"
@@ -1816,14 +1816,14 @@ const openAttendeeFromSearch = async (order) => {
           <div class="mt-6 flex justify-end gap-2">
             <StandardButton
               type="button"
-              text="Cancel"
+              :text="t('common.cancel')"
               variant="white"
               :disabled="isSavingAttendee"
               @click="closeEditDialog"
             />
             <StandardButton
               type="button"
-              :text="isSavingAttendee ? 'Saving…' : 'Save attendee'"
+              :text="isSavingAttendee ? t('common.saving') : t('attendee.save_attendee')"
               variant="primary"
               :disabled="isSavingAttendee"
               @click="saveAttendeeDetails"

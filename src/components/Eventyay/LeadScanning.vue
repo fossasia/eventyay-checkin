@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useI18n } from 'vue-i18n'
 import { XMarkIcon } from '@heroicons/vue/20/solid'
 import { createAuthorizedExhibitorApi, exhibitorApiPath } from '@/utils/serverUrl'
 import { handleExhibitorApiError } from '@/utils/deviceErrors'
@@ -12,6 +13,7 @@ import { useLeadScanStore } from '@/stores/leadscan'
 import { useLoadingStore } from '@/stores/loading'
 import { useTagStore } from '@/stores/tags'
 
+const { t } = useI18n()
 const loadingStore = useLoadingStore()
 const leadScanStore = useLeadScanStore()
 const tagStore = useTagStore()
@@ -31,19 +33,19 @@ const isSaving = ref(false)
 
 const resultLabel = computed(() => {
   if (message.value?.alreadyScanned) {
-    return 'Lead already scanned'
+    return t('exhibitor.lead_already_scanned')
   }
   if (showError.value) {
-    return 'Lead scan issue'
+    return t('exhibitor.lead_scan_issue')
   }
-  return 'Lead captured'
+  return t('exhibitor.lead_captured')
 })
 
 const errorAlertMessage = computed(() => {
   if (!showError.value || message.value?.attendee) {
     return ''
   }
-  return String(message.value?.message || 'Lead scan failed.').trim()
+  return String(message.value?.message || t('exhibitor.could_not_scan')).trim()
 })
 
 const showAttendeeModal = computed(
@@ -95,7 +97,7 @@ const countdownLabel = computed(() => {
   if (!Number.isFinite(seconds) || seconds <= 0) {
     return ''
   }
-  return `Closing in ${seconds}`
+  return t('attendee.closing_in', { seconds })
 })
 
 async function submitManualLead() {
@@ -226,10 +228,10 @@ function showPopup() {
 <template>
   <div class="page-shell">
     <div class="mb-5 text-center">
-      <h1>Lead scanning</h1>
+      <h1>{{ t('exhibitor.scanning_title') }}</h1>
       <p class="mt-1 text-sm text-body-muted">{{ exhiname }}</p>
       <p v-if="boothname || boothid" class="text-xs text-body-muted">
-        {{ boothname }}<span v-if="boothid"> · Booth {{ boothid }}</span>
+        {{ boothname }}<span v-if="boothid"> · {{ t('exhibitor.booth_label', { booth: boothid }) }}</span>
       </p>
     </div>
 
@@ -238,26 +240,26 @@ function showPopup() {
         <QRCamera qr-type="eventyaylead" scan-type="Lead scan" />
         <div class="mt-4 border-t border-surface-border pt-4">
           <p class="text-xs font-semibold text-body-muted uppercase tracking-wide mb-2 text-center">
-            Or enter lead code manually
+            {{ t('exhibitor.manual_code_title') }}
           </p>
           <form class="flex gap-2" @submit.prevent="submitManualLead">
             <input
               id="manual-lead-code"
               v-model="manualCode"
               type="text"
-              placeholder="Lead code or scan badge QR"
+              :placeholder="t('exhibitor.manual_code_placeholder')"
               class="flex-1 min-w-0"
               required
             />
             <StandardButton
               type="submit"
-              text="Scan"
+              :text="t('exhibitor.scan_button')"
               variant="primary"
             />
           </form>
         </div>
         <StandardButton
-          text="Download leads"
+          :text="t('exhibitor.download_leads')"
           class="btn-white mt-4 w-full justify-center"
           @click="leadScanStore.exportLeads"
         />
@@ -280,20 +282,20 @@ function showPopup() {
             <button
               type="button"
               class="flex h-10 w-10 items-center justify-center rounded-full bg-surface-muted text-body transition hover:bg-surface-border hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-              aria-label="Close"
+              :aria-label="t('common.close')"
               @click="handleClose"
             >
               <XMarkIcon class="h-7 w-7" />
             </button>
           </div>
 
-          <h2 class="mb-3 text-xl text-danger">Could not scan lead</h2>
+          <h2 class="mb-3 text-xl text-danger">{{ t('exhibitor.could_not_scan') }}</h2>
           <p class="text-sm text-body-muted">{{ errorAlertMessage }}</p>
 
           <div class="mt-6">
             <StandardButton
               type="button"
-              text="OK"
+              :text="t('common.ok')"
               class="btn-primary w-full justify-center"
               @click="handleClose"
             />
@@ -318,7 +320,7 @@ function showPopup() {
             <button
               type="button"
               class="flex h-10 w-10 items-center justify-center rounded-full bg-surface-muted text-body transition hover:bg-surface-border hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
-              aria-label="Close"
+              :aria-label="t('common.close')"
               @click="handleClose"
             >
               <XMarkIcon class="h-7 w-7" />
@@ -335,11 +337,11 @@ function showPopup() {
 
           <dl class="space-y-2 border-t border-surface-border pt-4 text-sm">
             <div class="flex justify-between gap-4">
-              <dt class="text-body-muted">Name</dt>
+              <dt class="text-body-muted">{{ t('exhibitor.name') }}</dt>
               <dd class="text-right font-medium">{{ message.attendee.name || '—' }}</dd>
             </div>
             <div class="flex justify-between gap-4">
-              <dt class="text-body-muted">Email</dt>
+              <dt class="text-body-muted">{{ t('exhibitor.email') }}</dt>
               <dd class="break-all text-right">{{ message.attendee.email || '—' }}</dd>
             </div>
           </dl>
@@ -350,7 +352,7 @@ function showPopup() {
               v-model="notes"
               rows="3"
               class="w-full"
-              placeholder="Notes"
+              :placeholder="t('exhibitor.notes_placeholder')"
               @focus="handleNotesInput"
               @input="handleNotesInput"
             />
@@ -361,14 +363,14 @@ function showPopup() {
           <div class="mt-5 flex gap-2">
             <StandardButton
               type="button"
-              text="Save"
+              :text="t('common.save')"
               class="btn-primary flex-1 justify-center"
               :disabled="isSaving"
               @click="handleSave"
             />
             <StandardButton
               type="button"
-              text="Cancel"
+              :text="t('common.cancel')"
               class="btn-white flex-1 justify-center"
               @click="handleCancel"
             />

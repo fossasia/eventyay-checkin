@@ -1,5 +1,6 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { LockClosedIcon, KeyIcon, BackspaceIcon } from '@heroicons/vue/24/outline'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useStationLockStore } from '@/stores/stationLock'
@@ -11,17 +12,21 @@ const props = defineProps({
   },
   title: {
     type: String,
-    default: 'Unlock Station'
+    default: ''
   },
   description: {
     type: String,
-    default: 'Enter your 4–6 digit station PIN to unlock privileged actions.'
+    default: ''
   }
 })
 
 const emit = defineEmits(['close', 'unlocked', 'reset-pin'])
 
+const { t } = useI18n()
 const stationLock = useStationLockStore()
+
+const modalTitle = computed(() => props.title || t('stationLock.unlock_station'))
+const modalDescription = computed(() => props.description || t('stationLock.unlock_station_description'))
 
 const pin = ref('')
 const error = ref('')
@@ -175,23 +180,25 @@ async function submitPin() {
       emit('unlocked')
       emit('close')
     } else if (result.error === 'locked_out') {
-      error.value = `Too many failed attempts. Try again in ${result.remainingSeconds}s.`
+      error.value = t('stationLock.too_many_attempts', { seconds: result.remainingSeconds })
       pin.value = ''
     } else if (result.error === 'incorrect_pin') {
       if (result.lockoutSeconds > 0) {
-        error.value = `Incorrect PIN. Station locked for ${result.lockoutSeconds}s.`
+        error.value = t('stationLock.incorrect_pin_cooldown', { seconds: result.lockoutSeconds })
       } else {
         const remainingAttempts = 3 - result.failedAttempts
-        error.value = `Incorrect PIN.${remainingAttempts > 0 ? ` (${remainingAttempts} attempts remaining)` : ''}`
+        error.value = remainingAttempts > 0
+          ? t('stationLock.incorrect_pin_remaining', { attempts: remainingAttempts })
+          : t('stationLock.incorrect_pin')
       }
       pin.value = ''
     } else {
-      error.value = 'Failed to verify PIN. Try again.'
+      error.value = t('stationLock.failed_verify_pin')
       pin.value = ''
     }
   } catch (err) {
     console.error('PIN verification error:', err)
-    error.value = 'An error occurred during verification.'
+    error.value = t('stationLock.failed_verify_pin')
     pin.value = ''
   } finally {
     isVerifying.value = false
@@ -202,7 +209,7 @@ async function submitPin() {
 async function submitTokenFallback() {
   const token = setupToken.value.trim()
   if (!token) {
-    tokenError.value = 'Enter the organizer device setup token.'
+    tokenError.value = t('configure.error_enter_token')
     return
   }
 
@@ -218,11 +225,11 @@ async function submitTokenFallback() {
       emit('reset-pin')
       emit('close')
     } else {
-      tokenError.value = result.message || 'Invalid setup token. Check organizer dashboard.'
+      tokenError.value = result.message || t('configure.error_verify_failed')
     }
   } catch (err) {
     console.error('Setup token verification error:', err)
-    tokenError.value = 'Could not verify token. Try again.'
+    tokenError.value = t('configure.error_verify_failed')
   } finally {
     isVerifyingToken.value = false
   }
@@ -234,7 +241,7 @@ async function submitTokenFallback() {
     v-if="show"
     role="dialog"
     aria-modal="true"
-    :aria-label="title"
+    :aria-label="modalTitle"
     class="fixed inset-0 z-[90] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
   >
     <div
@@ -265,13 +272,13 @@ async function submitTokenFallback() {
           <KeyIcon v-else class="h-6 w-6 text-warning" />
         </div>
         <h3 class="text-lg font-bold text-body">
-          {{ showTokenFallback ? 'Master Setup Token' : title }}
+          {{ showTokenFallback ? t('stationLock.master_setup_token') : modalTitle }}
         </h3>
         <p class="mt-1 text-xs text-body-muted">
           {{
             showTokenFallback
-              ? 'Enter the device setup token from your dashboard to unlock and reset PIN.'
-              : description
+              ? t('stationLock.master_token_description')
+              : modalDescription
           }}
         </p>
       </div>
@@ -284,13 +291,12 @@ async function submitTokenFallback() {
           role="alert"
           class="rounded-xl border border-danger/30 bg-danger/10 px-4 py-2.5 text-center text-xs font-semibold text-danger sm:text-sm"
         >
-          Locked out: Retry in {{ remainingCooldown }}s
+          {{ t('stationLock.locked_out_cooldown', { seconds: remainingCooldown }) }}
         </div>
 
         <!-- PIN Dots Display (Clicking focuses hidden input for hardware keyboards) -->
         <div
           class="flex cursor-pointer items-center justify-center gap-3 py-2"
-          title="Click to focus keyboard"
           @click="focusInput"
         >
           <div
@@ -330,7 +336,7 @@ async function submitTokenFallback() {
             :disabled="isLockedOut || isVerifying || pin.length === 0"
             @click="clearPin"
           >
-            Clear
+            {{ t('common.clear') }}
           </button>
 
           <!-- Zero Button -->
@@ -346,7 +352,7 @@ async function submitTokenFallback() {
           <!-- Backspace Button -->
           <button
             type="button"
-            aria-label="Delete digit"
+            :aria-label="t('common.delete')"
             class="sm:h-13 flex h-12 min-h-[48px] items-center justify-center rounded-xl border border-surface-border bg-surface text-body transition hover:border-primary/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 active:scale-95 active:bg-surface-muted disabled:pointer-events-none disabled:opacity-40"
             :disabled="isLockedOut || isVerifying || pin.length === 0"
             @click="deleteDigit"
@@ -358,7 +364,7 @@ async function submitTokenFallback() {
         <!-- Submit Button -->
         <StandardButton
           type="button"
-          :text="isVerifying ? 'Verifying…' : 'Unlock'"
+          :text="isVerifying ? t('stationLock.verifying') : t('stationLock.unlock')"
           variant="primary"
           block
           class="min-h-[44px]"
@@ -373,7 +379,7 @@ async function submitTokenFallback() {
             class="rounded-lg px-2 py-1 text-xs font-semibold text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             @click="showTokenFallback = true"
           >
-            Forgot PIN or Locked Out?
+            {{ t('stationLock.forgot_pin') }}
           </button>
         </div>
       </div>
@@ -381,21 +387,20 @@ async function submitTokenFallback() {
       <!-- Master Setup Token Fallback View -->
       <div v-else class="space-y-4 px-5 py-4 sm:px-6 sm:py-5">
         <div>
-          <label class="section-title mb-2 block">Organizer Setup Token</label>
+          <label class="section-title mb-2 block">{{ t('stationLock.organizer_setup_token') }}</label>
           <input
             ref="tokenInput"
             v-model="setupToken"
             type="password"
             autocomplete="off"
-            placeholder="Paste or type setup token"
+            :placeholder="t('stationLock.token_placeholder')"
             class="w-full rounded-xl border border-surface-border bg-surface px-3 py-2.5 text-sm text-body focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
             :disabled="isVerifyingToken"
             @keyup.enter="submitTokenFallback"
           />
         </div>
         <p class="text-xs text-body-muted">
-          Entering the setup token bypasses the lock timer and immediately unlocks the station so
-          you can reset the PIN.
+          {{ t('stationLock.token_description') }}
         </p>
 
         <p v-if="tokenError" role="alert" class="text-xs font-semibold text-danger">
@@ -405,7 +410,7 @@ async function submitTokenFallback() {
         <div class="flex flex-col gap-2 sm:flex-row">
           <StandardButton
             type="button"
-            text="Back to PIN"
+            :text="t('stationLock.back_to_pin')"
             variant="white"
             class="min-h-[44px] flex-1"
             :disabled="isVerifyingToken"
@@ -413,7 +418,7 @@ async function submitTokenFallback() {
           />
           <StandardButton
             type="button"
-            :text="isVerifyingToken ? 'Verifying…' : 'Unlock & Reset'"
+            :text="isVerifyingToken ? t('stationLock.verifying') : t('stationLock.unlock_and_reset')"
             variant="warning"
             class="min-h-[44px] flex-1"
             :disabled="!setupToken.trim() || isVerifyingToken"
@@ -429,7 +434,7 @@ async function submitTokenFallback() {
           class="rounded-lg px-3 py-1.5 text-xs font-semibold text-body-muted transition hover:text-body focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
           @click="emit('close')"
         >
-          Cancel
+          {{ t('common.cancel') }}
         </button>
       </div>
     </div>

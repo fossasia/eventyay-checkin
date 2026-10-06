@@ -1,11 +1,13 @@
 <script setup>
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { getRoleLabel, getRoleRouteName } from '@/utils/session'
 import { getSecurityProfileLabel, getSuggestedRoleForProfile } from '@/utils/deviceProfiles'
 
+const { t } = useI18n()
 const router = useRouter()
 const processApi = useEventyayApi()
 
@@ -41,10 +43,9 @@ function signOut() {
   <div class="page-shell flex min-h-[calc(100vh-2.75rem)] items-center justify-center py-10">
     <div class="card w-full max-w-md p-6 sm:p-8">
       <div class="mb-6 text-center">
-        <h1>Wrong station type</h1>
+        <h1>{{ t('profileMismatch.title') }}</h1>
         <p class="mt-2 text-sm text-body-muted">
-          This device is registered with the <strong>{{ profileLabel }}</strong> security profile,
-          which does not include <strong>{{ currentRoleLabel }}</strong> access.
+          {{ t('profileMismatch.description', { profile: profileLabel, currentRole: currentRoleLabel }) }}
         </p>
       </div>
 
@@ -52,7 +53,7 @@ function signOut() {
         <StandardButton
           v-if="suggestedRole"
           type="button"
-          :text="`Switch to ${suggestedRoleLabel}`"
+          :text="t('profileMismatch.switch_button', { suggestedRole: suggestedRoleLabel })"
           variant="primary"
           block
           @click="switchToSuggestedRole"
@@ -60,7 +61,7 @@ function signOut() {
 
         <StandardButton
           type="button"
-          text="Sign out"
+          :text="t('profileMismatch.sign_out')"
           variant="white"
           block
           @click="signOut"
@@ -68,9 +69,7 @@ function signOut() {
       </div>
 
       <p class="mt-5 rounded-xl border border-surface-border bg-surface-muted px-4 py-3 text-sm text-body-muted">
-        If <strong>{{ currentRoleLabel }}</strong> is the correct station type for this device, ask your
-        organizer to change its security profile in the dashboard, then generate a new setup code and
-        register this device again.
+        {{ t('profileMismatch.help_text', { currentRole: currentRoleLabel }) }}
       </p>
     </div>
   </div>

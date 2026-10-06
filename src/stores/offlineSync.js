@@ -15,6 +15,8 @@ import {
 } from '@/offline/syncEngine'
 import { setPendingPrintSync } from '@/offline/badgePrintAssets'
 
+import { t } from '@/i18n'
+
 export const useOfflineSyncStore = defineStore('offlineSync', () => {
   const DISPLAY_TICK_MS = 50
   const DISPLAY_CATCHUP_RATIO = 0.28
@@ -49,16 +51,22 @@ export const useOfflineSyncStore = defineStore('offlineSync', () => {
       return ''
     }
     if (isSyncing.value) {
-      const phase = syncPhase.value ? phaseLabel(syncPhase.value) : 'Syncing'
+      const phaseKey = `offlineSync.phase_${syncPhase.value}`
+      const translatedPhase = t(phaseKey)
+      const phase = syncPhase.value
+        ? (translatedPhase !== phaseKey ? translatedPhase : phaseLabel(syncPhase.value))
+        : t('offlineSync.syncing')
       return `${phase} ${Math.round(syncProgressPercent.value)}%`
     }
     if (!isOnline.value) {
-      return pendingCount.value ? `Offline · ${pendingCount.value} pending` : 'Offline'
+      return pendingCount.value
+        ? t('offlineSync.offline_pending', { count: pendingCount.value })
+        : t('offlineSync.offline')
     }
     if (lastSyncedAt.value) {
-      return 'Synced'
+      return t('offlineSync.synced')
     }
-    return 'Online'
+    return t('offlineSync.online')
   })
 
   function clearDisplayTimer() {

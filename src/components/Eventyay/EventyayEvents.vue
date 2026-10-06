@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import StandardButton from '@/components/Common/StandardButton.vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useEventyayEventStore } from '@/stores/eventyayEvent'
@@ -10,6 +11,8 @@ import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { useLoadingStore } from '@/stores/loading'
 import { getRoleRouteName } from '@/utils/session'
 import { MagnifyingGlassIcon, CalendarDaysIcon } from '@heroicons/vue/24/outline'
+
+const { t } = useI18n()
 
 const exhibitorTab = ref('upcoming')
 
@@ -198,9 +201,9 @@ const getCheckInListLabel = (list) => {
 
 const checkInListEmptyMessage = computed(() => {
   if (limitCheckInLists.value?.length) {
-    return 'No check-in lists match this device restriction for the selected event. Update the device settings in the organizer dashboard.'
+    return t('events.restricted_device_list_empty')
   }
-  return 'No check-in lists found for this event. Create a check-in list in the event settings first.'
+  return t('events.no_checkin_lists_found')
 })
 
 const submitForm = async () => {
@@ -238,9 +241,9 @@ const submitForm = async () => {
     <div class="mx-auto max-w-2xl">
       <div class="mb-6 text-center">
         <h1>
-          {{ selectedRole === 'Exhibitor' ? 'Select exhibitor event' : 'Select event' }}
+          {{ selectedRole === 'Exhibitor' ? t('events.select_exhibitor_event') : t('events.select_event') }}
         </h1>
-        <p class="mt-2 text-sm text-body-muted">Choose the event you are working on today.</p>
+        <p class="mt-2 text-sm text-body-muted">{{ t('events.subtitle') }}</p>
       </div>
 
       <div v-if="error" class="mb-4 rounded-xl border border-danger/20 bg-danger/5 px-4 py-3 text-sm text-danger">
@@ -255,7 +258,7 @@ const submitForm = async () => {
             :class="exhibitorTab === 'upcoming' ? 'bg-primary text-white' : 'bg-surface-muted text-body-muted'"
             @click="exhibitorTab = 'upcoming'"
           >
-            Current / Upcoming
+            {{ t('events.current_upcoming') }}
           </button>
           <button
             type="button"
@@ -263,7 +266,7 @@ const submitForm = async () => {
             :class="exhibitorTab === 'past' ? 'bg-primary text-white' : 'bg-surface-muted text-body-muted'"
             @click="exhibitorTab = 'past'"
           >
-            Past
+            {{ t('events.past') }}
           </button>
         </div>
 
@@ -272,13 +275,13 @@ const submitForm = async () => {
           <input
             v-model="searchQuery"
             type="search"
-            placeholder="Search by name or slug..."
+            :placeholder="t('events.search_placeholder')"
             class="pl-10"
           />
         </div>
 
         <div v-if="visibleEvents.upcoming.length" class="mb-5">
-          <p class="section-title mb-3">Upcoming / current</p>
+          <p class="section-title mb-3">{{ t('events.upcoming_current_section') }}</p>
           <div class="space-y-2">
             <label
               v-for="event in visibleEvents.upcoming"
@@ -299,7 +302,7 @@ const submitForm = async () => {
         </div>
 
         <div v-if="selectedRole === 'Exhibitor' && visibleEvents.past.length" class="mb-5">
-          <p class="section-title mb-3">Past events</p>
+          <p class="section-title mb-3">{{ t('events.past_events_section') }}</p>
           <div class="space-y-2">
             <label
               v-for="event in visibleEvents.past"
@@ -319,7 +322,7 @@ const submitForm = async () => {
           v-if="!visibleEvents.upcoming.length && !visibleEvents.past.length"
           class="rounded-xl border border-dashed border-surface-border px-4 py-8 text-center text-sm text-body-muted"
         >
-          No events match your search.
+          {{ t('events.no_events_matching') }}
         </div>
 
         <div v-if="showPagination" class="mb-4 flex items-center justify-between text-sm text-body-muted">
@@ -329,25 +332,25 @@ const submitForm = async () => {
             :disabled="!hasPreviousPage"
             @click="currentPage = Math.max(1, currentPage - 1)"
           >
-            Previous
+            {{ t('common.previous') }}
           </button>
-          <span>Page {{ currentPage }} of {{ totalPages }}</span>
+          <span>{{ t('common.page_of', { current: currentPage, total: totalPages }) }}</span>
           <button
             type="button"
             class="btn-white px-3 py-1.5"
             :disabled="!hasNextPage"
             @click="currentPage = Math.min(totalPages, currentPage + 1)"
           >
-            Next
+            {{ t('common.next') }}
           </button>
         </div>
 
         <!-- Check-in List Selector -->
         <div v-if="selectedEvent && selectedRole !== 'Exhibitor'" class="border-t border-surface-border mt-5 pt-5 mb-5">
-          <p class="section-title mb-3">Select check-in list</p>
+          <p class="section-title mb-3">{{ t('events.select_checkin_list') }}</p>
           <div v-if="loadingLists" class="text-xs text-body-muted flex items-center gap-2">
             <span class="animate-spin rounded-full h-3.5 w-3.5 border-2 border-primary border-t-transparent"></span>
-            Loading lists...
+            {{ t('events.loading_lists') }}
           </div>
           <div v-else-if="availableCheckInLists.length" class="space-y-2">
             <label
@@ -359,8 +362,8 @@ const submitForm = async () => {
               <input v-model="selectedCheckInListId" type="radio" :value="list.id" />
               <div>
                 <p class="font-medium text-body">{{ getCheckInListLabel(list) }}</p>
-                <p v-if="list.all_products" class="mt-1 text-xs text-body-muted">All products allowed</p>
-                <p v-else class="mt-1 text-xs text-body-muted">Restricted products list</p>
+                <p v-if="list.all_products" class="mt-1 text-xs text-body-muted">{{ t('events.all_products_allowed') }}</p>
+                <p v-else class="mt-1 text-xs text-body-muted">{{ t('events.restricted_products') }}</p>
               </div>
             </label>
           </div>
@@ -371,16 +374,16 @@ const submitForm = async () => {
 
         <StandardButton
           type="submit"
-          text="Continue"
+          :text="t('events.continue_button')"
           class="btn-primary w-full justify-center py-2.5"
           :disabled="!selectedEvent || (selectedRole !== 'Exhibitor' && !selectedCheckInListId)"
         />
       </form>
 
       <div v-else-if="!error" class="card p-8 text-center">
-        <p class="text-body-muted">No events available for this organizer.</p>
+        <p class="text-body-muted">{{ t('events.no_events_available') }}</p>
         <StandardButton
-          text="Refresh"
+          :text="t('common.refresh')"
           class="btn-primary mx-auto mt-4 justify-center"
           @click="eventyayEventStore.fetchEvents()"
         />

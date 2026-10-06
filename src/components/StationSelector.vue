@@ -1,5 +1,6 @@
 <script setup>
 import { onBeforeMount } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useEventsStore } from '@/stores/events'
 import { useStationsStore } from '@/stores/stations'
 import { useStationSelectorStore } from '@/stores/stationSelector'
@@ -8,6 +9,8 @@ import { useLoadingStore } from '@/stores/loading'
 import { useNotificationStore } from '@/stores/notification'
 import ListboxSelector from '@/components/Common/ListboxSelector.vue'
 import StandardButton from '@/components/Common/StandardButton.vue'
+
+const { t } = useI18n()
 
 // stores
 const eventsStore = useEventsStore()
@@ -70,7 +73,7 @@ async function createStation() {
   } catch (error) {
     // show notification error
     loadingStore.contentLoaded()
-    notificationStore.addNotification(['Error', 'Error creating new station.'], 'error')
+    notificationStore.addNotification([t('common.error'), t('stationSelector.error_create_station')], 'error')
   }
 }
 
@@ -132,11 +135,11 @@ async function submitForm() {
 <template>
   <div class="-mt-16 flex h-screen flex-col justify-center">
     <div class="my-auto sm:mx-auto sm:w-full sm:max-w-sm">
-      <h2 class="text-center">Select Event</h2>
+      <h2 class="text-center">{{ t('stationSelector.select_event_title') }}</h2>
       <form class="mt-10 space-y-3" @submit.prevent="submitForm">
         <ListboxSelector
-          :select-text="'Select Event'"
-          :label="'Event'"
+          :select-text="t('stationSelector.select_event_placeholder')"
+          :label="t('stationSelector.event_label')"
           :data="eventsStore.userEvents"
           :selected-option="stationSelectorStore.selectedEvent"
           @update-selected="(n) => stationSelectorStore.$patch({ selectedEvent: n })"
@@ -144,8 +147,8 @@ async function submitForm() {
         <!-- select booth type -->
         <ListboxSelector
           v-if="stationSelectorStore.selectedEvent.id"
-          :select-text="'Select Type'"
-          :label="'Type'"
+          :select-text="t('stationSelector.select_type_placeholder')"
+          :label="t('stationSelector.type_label')"
           :data="stationsStore.stationTypes"
           :selected-option="stationSelectorStore.selectedType"
           @update-selected="(n) => stationSelectorStore.$patch({ selectedType: n })"
@@ -154,8 +157,8 @@ async function submitForm() {
         <!-- for session checkin and checkout, only retrieve locations from api and not able to create new -->
         <ListboxSelector
           v-if="stationSelectorStore.isStationType"
-          :select-text="'Select Station'"
-          :label="'Station'"
+          :select-text="t('stationSelector.select_station_placeholder')"
+          :label="t('stationSelector.station_label')"
           :data="stationSelectorStore.availableStations"
           :selected-option="stationSelectorStore.selectedStation"
           @update-selected="(n) => stationSelectorStore.$patch({ selectedStation: n })"
@@ -166,8 +169,8 @@ async function submitForm() {
           v-if="
             !stationSelectorStore.isStationType && stationSelectorStore.isStationType !== undefined
           "
-          :select-text="'Select Microlocation'"
-          :label="'Microlocation'"
+          :select-text="t('stationSelector.select_microlocation_placeholder')"
+          :label="t('stationSelector.microlocation_label')"
           :data="eventsStore.eventMicrolocations"
           :selected-option="stationSelectorStore.selectedStation"
           @update-selected="(n) => stationSelectorStore.$patch({ selectedStation: n })"
@@ -175,7 +178,7 @@ async function submitForm() {
 
         <!-- display if create new booth is selected -->
         <div v-if="stationSelectorStore.isCreateNewStation">
-          <label for="station">Station Name</label>
+          <label for="station">{{ t('stationSelector.station_name_label') }}</label>
           <div class="mt-2">
             <input
               id="station"
@@ -183,7 +186,7 @@ async function submitForm() {
               name="station"
               type="text"
               required="true"
-              placeholder="Enter station name"
+              :placeholder="t('stationSelector.enter_station_name')"
               class="block w-full"
             />
           </div>
@@ -193,7 +196,7 @@ async function submitForm() {
           <StandardButton
             :disabled="!stationSelectorStore.validation"
             :type="'submit'"
-            :text="'Go'"
+            :text="t('common.go')"
             class="btn-primary mt-6 w-full justify-center"
           />
         </div>
