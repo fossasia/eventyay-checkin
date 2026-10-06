@@ -66,7 +66,7 @@ describe('LanguageSelector.vue', () => {
     expect(thOption).toBeDefined()
   })
 
-  it('toggles between Translated and All tabs', async () => {
+  it('shows all supported languages directly in the list', async () => {
     const wrapper = mount(LanguageSelector, {
       global: {
         plugins: [i18n]
@@ -76,11 +76,7 @@ describe('LanguageSelector.vue', () => {
     const trigger = wrapper.find('button')
     await trigger.trigger('click')
 
-    const allTab = wrapper.findAll('button').find((b) => b.text().includes('All (49)'))
-    expect(allTab).toBeDefined()
-    await allTab.trigger('click')
-
-    // Should now show locales from all 49 including e.g. Bengali
+    // Shows locales from all supported languages directly without tabs
     const bnOption = wrapper.findAll('button').find((b) => b.text().includes('বাংলা'))
     expect(bnOption).toBeDefined()
   })

@@ -7,7 +7,7 @@ import {
   XMarkIcon
 } from '@heroicons/vue/24/outline'
 import { CheckIcon, ChevronDownIcon } from '@heroicons/vue/20/solid'
-import { SUPPORTED_LOCALES, TRANSLATED_LOCALES } from '@/i18n/locales'
+import { SUPPORTED_LOCALES } from '@/i18n/locales'
 import { setLocale } from '@/i18n'
 
 const props = defineProps({
@@ -22,7 +22,6 @@ const { locale, t } = useI18n()
 
 const isOpen = ref(false)
 const searchQuery = ref('')
-const activeTab = ref('translated') // 'translated' | 'all'
 const searchInputRef = ref(null)
 
 const currentLocale = computed(() => {
@@ -32,14 +31,9 @@ const currentLocale = computed(() => {
   )
 })
 
-const translatedLocales = computed(() => TRANSLATED_LOCALES)
-
 const filteredLocales = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
   if (!query) {
-    if (activeTab.value === 'translated') {
-      return translatedLocales.value
-    }
     return SUPPORTED_LOCALES
   }
 
@@ -143,33 +137,7 @@ watch(isOpen, (val) => {
           </button>
         </div>
 
-        <!-- Filter tabs when not searching -->
-        <div v-if="!searchQuery" class="mb-2 flex rounded-lg bg-surface-muted p-0.5 text-[11px]">
-          <button
-            type="button"
-            class="flex-1 rounded-md py-1 font-medium transition"
-            :class="
-              activeTab === 'translated'
-                ? 'bg-surface text-primary shadow-xs'
-                : 'text-body-muted hover:text-body'
-            "
-            @click="activeTab = 'translated'"
-          >
-            Translated ({{ translatedLocales.length }})
-          </button>
-          <button
-            type="button"
-            class="flex-1 rounded-md py-1 font-medium transition"
-            :class="
-              activeTab === 'all'
-                ? 'bg-surface text-primary shadow-xs'
-                : 'text-body-muted hover:text-body'
-            "
-            @click="activeTab = 'all'"
-          >
-            All ({{ SUPPORTED_LOCALES.length }})
-          </button>
-        </div>
+
 
         <!-- Locales list -->
         <div class="max-h-64 overflow-y-auto space-y-0.5 pr-0.5">
@@ -262,33 +230,7 @@ watch(isOpen, (val) => {
             </button>
           </div>
 
-          <!-- Filter tabs on mobile -->
-          <div v-if="!searchQuery" class="mb-3 flex rounded-xl bg-surface-muted p-1 text-xs">
-            <button
-              type="button"
-              class="flex-1 rounded-lg py-1.5 font-medium transition"
-              :class="
-                activeTab === 'translated'
-                  ? 'bg-surface text-primary shadow-xs'
-                  : 'text-body-muted'
-              "
-              @click="activeTab = 'translated'"
-            >
-              Translated ({{ translatedLocales.length }})
-            </button>
-            <button
-              type="button"
-              class="flex-1 rounded-lg py-1.5 font-medium transition"
-              :class="
-                activeTab === 'all'
-                  ? 'bg-surface text-primary shadow-xs'
-                  : 'text-body-muted'
-              "
-              @click="activeTab = 'all'"
-            >
-              All ({{ SUPPORTED_LOCALES.length }})
-            </button>
-          </div>
+
 
           <!-- Scrollable Languages List -->
           <div class="min-h-0 flex-1 overflow-y-auto space-y-1 pr-1 pb-4">
