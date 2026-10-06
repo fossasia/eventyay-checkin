@@ -101,6 +101,17 @@ describe('i18n infrastructure', () => {
     expect(t('common.save')).toBe('Salvar')
   })
 
+  it('matches specific Chinese subtags before generic zh alias (e.g. zh-Hant-TW -> zh_Hant)', () => {
+    setLocale('zh-Hant-TW')
+    expect(getCurrentLocale()).toBe('zh_Hant')
+
+    setLocale('zh-Hans-CN')
+    expect(getCurrentLocale()).toBe('zh_Hans')
+
+    setLocale('zh-TW')
+    expect(getCurrentLocale()).toBe('zh_Hant')
+  })
+
   it('correctly sets document language and direction attribute for RTL and BCP 47 tags', () => {
     setLocale('ar')
     expect(document.documentElement.dir).toBe('rtl')

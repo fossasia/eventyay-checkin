@@ -77,7 +77,17 @@ export function normalizeLocale(code, fallback = DEFAULT_LOCALE) {
   if (LOCALE_ALIASES[lower]) {
     return LOCALE_ALIASES[lower]
   }
-  const langOnly = lower.split(/[-_]/)[0]
+
+  // Check progressive subtag prefixes (e.g. 'zh-hant' before 'zh' for 'zh-hant-tw')
+  const parts = lower.split(/[-_]/)
+  for (let i = parts.length - 1; i >= 1; i--) {
+    const subtagPrefix = parts.slice(0, i).join('-')
+    if (LOCALE_ALIASES[subtagPrefix]) {
+      return LOCALE_ALIASES[subtagPrefix]
+    }
+  }
+
+  const langOnly = parts[0]
   if (LOCALE_ALIASES[langOnly]) {
     return LOCALE_ALIASES[langOnly]
   }
