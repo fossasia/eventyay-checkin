@@ -56,7 +56,7 @@ function toggleOpen() {
   if (isOpen.value) {
     searchQuery.value = ''
     nextTick(() => {
-      searchInputRef.value?.focus()
+      searchInputRef.value?.focus({ preventScroll: true })
     })
   }
 }
@@ -72,12 +72,10 @@ function onSelectLocale(code) {
 }
 
 watch(isOpen, (val) => {
-  if (val && typeof document !== 'undefined') {
-    // Prevent body scrolling on mobile sheet
-    if (window.innerWidth < 640) {
-      document.body.style.overflow = 'hidden'
-    }
-  } else if (typeof document !== 'undefined') {
+  if (typeof document === 'undefined') return
+  if (val && window.innerWidth < 640) {
+    document.body.style.overflow = 'hidden'
+  } else {
     document.body.style.overflow = ''
   }
 })
@@ -92,7 +90,7 @@ watch(isOpen, (val) => {
       :class="props.variant === 'compact' ? 'px-2 py-1.5' : ''"
       :aria-label="t('navbar.select_language')"
       :aria-expanded="isOpen"
-      @click="toggleOpen"
+      @click.stop.prevent="toggleOpen"
     >
       <GlobeAltIcon class="h-4 w-4 shrink-0 text-body-muted" aria-hidden="true" />
       <span
@@ -189,9 +187,7 @@ watch(isOpen, (val) => {
               <span class="leading-tight">{{ item.nativeName }}</span>
               <span class="text-[10px] text-body-muted leading-tight">
                 {{ item.name }}
-                <span v-if="!item.hasTranslations" class="ml-1 text-[9px] text-amber-500 font-normal">
-                  (Weblate)
-                </span>
+
               </span>
             </div>
             <CheckIcon
@@ -312,9 +308,7 @@ watch(isOpen, (val) => {
                 <span class="text-sm">{{ item.nativeName }}</span>
                 <span class="text-xs text-body-muted">
                   {{ item.name }}
-                  <span v-if="!item.hasTranslations" class="ml-1 text-[10px] text-amber-500 font-normal">
-                    (Weblate)
-                  </span>
+
                 </span>
               </div>
               <CheckIcon
