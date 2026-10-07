@@ -153,7 +153,12 @@ export function mergeLayoutsIntoSnapshot(snapshot, layouts) {
       continue
     }
     const existing = snapshot.layouts[String(normalized.id)]
-    if (existing?.backgroundPdf && !normalized.backgroundPdf) {
+    if (
+      existing?.backgroundPdf &&
+      normalized.background &&
+      existing.background === normalized.background &&
+      !normalized.backgroundPdf
+    ) {
       normalized.backgroundPdf = existing.backgroundPdf
     }
     snapshot.layouts[String(normalized.id)] = normalized

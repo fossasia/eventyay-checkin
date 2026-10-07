@@ -44,13 +44,13 @@ async function fetchAssetBytes(baseUrl, apitoken, pathOrUrl) {
   }
   const url = /^https?:\/\//i.test(raw) ? raw : joinUrl(baseUrl, raw)
   try {
-    const response = await fetch(url, {
-      credentials: 'omit',
-      headers: {
-        Authorization: `Device ${apitoken}`,
-        Accept: 'application/pdf, image/*, font/ttf, application/octet-stream, */*'
-      }
-    })
+    const headers = {
+      Accept: 'application/pdf, image/*, font/ttf, application/octet-stream, */*'
+    }
+    if (new URL(url).origin === new URL(resolveServerUrl(baseUrl)).origin) {
+      headers.Authorization = `Device ${apitoken}`
+    }
+    const response = await fetch(url, { credentials: 'omit', headers })
     if (!response.ok) {
       return null
     }
