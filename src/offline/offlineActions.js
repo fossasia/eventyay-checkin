@@ -154,17 +154,18 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
 
   for (const item of pending) {
     try {
+      const ordersUrl = `${base}/api/v1/organizers/${organizer}/events/${eventSlug}/orders/`
       const createResp = await fetch(
-        `${base}/api/v1/organizers/${organizer}/events/${eventSlug}/orders/`,
+        item.createdCode ? `${ordersUrl}${encodeURIComponent(item.createdCode)}/` : ordersUrl,
         {
-          method: 'POST',
+          method: item.createdCode ? 'GET' : 'POST',
           credentials: 'omit',
           headers: {
             Authorization: `Device ${apitoken}`,
             Accept: 'application/json',
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(item.payload)
+          body: item.createdCode ? undefined : JSON.stringify(item.payload)
         }
       )
       const created = await createResp.json().catch(() => ({}))
@@ -177,6 +178,7 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
         continue
       }
 
+      item.createdCode = created.code
       let paid = created
       if (created.status !== 'p') {
         const paidResp = await fetch(
