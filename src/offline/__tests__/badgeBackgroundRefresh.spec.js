@@ -48,12 +48,10 @@ describe('offline badge background refresh', () => {
     index.printAssets = Object.fromEntries(
       Object.keys(PRINT_ASSET_PATHS).map((key) => [key, 'cached-font'])
     )
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        arrayBuffer: async () => new TextEncoder().encode('new-pdf').buffer
-      })
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new TextEncoder().encode('new-pdf').buffer
+    })
     vi.stubGlobal('fetch', fetchMock)
     await syncBadgePrintAssets(index, {
       url: 'https://tickets.test',
@@ -67,4 +65,43 @@ describe('offline badge background refresh', () => {
     )
     expect(index.layouts.get('7').backgroundPdf).toBe(btoa('new-pdf'))
   })
+  it('clears legacy cached bytes when neither layout has a background URL', () => {
+    const snapshot = createEmptySnapshot('org', 'event')
+    mergeLayoutsIntoSnapshot(snapshot, [{ id: 7, layout: '[]', backgroundPdf: 'legacy-pdf' }])
+    mergeLayoutsIntoSnapshot(snapshot, [{ id: 7, layout: '[]', background: null }])
+    expect(snapshot.layouts['7'].backgroundPdf).toBeNull()
+  })
+
+  it.each([true, false])(
+    'does not expose the device token to an external background (external=%s)',
+    async (external) => {
+      const layout = refreshedLayout(
+        external ? 'https://cdn.test/new.pdf' : 'https://tickets.test/new.pdf'
+      )
+      const index = createMemoryIndex(createEmptySnapshot('org', 'event'))
+      index.layouts.set('7', layout)
+      index.printAssets = Object.fromEntries(
+        Object.keys(PRINT_ASSET_PATHS).map((key) => [key, 'cached-font'])
+      )
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false })
+        .mockResolvedValueOnce({
+          ok: true,
+          arrayBuffer: async () => new TextEncoder().encode('new-pdf').buffer
+        })
+      vi.stubGlobal('fetch', fetchMock)
+      await syncBadgePrintAssets(index, {
+        url: 'https://tickets.test',
+        apitoken: 'device-token',
+        organizer: 'org',
+        eventSlug: 'event'
+      })
+      const [url, options] = fetchMock.mock.calls[1]
+      expect(url).toBe(layout.background)
+      expect(options.credentials).toBe('omit')
+      expect(options.headers.Authorization).toBe(external ? undefined : 'Device device-token')
+      expect(index.layouts.get('7').backgroundPdf).toBe(btoa('new-pdf'))
+    }
+  )
 })
