@@ -45,3 +45,51 @@ describe('createCheckInListRequestCoordinator', () => {
     expect(await second).toBe('lists')
   })
 })
+
+describe('request replacement', () => {
+  it.each(['reset', 'switch'])(
+    'keeps the newer request after an older %s request settles',
+    async (replacement) => {
+      const coordinator = createCheckInListRequestCoordinator()
+      let finishOld
+      let finishNew
+      const first = coordinator.run(
+        'org:event',
+        () =>
+          new Promise((resolve) => {
+            finishOld = resolve
+          })
+      )
+      await Promise.resolve()
+      if (replacement === 'reset') {
+        coordinator.reset()
+      } else {
+        await coordinator.run('org:other', async () => 'other')
+      }
+      const fetchNew = vi.fn(
+        () =>
+          new Promise((resolve) => {
+            finishNew = resolve
+          })
+      )
+      const second = coordinator.run('org:event', fetchNew)
+      await Promise.resolve()
+      finishOld('old')
+      await first
+      const third = coordinator.run('org:event', fetchNew)
+      await Promise.resolve()
+      expect(fetchNew).toHaveBeenCalledOnce()
+      finishNew('new')
+      await expect(second).resolves.toBe('new')
+      await expect(third).resolves.toBe('new')
+    }
+  )
+
+  it('releases a rejected request so the next call can retry', async () => {
+    const coordinator = createCheckInListRequestCoordinator()
+    await expect(
+      coordinator.run('org:event', () => Promise.reject(new Error('offline')))
+    ).rejects.toThrow('offline')
+    await expect(coordinator.run('org:event', async () => 'retry')).resolves.toBe('retry')
+  })
+})
