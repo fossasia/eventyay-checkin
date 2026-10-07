@@ -38,16 +38,17 @@ export function createCheckInListRequestCoordinator() {
     }
 
     inFlightCacheKey = cacheKey
-    inFlightRequest = Promise.resolve()
+    const request = Promise.resolve()
       .then(fetcher)
       .finally(() => {
-        if (inFlightCacheKey === cacheKey) {
+        if (inFlightRequest === request) {
           inFlightRequest = null
           inFlightCacheKey = ''
         }
       })
 
-    return inFlightRequest
+    inFlightRequest = request
+    return request
   }
 
   function reset() {
