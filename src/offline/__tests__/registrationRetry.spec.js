@@ -73,4 +73,28 @@ describe('offline registration retry', () => {
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(fetchMock.mock.calls[0][1].method).toBe('GET')
   })
+  it('retains canceled registrations as terminal errors without retrying payment', async () => {
+    const index = queuedIndex()
+    index.pendingRegistrations[0].createdCode = 'ORDER'
+    const fetchMock = vi.fn().mockResolvedValue(response({ code: 'ORDER', status: 'c' }))
+    vi.stubGlobal('fetch', fetchMock)
+    expect((await flushPendingRegistrations(index, context)).flushed).toBe(0)
+    expect(index.pendingRegistrations[0].lastError).toBe('order_canceled')
+    expect((await flushPendingRegistrations(index, context)).flushed).toBe(0)
+    expect(fetchMock).toHaveBeenCalledOnce()
+    expect(fetchMock.mock.calls[0][1].method).toBe('GET')
+  })
+
+  it('keeps expired orders eligible for payment', async () => {
+    const index = queuedIndex()
+    index.pendingRegistrations[0].createdCode = 'ORDER'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(response({ code: 'ORDER', status: 'e' }))
+      .mockResolvedValueOnce(response(paidOrder))
+    vi.stubGlobal('fetch', fetchMock)
+    expect((await flushPendingRegistrations(index, context)).flushed).toBe(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][0]).toContain('/ORDER/mark_paid/')
+  })
 })

@@ -153,6 +153,10 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
   let flushed = 0
 
   for (const item of pending) {
+    if (item.lastError === 'order_canceled') {
+      remaining.push(item)
+      continue
+    }
     try {
       const ordersUrl = `${base}/api/v1/organizers/${organizer}/events/${eventSlug}/orders/`
       const createResp = await fetch(
@@ -179,6 +183,10 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
       }
 
       item.createdCode = created.code
+      if (created.status === 'c') {
+        remaining.push({ ...item, lastError: 'order_canceled' })
+        continue
+      }
       let paid = created
       if (created.status !== 'p') {
         const paidResp = await fetch(
