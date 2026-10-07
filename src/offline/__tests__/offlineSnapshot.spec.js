@@ -112,6 +112,7 @@ describe('normalize + memory index', () => {
         name: 'Default',
         default: true,
         layout: '[]',
+        background: '/media/pub/bg.pdf',
         backgroundPdf: 'JVBERi0x'
       }
     ])
