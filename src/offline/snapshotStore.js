@@ -5,6 +5,7 @@ const SALT_KEY = 'eventyay-offline-salt'
 const memoryBlobs = new Map()
 let sessionSalt = null
 let saltPersisted = false
+let lastWriteTime = 0
 const pendingSaves = new Map()
 
 function snapshotKey(organizer, eventSlug) {
@@ -52,25 +53,33 @@ export async function saveEncryptedSnapshot(organizer, eventSlug, envelope) {
   if (sessionSalt && !saltPersisted) {
     return
   }
-
+  lastWriteTime = Math.max(Date.now(), lastWriteTime + 1)
+  const record = { envelope, writtenAt: lastWriteTime }
   const previous = pendingSaves.get(key) || Promise.resolve()
   const save = previous
     .catch(() => {})
     .then(async () => {
       const cache = await openCache()
+      let cached = false
       if (cache) {
         try {
-          const body = new Blob([JSON.stringify(envelope)], { type: 'application/json' })
+          const body = new Blob([JSON.stringify(record)], { type: 'application/json' })
           await cache.put(new Request(`https://offline.eventyay.local/${key}`), new Response(body))
-          localStorage.removeItem(key)
-          return
+          cached = true
         } catch {
           // Try localStorage when CacheStorage is full or unavailable.
         }
       }
+      if (cached) {
+        try {
+          localStorage.removeItem(key)
+        } catch {
+          // The cached record remains newer than any fallback left behind.
+        }
+        return
+      }
       try {
-        // Distinguish a new fallback from legacy copies that may predate the cache.
-        localStorage.setItem(key, JSON.stringify({ envelope }))
+        localStorage.setItem(key, JSON.stringify(record))
       } catch {
         // Memory-only fallback already set.
       }
@@ -85,6 +94,14 @@ export async function saveEncryptedSnapshot(organizer, eventSlug, envelope) {
   }
 }
 
+function snapshotRecord(value) {
+  const record = value?.envelope ? value : { envelope: value, writtenAt: 0 }
+  if (!record.envelope?.iv || !record.envelope?.data) {
+    return null
+  }
+  return record
+}
+
 export async function loadEncryptedSnapshot(organizer, eventSlug) {
   const key = snapshotKey(organizer, eventSlug)
   if (memoryBlobs.has(key)) {
@@ -94,32 +111,33 @@ export async function loadEncryptedSnapshot(organizer, eventSlug) {
   try {
     const raw = localStorage.getItem(key)
     if (raw) {
-      fallback = JSON.parse(raw)
-      if (fallback?.envelope) {
-        memoryBlobs.set(key, fallback.envelope)
-        return fallback.envelope
-      }
+      fallback = snapshotRecord(JSON.parse(raw))
     }
   } catch {
     // Continue with CacheStorage when localStorage is unavailable or malformed.
   }
+  let cached = null
   const cache = await openCache()
   if (cache) {
     try {
       const match = await cache.match(new Request(`https://offline.eventyay.local/${key}`))
       if (match) {
-        const envelope = await match.json()
-        memoryBlobs.set(key, envelope)
-        return envelope
+        cached = snapshotRecord(await match.json())
       }
     } catch {
-      // Continue with the legacy localStorage fallback.
+      // Continue with the localStorage fallback.
     }
   }
-  if (fallback) {
-    memoryBlobs.set(key, fallback)
+  const record =
+    cached && (!fallback || (cached.writtenAt || 0) >= (fallback.writtenAt || 0))
+      ? cached
+      : fallback
+  if (!record) {
+    return null
   }
-  return fallback
+  lastWriteTime = Math.max(lastWriteTime, record.writtenAt || 0)
+  memoryBlobs.set(key, record.envelope)
+  return record.envelope
 }
 
 export async function deleteEncryptedSnapshot(organizer, eventSlug) {
@@ -163,5 +181,6 @@ export async function wipeAllEncryptedSnapshots() {
 export function clearSnapshotMemory() {
   sessionSalt = null
   saltPersisted = false
+  lastWriteTime = 0
   memoryBlobs.clear()
 }

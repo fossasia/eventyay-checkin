@@ -211,4 +211,21 @@ describe('snapshot storage fallback', () => {
       await expect(loadEncryptedSnapshot('org', 'event')).resolves.toEqual(envelope)
     }
   )
+  it('loads the newer cache entry when fallback cleanup and writes both fail', async () => {
+    localStorage.setItem(
+      'snapshot:org:event',
+      JSON.stringify({ envelope: { v: 1, iv: 'old', data: 'old' }, writtenAt: 1 })
+    )
+    const cache = statefulCache()
+    vi.stubGlobal('caches', { open: vi.fn().mockResolvedValue(cache) })
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new Error('blocked cleanup')
+    })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('quota')
+    })
+    await saveEncryptedSnapshot('org', 'event', envelope)
+    clearSnapshotMemory()
+    await expect(loadEncryptedSnapshot('org', 'event')).resolves.toEqual(envelope)
+  })
 })
