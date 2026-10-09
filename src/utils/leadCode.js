@@ -29,7 +29,6 @@ function pickLeadMatch(results, searchTerm) {
     results.find((position) => String(position.secret || '').trim() === normalized) ||
     results.find((position) => String(position.pseudonymization_id || '').toLowerCase() === lower) ||
     results.find((position) => String(position.order || '').toLowerCase() === lower) ||
-    results[0] ||
     null
   )
 }
