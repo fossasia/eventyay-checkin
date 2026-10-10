@@ -39,7 +39,13 @@ export function evaluateLocalRedeem(index, secret, { listId, type = 'entry' } = 
   const list = (index.checkInLists || []).find((entry) => Number(entry.id) === listIdNum)
   const checkins = (position.checkins || []).filter((checkin) => Number(checkin.list) === listIdNum)
   const latest = checkins.reduce((previous, checkin) => {
-    if (!previous || (Date.parse(checkin.datetime) || 0) >= (Date.parse(previous.datetime) || 0)) {
+    const timestamp = Date.parse(checkin.datetime)
+    const previousTimestamp = Date.parse(previous?.datetime)
+    if (
+      !previous ||
+      timestamp > previousTimestamp ||
+      (timestamp === previousTimestamp && checkin.type !== 'exit')
+    ) {
       return checkin
     }
     return previous

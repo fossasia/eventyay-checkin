@@ -52,6 +52,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   const checkInListRequestCoordinator = createCheckInListRequestCoordinator()
   const autoPrintFeedback = ref(null)
   let autoPrintFeedbackTimer = null
+  let offlineRedeemQueue = Promise.resolve()
   const badgeCustomizeRequest = ref(null)
   const autoPrintCustomizeOnce = ref(false)
   // Full list objects for the UI picker (populated after fetch)
@@ -773,7 +774,13 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
   }
 
-  async function redeemOfflineBySecret(
+  function redeemOfflineBySecret(normalizedSecret, options) {
+    const result = offlineRedeemQueue.then(() => performOfflineRedeem(normalizedSecret, options))
+    offlineRedeemQueue = result.catch(() => {})
+    return result
+  }
+
+  async function performOfflineRedeem(
     normalizedSecret,
     { type = 'entry', hints = {}, suppressSuccess = false, processApi, apitoken } = {}
   ) {

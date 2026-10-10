@@ -1,5 +1,5 @@
 import { createMemoryIndex } from '@/offline/memoryIndex'
-import { persistOfflineIndex } from '@/offline/syncEngine'
+import { loadOfflineIndex, persistOfflineIndex } from '@/offline/syncEngine'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useOfflineSyncStore } from '@/stores/offlineSync'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/offline/syncEngine', async (importOriginal) => ({
   ...(await importOriginal()),
+  loadOfflineIndex: vi.fn(),
   persistOfflineIndex: vi.fn(async () => {})
 }))
 
@@ -46,10 +47,74 @@ describe('offline entry policy through the check-in store', () => {
     const store = useProcessEventyayCheckInStore()
     expect((await store.checkInBySecret('ticket')).status).toBe('ok')
     expect((await store.checkInBySecret('ticket')).status).toBe('ok')
-    expect(offline.index.pendingRedeems).toHaveLength(2)
+    expect(offline.index.pendingRedeems).toEqual([
+      expect.objectContaining({ secret: 'ticket', lists: [3], type: 'entry' }),
+      expect.objectContaining({ secret: 'ticket', lists: [3], type: 'entry' })
+    ])
     expect(offline.index.positionsBySecret.get('ticket').checkins).toHaveLength(3)
     expect(persistOfflineIndex).toHaveBeenCalledTimes(2)
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  it('hydrates once and retains both concurrent scans from a cold snapshot', async () => {
+    const offline = prepareIndex({ allow_multiple_entries: true }, [entry])
+    const snapshot = () =>
+      createMemoryIndex({
+        checkInLists: [{ id: 3, allow_multiple_entries: true }],
+        positionsBySecret: {
+          ticket: { id: 1, secret: 'ticket', orderStatus: 'p', checkins: [entry] }
+        }
+      })
+    offline.index = null
+    let release
+    const loaded = new Promise((resolve) => {
+      release = resolve
+    })
+    vi.mocked(loadOfflineIndex).mockImplementation(async () => {
+      await loaded
+      return snapshot()
+    })
+    const store = useProcessEventyayCheckInStore()
+    const first = store.checkInBySecret('ticket')
+    const second = store.checkInBySecret('ticket')
+    release()
+    const results = await Promise.all([first, second])
+    expect(results.map((result) => result.status)).toEqual(['ok', 'ok'])
+    expect(loadOfflineIndex).toHaveBeenCalledTimes(1)
+    expect(offline.index.pendingRedeems).toEqual([
+      expect.objectContaining({ secret: 'ticket', lists: [3], type: 'entry' }),
+      expect.objectContaining({ secret: 'ticket', lists: [3], type: 'entry' })
+    ])
+    expect(offline.index.positionsBySecret.get('ticket').checkins).toHaveLength(3)
+    expect(persistOfflineIndex).toHaveBeenCalledTimes(2)
+  })
+
+  it('persists a scan before the next scan mutates the snapshot', async () => {
+    const offline = prepareIndex({ allow_multiple_entries: true }, [entry])
+    let release
+    const persisted = new Promise((resolve) => {
+      release = resolve
+    })
+    vi.mocked(persistOfflineIndex).mockImplementationOnce(async () => persisted)
+    const store = useProcessEventyayCheckInStore()
+    const first = store.checkInBySecret('ticket')
+    const second = store.checkInBySecret('ticket')
+    await vi.waitFor(() => expect(persistOfflineIndex).toHaveBeenCalledTimes(1))
+    expect(offline.index.pendingRedeems).toHaveLength(1)
+    release()
+    await Promise.all([first, second])
+    expect(offline.index.pendingRedeems).toHaveLength(2)
+    expect(persistOfflineIndex).toHaveBeenCalledTimes(2)
+  })
+
+  it('continues processing scans after a persistence failure', async () => {
+    const offline = prepareIndex({ allow_multiple_entries: true }, [entry])
+    vi.mocked(persistOfflineIndex).mockRejectedValueOnce(new Error('storage unavailable'))
+    const store = useProcessEventyayCheckInStore()
+    await expect(store.checkInBySecret('ticket')).rejects.toThrow('storage unavailable')
+    expect((await store.checkInBySecret('ticket')).status).toBe('ok')
+    expect(offline.index.pendingRedeems).toHaveLength(2)
+    expect(persistOfflineIndex).toHaveBeenCalledTimes(2)
   })
 
   it('queues one re-entry after an exit, then protects against a duplicate scan', async () => {

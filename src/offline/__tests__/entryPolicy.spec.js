@@ -89,6 +89,14 @@ describe('offline check-in list entry settings', () => {
     expect(evaluateLocalRedeem(index, 'ticket', { listId: 3 }).alreadyRedeemed).toBe(true)
   })
 
+  it.each([
+    [entry, { ...exit, datetime: entry.datetime }],
+    [{ ...exit, datetime: entry.datetime }, entry]
+  ])('does not infer a later exit from tied timestamps: %j', (...checkins) => {
+    const index = indexWithHistory(checkins, { allow_entry_after_exit: true })
+    expect(evaluateLocalRedeem(index, 'ticket', { listId: 3 }).alreadyRedeemed).toBe(true)
+  })
+
   it('still rejects unpaid and revoked tickets on a multiple-entry list', () => {
     const index = indexWithHistory([entry], { allow_multiple_entries: true })
     index.positionsBySecret.get('ticket').orderStatus = 'e'
