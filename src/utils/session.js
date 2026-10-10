@@ -65,12 +65,20 @@ export function getAutoPrintPreference(role) {
 }
 
 export function setAutoPrintPreference(role, enabled) {
+  let stored = {}
   try {
-    const stored = JSON.parse(localStorage.getItem(AUTO_PRINT_KEY) || '{}')
-    stored[role] = enabled
+    const saved = JSON.parse(localStorage.getItem(AUTO_PRINT_KEY) || '{}')
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) {
+      stored = saved
+    }
+  } catch {
+    // Replace malformed or unreadable preferences.
+  }
+  stored[role] = enabled
+  try {
     localStorage.setItem(AUTO_PRINT_KEY, JSON.stringify(stored))
   } catch {
-    localStorage.setItem(AUTO_PRINT_KEY, JSON.stringify({ [role]: enabled }))
+    // The current station can still apply the setting without persistence.
   }
 }
 
