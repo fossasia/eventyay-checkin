@@ -38,7 +38,7 @@ export function evaluateLocalRedeem(index, secret, { listId, type = 'entry' } = 
 
   const list = (index.checkInLists || []).find((entry) => Number(entry.id) === listIdNum)
   const checkins = (position.checkins || []).filter((checkin) => Number(checkin.list) === listIdNum)
-  const latest = checkins.reduce((previous, checkin) => {
+  let latest = checkins.reduce((previous, checkin) => {
     const timestamp = Date.parse(checkin.datetime)
     const previousTimestamp = Date.parse(previous?.datetime)
     if (
@@ -50,6 +50,12 @@ export function evaluateLocalRedeem(index, secret, { listId, type = 'entry' } = 
     }
     return previous
   }, null)
+  // Queued scans happened locally after the snapshot, even when device clocks differ.
+  for (const pending of index.pendingRedeems || []) {
+    if (pending.secret === secret && (pending.lists || []).some((id) => Number(id) === listIdNum)) {
+      latest = pending
+    }
+  }
   const hasEntryRestrictions =
     list?.limit_one_checkin_per_day ||
     list?.limit_one_checkin_per_gate ||

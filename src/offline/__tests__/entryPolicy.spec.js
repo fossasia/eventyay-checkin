@@ -97,6 +97,35 @@ describe('offline check-in list entry settings', () => {
     expect(evaluateLocalRedeem(index, 'ticket', { listId: 3 }).alreadyRedeemed).toBe(true)
   })
 
+  it('uses the latest queued scan when the device clock trails synced history', () => {
+    const index = indexWithHistory([entry, exit], { allow_entry_after_exit: true })
+    index.pendingRedeems = [
+      { secret: 'ticket', lists: [3], type: 'entry', datetime: '2029-01-01T09:00:00Z' }
+    ]
+    expect(evaluateLocalRedeem(index, 'ticket', { listId: 3 }).alreadyRedeemed).toBe(true)
+    index.pendingRedeems.push({
+      secret: 'ticket',
+      lists: [3],
+      type: 'exit',
+      datetime: '2028-01-01T09:00:00Z'
+    })
+    expect(evaluateLocalRedeem(index, 'ticket', { listId: 3 }).alreadyRedeemed).toBe(false)
+  })
+
+  it('ignores queued scans for another secret or list', () => {
+    const index = indexWithHistory([entry], { allow_entry_after_exit: true })
+    index.pendingRedeems = [
+      { secret: 'other-ticket', lists: [3], type: 'exit' },
+      { secret: 'ticket', lists: [4], type: 'exit' }
+    ]
+    expect(evaluateLocalRedeem(index, 'ticket', { listId: 3 }).alreadyRedeemed).toBe(true)
+  })
+
+  it('permits multiple entries with undated history when there are no restrictions', () => {
+    const index = indexWithHistory([{ ...entry, datetime: null }], { allow_multiple_entries: true })
+    expect(evaluateLocalRedeem(index, 'ticket', { listId: 3 }).alreadyRedeemed).toBe(false)
+  })
+
   it('still rejects unpaid and revoked tickets on a multiple-entry list', () => {
     const index = indexWithHistory([entry], { allow_multiple_entries: true })
     index.positionsBySecret.get('ticket').orderStatus = 'e'

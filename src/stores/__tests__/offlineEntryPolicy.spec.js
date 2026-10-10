@@ -134,6 +134,18 @@ describe('offline entry policy through the check-in store', () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
+  it('protects the next scan when the synced exit is ahead of the device clock', async () => {
+    const offline = prepareIndex({ allow_entry_after_exit: true }, [
+      { ...entry, datetime: '2099-01-01T09:00:00Z' },
+      { ...exit, datetime: '2099-01-01T10:00:00Z' }
+    ])
+    const store = useProcessEventyayCheckInStore()
+    expect((await store.checkInBySecret('ticket')).status).toBe('ok')
+    expect((await store.checkInBySecret('ticket')).status).toBe('redeemed')
+    expect(offline.index.pendingRedeems).toHaveLength(1)
+    expect(persistOfflineIndex).toHaveBeenCalledTimes(1)
+  })
+
   it('does not queue a duplicate when neither permission is enabled', async () => {
     const offline = prepareIndex({}, [entry, exit])
     const store = useProcessEventyayCheckInStore()
