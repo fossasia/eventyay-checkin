@@ -36,9 +36,25 @@ export function evaluateLocalRedeem(index, secret, { listId, type = 'entry' } = 
     // listIds inferred from prior checkins may be incomplete; do not block if empty.
   }
 
-  const alreadyOnList = (position.checkins || []).some(
-    (checkin) => Number(checkin.list) === listIdNum && (checkin.type || 'entry') === type
-  )
+  const list = (index.checkInLists || []).find((entry) => Number(entry.id) === listIdNum)
+  const checkins = (position.checkins || []).filter((checkin) => Number(checkin.list) === listIdNum)
+  const latest = checkins.reduce((previous, checkin) => {
+    if (!previous || (Date.parse(checkin.datetime) || 0) >= (Date.parse(previous.datetime) || 0)) {
+      return checkin
+    }
+    return previous
+  }, null)
+  const hasEntryRestrictions =
+    list?.limit_one_checkin_per_day ||
+    list?.limit_one_checkin_per_gate ||
+    (list?.rules && Object.keys(list.rules).length > 0)
+  const hasDatedHistory = checkins.every((checkin) => Number.isFinite(Date.parse(checkin.datetime)))
+  const entryAllowed =
+    !hasEntryRestrictions &&
+    (list?.allow_multiple_entries ||
+      (list?.allow_entry_after_exit && hasDatedHistory && latest?.type === 'exit'))
+  const alreadyOnList =
+    !entryAllowed && checkins.some((checkin) => (checkin.type || 'entry') === type)
   if (alreadyOnList && type === 'entry') {
     return {
       ok: true,
