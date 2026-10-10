@@ -36,9 +36,37 @@ export function evaluateLocalRedeem(index, secret, { listId, type = 'entry' } = 
     // listIds inferred from prior checkins may be incomplete; do not block if empty.
   }
 
-  const alreadyOnList = (position.checkins || []).some(
-    (checkin) => Number(checkin.list) === listIdNum && (checkin.type || 'entry') === type
-  )
+  const list = (index.checkInLists || []).find((entry) => Number(entry.id) === listIdNum)
+  const checkins = (position.checkins || []).filter((checkin) => Number(checkin.list) === listIdNum)
+  let latest = checkins.reduce((previous, checkin) => {
+    const timestamp = Date.parse(checkin.datetime)
+    const previousTimestamp = Date.parse(previous?.datetime)
+    if (
+      !previous ||
+      timestamp > previousTimestamp ||
+      (timestamp === previousTimestamp && checkin.type !== 'exit')
+    ) {
+      return checkin
+    }
+    return previous
+  }, null)
+  // Queued scans happened locally after the snapshot, even when device clocks differ.
+  for (const pending of index.pendingRedeems || []) {
+    if (pending.secret === secret && (pending.lists || []).some((id) => Number(id) === listIdNum)) {
+      latest = pending
+    }
+  }
+  const hasEntryRestrictions =
+    list?.limit_one_checkin_per_day ||
+    list?.limit_one_checkin_per_gate ||
+    (list?.rules && Object.keys(list.rules).length > 0)
+  const hasDatedHistory = checkins.every((checkin) => Number.isFinite(Date.parse(checkin.datetime)))
+  const entryAllowed =
+    !hasEntryRestrictions &&
+    (list?.allow_multiple_entries ||
+      (list?.allow_entry_after_exit && hasDatedHistory && latest?.type === 'exit'))
+  const alreadyOnList =
+    !entryAllowed && checkins.some((checkin) => (checkin.type || 'entry') === type)
   if (alreadyOnList && type === 'entry') {
     return {
       ok: true,
