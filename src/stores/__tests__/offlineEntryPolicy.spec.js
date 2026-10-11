@@ -109,11 +109,63 @@ describe('offline entry policy through the check-in store', () => {
 
   it('continues processing scans after a persistence failure', async () => {
     const offline = prepareIndex({ allow_multiple_entries: true }, [entry])
+    const original = offline.index.positionsBySecret.get('ticket')
+    const pending = offline.index.pendingRedeems
     vi.mocked(persistOfflineIndex).mockRejectedValueOnce(new Error('storage unavailable'))
     const store = useProcessEventyayCheckInStore()
     await expect(store.checkInBySecret('ticket')).rejects.toThrow('storage unavailable')
+    expect(offline.index.positionsBySecret.get('ticket')).toBe(original)
+    expect(offline.index.pendingRedeems).toBe(pending)
     expect((await store.checkInBySecret('ticket')).status).toBe('ok')
-    expect(offline.index.pendingRedeems).toHaveLength(2)
+    expect(offline.index.pendingRedeems).toHaveLength(1)
+    expect(offline.index.positionsBySecret.get('ticket').checkins).toHaveLength(2)
+    expect(persistOfflineIndex).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the list selected when a scan joins the queue', async () => {
+    const offline = prepareIndex({ allow_multiple_entries: true }, [])
+    offline.index.checkInLists.push({ id: 4, allow_multiple_entries: true })
+    let release
+    const persisted = new Promise((resolve) => {
+      release = resolve
+    })
+    vi.mocked(persistOfflineIndex).mockImplementationOnce(async () => persisted)
+    const store = useProcessEventyayCheckInStore()
+    const first = store.checkInBySecret('ticket')
+    await vi.waitFor(() => expect(persistOfflineIndex).toHaveBeenCalledTimes(1))
+    const second = store.checkInBySecret('ticket')
+    useEventyayApi().setSelectedCheckInListId(4)
+    release()
+    await Promise.all([first, second])
+    expect(offline.index.pendingRedeems.map((scan) => scan.lists)).toEqual([[3], [3]])
+    expect(offline.index.positionsBySecret.get('ticket').checkins.map((scan) => scan.list)).toEqual(
+      [3, 3]
+    )
+  })
+
+  it('restores failed mutations before a queued scan evaluates re-entry', async () => {
+    const offline = prepareIndex({ allow_entry_after_exit: true }, [entry, exit])
+    const original = offline.index.positionsBySecret.get('ticket')
+    const pending = offline.index.pendingRedeems
+    let failPersistence
+    vi.mocked(persistOfflineIndex).mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          failPersistence = reject
+        })
+    )
+    const store = useProcessEventyayCheckInStore()
+    const first = store.checkInBySecret('ticket')
+    const rejected = expect(first).rejects.toThrow('storage unavailable')
+    await vi.waitFor(() => expect(persistOfflineIndex).toHaveBeenCalledTimes(1))
+    const second = store.checkInBySecret('ticket')
+    failPersistence(new Error('storage unavailable'))
+    await rejected
+    expect((await second).status).toBe('ok')
+    expect(offline.index.pendingRedeems).toHaveLength(1)
+    expect(offline.index.positionsBySecret.get('ticket').checkins).toHaveLength(3)
+    expect(original.checkins).toEqual([entry, exit])
+    expect(pending).toHaveLength(0)
     expect(persistOfflineIndex).toHaveBeenCalledTimes(2)
   })
 

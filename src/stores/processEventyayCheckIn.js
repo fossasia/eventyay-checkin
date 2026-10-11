@@ -775,21 +775,23 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   }
 
   function redeemOfflineBySecret(normalizedSecret, options) {
-    const result = offlineRedeemQueue.then(() => performOfflineRedeem(normalizedSecret, options))
+    const selectedList = getSelectedCheckInList()
+    const listId = selectedList?.id || options?.processApi?.selectedCheckInListId
+    const result = offlineRedeemQueue.then(() =>
+      performOfflineRedeem(normalizedSecret, { ...options, listId })
+    )
     offlineRedeemQueue = result.catch(() => {})
     return result
   }
 
   async function performOfflineRedeem(
     normalizedSecret,
-    { type = 'entry', hints = {}, suppressSuccess = false, processApi, apitoken } = {}
+    { type = 'entry', hints = {}, suppressSuccess = false, processApi, apitoken, listId } = {}
   ) {
     const offlineSync = useOfflineSyncStore()
     if (!offlineSync.index) {
       await offlineSync.hydrate(processApi)
     }
-    const selectedList = getSelectedCheckInList()
-    const listId = selectedList?.id || processApi.selectedCheckInListId
     if (!listId) {
       showErrorMsg(
         buildAttendeeMessage('No check-in lists are configured for this event.', null, normalizedSecret)
@@ -809,15 +811,24 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     const datetime = new Date().toISOString()
     let position = evaluation.position
     if (!evaluation.alreadyRedeemed) {
-      position = applyLocalCheckin(offlineSync.index, position, { listId, type, datetime })
-      enqueuePendingRedeem(offlineSync.index, {
+      const index = offlineSync.index
+      const previousPosition = index.positionsBySecret.get(normalizedSecret)
+      const previousPending = index.pendingRedeems
+      position = applyLocalCheckin(index, position, { listId, type, datetime })
+      enqueuePendingRedeem(index, {
         secret: normalizedSecret,
         lists: [Number(listId)],
         type,
         nonce,
         datetime
       })
-      await persistOfflineIndex(offlineSync.index, { apitoken })
+      try {
+        await persistOfflineIndex(index, { apitoken })
+      } catch (error) {
+        index.positionsBySecret.set(normalizedSecret, previousPosition)
+        index.pendingRedeems = previousPending
+        throw error
+      }
     }
 
     badgeUrl.value = 'local://offline-badge'
