@@ -1,5 +1,5 @@
-import { createAuthorizedDeviceApi } from '@/utils/serverUrl'
 import { isDeviceAuthFailure } from '@/utils/deviceErrors'
+import { createAuthorizedDeviceApi } from '@/utils/serverUrl'
 
 const EVENTYAY_LOGO_URL = '/eventyay-logo.svg'
 const EVENTYAY_ICON_URL = '/eventyay-icon.svg'
@@ -30,13 +30,15 @@ export const STATION_TYPE_DEFINITIONS = [
     id: 'CheckIn',
     title: 'Check-In Staff',
     buttonLabel: "I'm Check-In Staff",
-    description: 'Scan tickets, search attendees, edit details, live registration, and badge printing.'
+    description:
+      'Scan tickets, search attendees, edit details, live registration, and badge printing.'
   },
   {
     id: 'Badge Station',
     title: 'Badge Station',
     buttonLabel: "I'm Badge Station Staff",
-    description: 'Kiosk fast check-in and badge printing station. Set up kiosk mode before registering.'
+    description:
+      'Kiosk fast check-in and badge printing station. Set up kiosk mode before registering.'
   }
 ]
 
@@ -48,7 +50,9 @@ export function getServerDisplayFromUrl(serverUrl) {
   try {
     return new URL(serverUrl).host
   } catch {
-    return String(serverUrl).replace(/^https?:\/\//, '').replace(/\/+$/, '')
+    return String(serverUrl)
+      .replace(/^https?:\/\//, '')
+      .replace(/\/+$/, '')
   }
 }
 
@@ -77,8 +81,10 @@ export function setAutoPrintPreference(role, enabled) {
   stored[role] = enabled
   try {
     localStorage.setItem(AUTO_PRINT_KEY, JSON.stringify(stored))
+    return true
   } catch {
     // The current station can still apply the setting without persistence.
+    return false
   }
 }
 

@@ -78,3 +78,23 @@ describe('auto-print settings', () => {
     expect(reloaded.isAutoPrintActive('CheckIn')).toBe(false)
   })
 })
+
+it('keeps an unsaved preference when the panel resyncs or changes role', () => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ 'Badge Station': true, CheckIn: false }))
+  const store = useCheckinSettingsStore()
+  const write = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('Storage unavailable', 'QuotaExceededError')
+  })
+  store.setAutoPrintForRole('Badge Station', false)
+  store.syncAutoPrintForRole('CheckIn')
+  expect(store.autoPrintEnabled).toBe(false)
+  store.syncAutoPrintForRole('Badge Station')
+  expect(store.isAutoPrintActive('Badge Station')).toBe(false)
+  expect(JSON.parse(localStorage.getItem(STORAGE_KEY))['Badge Station']).toBe(true)
+
+  write.mockRestore()
+  store.setAutoPrintForRole('Badge Station', true)
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ 'Badge Station': false }))
+  store.syncAutoPrintForRole('Badge Station')
+  expect(store.autoPrintEnabled).toBe(false)
+})
