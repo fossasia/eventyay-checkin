@@ -114,6 +114,10 @@ async function fetchAllPages(
     })
   }
 
+  if (nextPath) {
+    throw new Error(`Offline sync exceeded the ${maxPages}-page limit`)
+  }
+
   return { results, pageGenerated, pages, count: totalCount }
 }
 
