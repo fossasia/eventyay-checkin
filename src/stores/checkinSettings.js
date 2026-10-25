@@ -4,13 +4,20 @@ import { ref } from 'vue'
 
 export const useCheckinSettingsStore = defineStore('checkinSettings', () => {
   const autoPrintEnabled = ref(true)
+  const unsavedPreferences = new Map()
 
   function syncAutoPrintForRole(role) {
-    autoPrintEnabled.value = getAutoPrintPreference(role)
+    autoPrintEnabled.value = unsavedPreferences.has(role)
+      ? unsavedPreferences.get(role)
+      : getAutoPrintPreference(role)
   }
 
   function setAutoPrintForRole(role, enabled) {
-    setAutoPrintPreference(role, enabled)
+    if (setAutoPrintPreference(role, enabled)) {
+      unsavedPreferences.delete(role)
+    } else {
+      unsavedPreferences.set(role, enabled)
+    }
     autoPrintEnabled.value = enabled
   }
 
