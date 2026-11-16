@@ -19,6 +19,8 @@ jobs:
 
       - name: Dispatch plugin_updated event
         if: env.TOKEN != ''
+        id: dispatch
+        continue-on-error: true
         env:
           TOKEN: ${{ secrets.EVENTYAY_DISPATCH_TOKEN }}
         uses: peter-evans/repository-dispatch@v4
@@ -33,3 +35,7 @@ jobs:
               "branch": "${{ github.ref_name }}",
               "commit_sha": "${{ github.sha }}"
             }
+
+      - name: Warn if dispatch fails
+        if: steps.dispatch.outcome == 'failure'
+        run: echo "::warning::Repository dispatch failed; verify EVENTYAY_DISPATCH_TOKEN"
