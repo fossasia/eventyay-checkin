@@ -27,7 +27,7 @@ onMounted(async () => {
     try {
       await liveRegistrationStore.fetchProducts()
     } catch (error) {
-      console.error('Failed to fetch products for popup', error)
+      console.error('Failed to fetch products for popup', error?.name || 'Error')
     }
   }
 })

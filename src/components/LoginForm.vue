@@ -192,7 +192,7 @@ async function handleQrScanned() {
       showError.value = true
     }
   } catch (error) {
-    console.error('Scan registration error:', error)
+    console.error('Scan registration error:', error?.name || 'Error')
     logOperational({
       action: 'checkin.register',
       outcome: 'failure',
@@ -250,7 +250,7 @@ async function handleManualRegister() {
       showError.value = true
     }
   } catch (error) {
-    console.error('Manual registration error:', error)
+    console.error('Manual registration error:', error?.name || 'Error')
     logOperational({
       action: 'checkin.register',
       outcome: 'failure',

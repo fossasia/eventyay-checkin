@@ -381,7 +381,7 @@ function printPdfBlobInFrame(blob, { frame, renderDelayMs, revokeBlobUrl = true,
           targetWindow.focus()
           targetWindow.print()
         } catch (error) {
-          console.error('Print failed:', error)
+          console.error('Print failed:', error?.name || 'Error')
           wrappedTracker.onFailed()
         }
       }, renderDelayMs)

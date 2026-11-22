@@ -1,6 +1,6 @@
 import { lookupBySecret, upsertPosition } from '@/offline/memoryIndex'
 import { normalizePositionFromOrder } from '@/offline/normalize'
-import { logApiResult } from '@/utils/operationalLog'
+import { logApiResult, SAFE_REDEEM_ERROR_CODES, toSafeErrorCode } from '@/utils/operationalLog'
 
 export const MISSING_OFFLINE_DATA_MESSAGE =
   'Please connect to the internet to fetch the latest check-in data, then try again.'
@@ -119,18 +119,37 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
           })
         }
       )
-      const body = await response.json().catch(() => ({}))
-      const accepted =
-        response.ok &&
-        (body.status === 'ok' ||
-          body.status === 'redeemed' ||
+      let body = {}
+      let parseFailed = false
+      try {
+        const parsed = await response.json()
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          body = parsed
+        } else {
+          parseFailed = true
+        }
+      } catch {
+        parseFailed = true
+      }
+      const shouldFlush =
+        !parseFailed &&
+        ((response.ok && (body.status === 'ok' || body.status === 'redeemed')) ||
           (body.status === 'error' && body.reason === 'already_redeemed'))
+      const errorCode = shouldFlush
+        ? null
+        : parseFailed
+          ? 'invalid_payload'
+          : toSafeErrorCode(
+              body.reason,
+              SAFE_REDEEM_ERROR_CODES,
+              response.ok ? 'redeem_failed' : 'http_error'
+            )
       logApiResult({
         action: 'checkin.redeem',
-        outcome: accepted ? 'success' : 'failure',
+        outcome: shouldFlush ? 'success' : 'failure',
         status: response.status,
         duration_ms: Date.now() - started,
-        error_code: accepted ? null : body.reason || 'http_error'
+        error_code: errorCode
       })
       if (response.ok && (body.status === 'ok' || body.status === 'redeemed')) {
         flushed += 1
@@ -158,6 +177,7 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
       logApiResult({
         action: 'checkin.redeem',
         outcome: 'failure',
+        status: null,
         duration_ms: Date.now() - started,
         error_code: 'request_error'
       })
@@ -180,6 +200,7 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
   let flushed = 0
 
   for (const item of pending) {
+    const started = Date.now()
     try {
       const createResp = await fetch(
         `${base}/api/v1/organizers/${organizer}/events/${eventSlug}/orders/`,
@@ -194,15 +215,31 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
           body: JSON.stringify(item.payload)
         }
       )
-      const created = await createResp.json().catch(() => ({}))
-      if (!createResp.ok) {
+      let created = {}
+      let createParseFailed = false
+      try {
+        const parsedCreated = await createResp.json()
+        if (parsedCreated && typeof parsedCreated === 'object' && !Array.isArray(parsedCreated)) {
+          created = parsedCreated
+        } else {
+          createParseFailed = true
+        }
+      } catch {
+        createParseFailed = true
+      }
+      if (!createResp.ok || createParseFailed) {
         logApiResult({
           action: 'checkin.register',
           outcome: 'failure',
           status: createResp.status,
-          error_code: createResp.status >= 500 ? 'http_error' : 'rejected'
+          duration_ms: Date.now() - started,
+          error_code: createParseFailed
+            ? 'invalid_payload'
+            : createResp.status >= 500
+              ? 'http_error'
+              : 'rejected'
         })
-        if (createResp.status >= 500) {
+        if (createResp.status >= 500 || createParseFailed) {
           remaining.push(item)
         } else {
           remaining.push({ ...item, lastError: JSON.stringify(created) })
@@ -225,13 +262,26 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
             body: JSON.stringify({ send_email: false })
           }
         )
-        paid = await paidResp.json().catch(() => ({}))
-        if (!paidResp.ok || paid.status !== 'p') {
+        let paidParseFailed = false
+        try {
+          const parsedPaid = await paidResp.json()
+          if (parsedPaid && typeof parsedPaid === 'object' && !Array.isArray(parsedPaid)) {
+            paid = parsedPaid
+          } else {
+            paid = {}
+            paidParseFailed = true
+          }
+        } catch {
+          paid = {}
+          paidParseFailed = true
+        }
+        if (!paidResp.ok || paidParseFailed || paid.status !== 'p') {
           logApiResult({
             action: 'checkin.register',
             outcome: 'failure',
             status: paidResp.status,
-            error_code: 'mark_paid_failed'
+            duration_ms: Date.now() - started,
+            error_code: paidParseFailed ? 'invalid_payload' : 'mark_paid_failed'
           })
           remaining.push({ ...item, lastError: 'mark_paid_failed', createdCode: created.code })
           continue
@@ -246,9 +296,20 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
         }
       }
       flushed += 1
-      logApiResult({ action: 'checkin.register', outcome: 'success', status: createResp.status })
+      logApiResult({
+        action: 'checkin.register',
+        outcome: 'success',
+        status: createResp.status,
+        duration_ms: Date.now() - started
+      })
     } catch {
-      logApiResult({ action: 'checkin.register', outcome: 'failure', error_code: 'request_error' })
+      logApiResult({
+        action: 'checkin.register',
+        outcome: 'failure',
+        status: null,
+        duration_ms: Date.now() - started,
+        error_code: 'request_error'
+      })
       remaining.push(item)
     }
   }

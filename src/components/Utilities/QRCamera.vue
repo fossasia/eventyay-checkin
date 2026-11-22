@@ -95,7 +95,7 @@ async function updateAvailableCamera() {
       deviceId: preferredCamera.id || 'environment'
     }
   } catch (err) {
-    console.log(err.name + ': ' + err.message)
+    console.warn('Camera enumeration error:', err?.name || 'Error')
   }
 }
 

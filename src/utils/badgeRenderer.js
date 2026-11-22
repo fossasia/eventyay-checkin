@@ -355,7 +355,7 @@ function drawTextarea(page, element, pdfData, secret, fonts) {
           rotate: degrees(-rotation)
         })
       } catch (error) {
-        console.warn('Could not draw badge text run', error)
+        console.warn('Could not draw badge text run:', error?.name || 'Error')
       }
       x += width
     }
@@ -480,7 +480,7 @@ async function drawPoweredBy(page, pdfDoc, element, printAssets) {
       height
     })
   } catch (error) {
-    console.warn('Could not draw powered-by mark', error)
+    console.warn('Could not draw powered-by mark:', error?.name || 'Error')
   }
 }
 

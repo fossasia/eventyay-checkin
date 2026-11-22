@@ -36,7 +36,7 @@ export function shapeArabicForPdf(text) {
         const stripped = line.replace(HARAKAT, '')
         return visualOrder(ArabicShaper.convertArabic(stripped))
       } catch (error) {
-        console.warn('Could not reshape Arabic badge text', error)
+        console.warn('Could not reshape Arabic badge text:', error?.name || 'Error')
         return line
       }
     })

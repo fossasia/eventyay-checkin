@@ -416,7 +416,7 @@ const openBadgeEditDialog = async () => {
       notificationStore.addNotification([t('common.success'), t('notifications.badge_updated')], 'success')
     }
   } catch (error) {
-    console.error('Error editing badge:', error)
+    console.error('Error editing badge:', error?.name || 'Error')
     notificationStore.addNotification([t('common.error'), t('notifications.unable_to_update_badge')], 'error')
   }
 }
@@ -562,7 +562,7 @@ const handleBadgeCustomizePreview = async (result) => {
     badgePreviewKey.value += 1
     await openBadgePreview()
   } catch (error) {
-    console.error('Badge preview failed:', error)
+    console.error('Badge preview failed:', error?.name || 'Error')
     notificationStore.addNotification(
       ['Preview failed', error?.message || 'Could not load the badge preview.'],
       'error'
@@ -647,7 +647,7 @@ const openLiveRegistrationDialog = async () => {
       await liveRegistrationStore.fetchProducts({ force: true })
       resetLiveRegistrationForm()
     } catch (error) {
-      console.error('Error fetching products for live registration:', error)
+      console.error('Error fetching products for live registration:', error?.name || 'Error')
       liveRegistrationError.value = getDeviceErrorMessage(
         error,
         'Unable to load ticket products for this event.'
@@ -710,7 +710,7 @@ const printLiveRegistrationTicket = async () => {
       liveRegistrationTicketError.value = 'Could not open the print dialog for this ticket.'
     }
   } catch (error) {
-    console.error('Live registration ticket print failed:', error)
+    console.error('Live registration ticket print failed:', error?.name || 'Error')
     liveRegistrationTicketError.value = error?.message || 'Could not print the ticket.'
   } finally {
     isLoadingLiveRegistrationTicket.value = false
@@ -731,7 +731,7 @@ const downloadLiveRegistrationTicket = async () => {
       liveRegistrationTicketError.value = 'Could not download the ticket PDF.'
     }
   } catch (error) {
-    console.error('Live registration ticket download failed:', error)
+    console.error('Live registration ticket download failed:', error?.name || 'Error')
     liveRegistrationTicketError.value = error?.message || 'Could not download the ticket.'
   } finally {
     isLoadingLiveRegistrationTicket.value = false
@@ -794,7 +794,7 @@ const submitLiveRegistration = async () => {
       offlinePending: false
     }
   } catch (error) {
-    console.error('Live registration failed:', error)
+    console.error('Live registration failed:', error?.name || 'Error')
     liveRegistrationError.value = getDeviceErrorMessage(error, 'Live registration failed.')
   }
 }
@@ -1074,7 +1074,7 @@ const saveAttendeeDetails = async () => {
     notificationStore.addNotification([t('common.success'), t('notifications.attendee_details_updated')], 'success')
     isEditDialogOpen.value = false
   } catch (error) {
-    console.error('Error saving attendee details:', error)
+    console.error('Error saving attendee details:', error?.name || 'Error')
     editError.value = error?.message || 'Unable to save attendee details.'
   } finally {
     isSavingAttendee.value = false
@@ -1189,7 +1189,7 @@ const searchOrders = async (query, { force = false, requestId = ++activeRequestI
     if (requestId !== activeRequestId) {
       return
     }
-    console.error('Error fetching orders:', error)
+    console.error('Error fetching orders:', error?.name || 'Error')
 
     if (isDeviceProfileDenied(error)) {
       notificationStore.addNotification(['Access denied', getDeviceErrorMessage(error)], 'error')
@@ -1271,7 +1271,8 @@ onMounted(async () => {
         'info'
       )
     } else if (prefetchFailed && navigator.onLine) {
-      console.warn('Some check-in prefetch requests failed', prefetchResults)
+      const failedCount = prefetchResults.filter((result) => result.status === 'rejected').length
+      console.warn('Some check-in prefetch requests failed:', failedCount)
     }
 
     if (!isBadgeStation.value) {
@@ -1286,7 +1287,7 @@ onMounted(async () => {
       await searchOrders('', { force: true })
     }
   } catch (error) {
-    console.error('Error loading check-in page:', error)
+    console.error('Error loading check-in page:', error?.name || 'Error')
     await offlineSync.hydrate(processApi).catch(() => {})
     notificationStore.addNotification(
       [

@@ -59,16 +59,22 @@ export const useleedauth = defineStore('leedauth', () => {
       logOperational({ action: 'auth.exhibitor', outcome: 'success' })
       return response
     } catch (error) {
-      console.error('Exhibitor login failed:', error)
       const status = error?.response?.status ?? error?.status ?? 0
+      const profileDenied = isDeviceProfileDenied(error)
+      const errorCode = profileDenied
+        ? 'device_profile_denied'
+        : status === 401 || status === 403
+          ? 'invalid_credentials'
+          : 'request_error'
+      console.error('Exhibitor login failed:', errorCode)
       logOperational({
         action: 'auth.exhibitor',
         outcome: 'failure',
-        error_code: status === 401 || status === 403 ? 'invalid_credentials' : 'request_error',
+        error_code: errorCode,
         status: status || undefined
       })
 
-      if (isDeviceProfileDenied(error)) {
+      if (profileDenied) {
         return {
           success: false,
           error: LEAD_SCAN_PROFILE_DENIED_MESSAGE

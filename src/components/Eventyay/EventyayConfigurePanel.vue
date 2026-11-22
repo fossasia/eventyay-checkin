@@ -95,7 +95,7 @@ async function loadListsForDraftEvent() {
       draftCheckInListId.value = lists.length === 1 ? lists[0].id : null
     }
   } catch (error) {
-    console.error('Failed to load check-in lists:', error)
+    console.error('Failed to load check-in lists:', error?.name || 'Error')
     errorMessage.value = t('configure.error_load_lists')
   } finally {
     loadingLists.value = false
@@ -150,7 +150,7 @@ async function unlockPanel() {
       await loadListsForDraftEvent()
     }
   } catch (error) {
-    console.error('Failed to verify setup token:', error)
+    console.error('Failed to verify setup token:', error?.name || 'Error')
     unlockError.value = t('configure.error_verify_failed')
   } finally {
     unlocking.value = false
@@ -202,7 +202,7 @@ async function applySettings() {
 
     emit('close')
   } catch (error) {
-    console.error('Failed to apply check-in settings:', error)
+    console.error('Failed to apply check-in settings:', error?.name || 'Error')
     errorMessage.value = t('configure.error_save_failed')
   } finally {
     saving.value = false

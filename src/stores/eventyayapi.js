@@ -198,6 +198,7 @@ export const useEventyayApi = defineStore(
       if (redirect) {
         redirectToUserAuth()
       }
+      logOperational({ action: 'auth.logout', outcome: 'success' })
     }
 
     function handleAuthError() {
@@ -208,12 +209,22 @@ export const useEventyayApi = defineStore(
       const cleanUrl = resolveServerUrl(serverUrl)
       const cleanToken = String(token || '').trim()
       if (!cleanUrl || !cleanToken) {
+        logOperational({
+          action: 'checkin.register',
+          outcome: 'failure',
+          error_code: 'invalid_qr'
+        })
         return { success: false, error: 'invalid_qr' }
       }
 
       try {
         new URL(cleanUrl)
       } catch {
+        logOperational({
+          action: 'checkin.register',
+          outcome: 'failure',
+          error_code: 'invalid_url'
+        })
         return { success: false, error: 'invalid_url' }
       }
 
@@ -284,7 +295,7 @@ export const useEventyayApi = defineStore(
         return await initializeDevice(qrData.url, qrData.token)
       } catch (error) {
         const message = parseRegistrationError(error)
-        console.error('Device registration failed:', error)
+        console.error('Device registration failed:', error?.response?.status || error?.name || 'Error')
         logOperational({
           action: 'checkin.register',
           outcome: 'failure',
@@ -311,7 +322,7 @@ export const useEventyayApi = defineStore(
         return await initializeDevice(inputUrl, token)
       } catch (error) {
         const message = parseRegistrationError(error)
-        console.error('Device registration failed:', error)
+        console.error('Device registration failed:', error?.response?.status || error?.name || 'Error')
         logOperational({
           action: 'checkin.register',
           outcome: 'failure',
@@ -361,10 +372,22 @@ export const useEventyayApi = defineStore(
       try {
         const api = createAuthorizedDeviceApi(url.value, apitoken.value)
         await api.post('/api/v1/device/verify-setup-token', { token: cleanToken })
+        logOperational({ action: 'auth.verify_token', outcome: 'success' })
         return { success: true }
       } catch (error) {
         const status = error?.response?.status
         const body = error?.body
+        const errorCode = body?.token
+          ? 'invalid_token'
+          : status === 403
+            ? 'device_profile_denied'
+            : 'verification_failed'
+        logOperational({
+          action: 'auth.verify_token',
+          outcome: 'failure',
+          status: status ?? null,
+          error_code: errorCode
+        })
         if (body?.token) {
           const tokenError = Array.isArray(body.token) ? body.token[0] : body.token
           return { success: false, error: 'invalid_token', message: String(tokenError) }

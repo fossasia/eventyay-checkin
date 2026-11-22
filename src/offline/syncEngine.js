@@ -15,7 +15,7 @@ import {
   wipeAllEncryptedSnapshots
 } from '@/offline/snapshotStore'
 import { computeSyncPercent, pageFraction } from '@/offline/syncProgress'
-import { logApiResult } from '@/utils/operationalLog'
+import { logApiResult, logOperational } from '@/utils/operationalLog'
 import { resolveServerUrl } from '@/utils/serverUrl'
 
 const MAX_PAGES = 50
@@ -67,6 +67,7 @@ async function fetchJsonPage(baseUrl, apitoken, path) {
   } catch (error) {
     logApiResult({
       outcome: 'failure',
+      status: null,
       duration_ms: Date.now() - started,
       error_code: 'request_error',
       action: 'checkin.fetch'
@@ -98,6 +99,19 @@ async function fetchJsonPage(baseUrl, apitoken, path) {
       action: 'checkin.fetch'
     })
     throw error
+  }
+  const isValidPage =
+    Array.isArray(body) ||
+    (body !== null && typeof body === 'object' && Array.isArray(body.results))
+  if (!isValidPage) {
+    logApiResult({
+      outcome: 'failure',
+      status: response.status,
+      duration_ms: Date.now() - started,
+      error_code: 'invalid_payload',
+      action: 'checkin.fetch'
+    })
+    throw new Error('Invalid JSON page payload')
   }
   logApiResult({
     outcome: 'success',
@@ -225,6 +239,7 @@ export async function runOfflineSync({
     return { ok: false, error: 'missing_credentials' }
   }
 
+  const syncStarted = Date.now()
   const index = await loadOfflineIndex({ organizer, eventSlug, apitoken })
   const snapshot = memoryIndexToSnapshot(index)
   const warnings = []
@@ -303,6 +318,12 @@ export async function runOfflineSync({
   reportPhaseProgress(onProgress, 'revoked', 1)
 
   if (warnings.includes('orders') && Object.keys(snapshot.positionsBySecret).length === 0) {
+    logOperational({
+      action: 'checkin.sync',
+      outcome: 'failure',
+      duration_ms: Date.now() - syncStarted,
+      error_code: 'orders_sync_failed'
+    })
     return { ok: false, error: 'orders_sync_failed', warnings }
   }
 
@@ -338,6 +359,12 @@ export async function runOfflineSync({
   reportPhaseProgress(onProgress, 'persist', 0.2)
   await persistOfflineIndex(nextIndex, { apitoken })
   reportPhaseProgress(onProgress, 'persist', 1)
+
+  logOperational({
+    action: 'checkin.sync',
+    outcome: 'success',
+    duration_ms: Date.now() - syncStarted
+  })
 
   return {
     ok: true,

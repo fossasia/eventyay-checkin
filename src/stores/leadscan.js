@@ -2,7 +2,13 @@ import { useCameraStore } from '@/stores/camera'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { resolveLeadIdentifier } from '@/utils/leadCode'
 import { createAuthorizedExhibitorApi, exhibitorApiPath } from '@/utils/serverUrl'
-import { getDeviceErrorMessage, getExhibitorErrorMessage, handleExhibitorApiError } from '@/utils/deviceErrors'
+import {
+  getDeviceErrorMessage,
+  handleExhibitorApiError,
+  isDeviceAuthFailure,
+  isDeviceProfileDenied
+} from '@/utils/deviceErrors'
+import { logApiResult } from '@/utils/operationalLog'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
@@ -127,18 +133,29 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
       open_event: false
     }
 
+    const started = Date.now()
     try {
       const api = createAuthorizedExhibitorApi(url, apitoken, exikey)
       await fetchCachedLeads(api, organizer, eventSlug)
 
       const existingLead = findCachedLead(leadValue)
       if (existingLead) {
+        logApiResult({
+          action: 'lead.scan',
+          outcome: 'success',
+          duration_ms: Date.now() - started
+        })
         showExistingLead(leadValue, existingLead.attendee || null)
         return
       }
 
       const response = await api.post(exhibitorApiPath(organizer, eventSlug, 'lead/create'), requestBody)
       if (response.success) {
+        logApiResult({
+          action: 'lead.scan',
+          outcome: 'success',
+          duration_ms: Date.now() - started
+        })
         rememberLead(leadValue, response.attendee)
         showSuccessMsg({
           message: 'Add notes or tags below, then save.',
@@ -148,6 +165,12 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         return
       }
 
+      logApiResult({
+        action: 'lead.scan',
+        outcome: 'failure',
+        duration_ms: Date.now() - started,
+        error_code: 'scan_failed'
+      })
       showErrorMsg(
         String(response?.error || response?.message || 'Lead could not be recorded. Try again.')
       )
@@ -156,10 +179,28 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
       const body = err?.body ?? err?.response?.data
 
       if (status === 409) {
+        logApiResult({
+          action: 'lead.scan',
+          outcome: 'success',
+          status,
+          duration_ms: Date.now() - started
+        })
         rememberLead(leadValue, body?.attendee || null)
         showExistingLead(leadValue, body?.attendee || null)
         return
       }
+
+      logApiResult({
+        action: 'lead.scan',
+        outcome: 'failure',
+        status: status || null,
+        duration_ms: Date.now() - started,
+        error_code: isDeviceProfileDenied(err)
+          ? 'device_profile_denied'
+          : isDeviceAuthFailure(err) || status === 401
+            ? 'invalid_credentials'
+            : 'request_error'
+      })
 
       if (
         handleExhibitorApiError(err, processApi, {
@@ -257,6 +298,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
       return
     }
 
+    const started = Date.now()
     try {
       const api = createAuthorizedExhibitorApi(url, apitoken, exikey)
       const response = await api.get(exhibitorApiPath(organizer, eventSlug, 'lead/retrieve'))
@@ -264,9 +306,33 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         cachedLeads.value = Array.isArray(response.leads) ? response.leads : []
         cachedLeadsFetchedAt = Date.now()
         downloadCSV(response.leads)
+        logApiResult({
+          action: 'lead.export',
+          outcome: 'success',
+          duration_ms: Date.now() - started
+        })
+      } else {
+        logApiResult({
+          action: 'lead.export',
+          outcome: 'failure',
+          duration_ms: Date.now() - started,
+          error_code: 'export_failed'
+        })
       }
     } catch (error) {
-      console.error('Failed to export leads:', error)
+      const status = error?.response?.status ?? error?.status ?? null
+      console.error('Failed to export leads:', error?.name || 'Error')
+      logApiResult({
+        action: 'lead.export',
+        outcome: 'failure',
+        status,
+        duration_ms: Date.now() - started,
+        error_code: isDeviceProfileDenied(error)
+          ? 'device_profile_denied'
+          : isDeviceAuthFailure(error) || status === 401
+            ? 'invalid_credentials'
+            : 'request_error'
+      })
       handleExhibitorApiError(error, processApi, {
         onProfileDenied: (msg) =>
           showErrorMsg({

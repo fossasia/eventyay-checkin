@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import { createAuthorizedDeviceApi } from '@/utils/serverUrl'
-import { raiseIfDeviceApiError } from '@/utils/deviceErrors'
+import {
+  isDeviceAuthFailure,
+  isDeviceProfileDenied,
+  raiseIfDeviceApiError
+} from '@/utils/deviceErrors'
+import { logApiResult, logOperational } from '@/utils/operationalLog'
 import { ref } from 'vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useOfflineSyncStore } from '@/stores/offlineSync'
@@ -166,6 +171,7 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
 
   async function registerAndMarkPaid(attendee, productId) {
     isRegistering.value = true
+    const started = Date.now()
 
     try {
       const processApi = useEventyayApi()
@@ -185,6 +191,11 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
           createdAt: new Date().toISOString()
         })
         await persistOfflineIndex(offlineSync.index, { apitoken: processApi.apitoken })
+        logOperational({
+          action: 'checkin.live_register_offline',
+          outcome: 'success',
+          duration_ms: Date.now() - started
+        })
         return {
           createdOrder: null,
           paidOrder: null,
@@ -227,6 +238,12 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
         ticketDownloadAvailable
       } = resolveTicketDownload(orderPosition)
 
+      logApiResult({
+        action: 'checkin.live_register',
+        outcome: 'success',
+        duration_ms: Date.now() - started
+      })
+
       return {
         createdOrder,
         paidOrder,
@@ -237,6 +254,19 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
         ticketDownloadUrl,
         ticketDownloadAvailable
       }
+    } catch (error) {
+      logApiResult({
+        action: 'checkin.live_register',
+        outcome: 'failure',
+        status: error?.response?.status ?? error?.status ?? null,
+        duration_ms: Date.now() - started,
+        error_code: isDeviceProfileDenied(error)
+          ? 'device_profile_denied'
+          : isDeviceAuthFailure(error)
+            ? 'device_auth_failed'
+            : 'registration_failed'
+      })
+      throw error
     } finally {
       isRegistering.value = false
     }

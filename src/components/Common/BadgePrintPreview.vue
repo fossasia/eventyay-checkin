@@ -94,7 +94,7 @@ const fetchPDF = async () => {
     pdfBlob.value = result.blob
     pdfUrl.value = URL.createObjectURL(result.blob)
   } catch (error) {
-    console.error('Error fetching PDF:', error)
+    console.error('Error fetching PDF:', error?.name || 'Error')
     printError.value = true
     loadError.value = 'Could not load the badge PDF. Check your connection and try Print again.'
   } finally {

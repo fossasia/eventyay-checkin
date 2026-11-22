@@ -1,5 +1,6 @@
 import { createAuthorizedDeviceApi } from '@/utils/serverUrl'
 import { isDeviceAuthFailure } from '@/utils/deviceErrors'
+import { logOperational } from '@/utils/operationalLog'
 
 const EVENTYAY_LOGO_URL = '/eventyay-logo.svg'
 const EVENTYAY_ICON_URL = '/eventyay-icon.svg'
@@ -97,7 +98,16 @@ export async function validateDeviceSession(processApi, { timeoutMs = 4000 } = {
     return true
   } catch (error) {
     // Network / timeout: keep the local session so offline mode can continue.
-    return !isDeviceAuthFailure(error)
+    const authFailed = isDeviceAuthFailure(error)
+    if (authFailed) {
+      logOperational({
+        action: 'auth.session',
+        outcome: 'failure',
+        status: error?.response?.status ?? error?.status ?? null,
+        error_code: 'device_auth_failed'
+      })
+    }
+    return !authFailed
   }
 }
 

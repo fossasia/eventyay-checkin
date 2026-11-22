@@ -46,7 +46,7 @@ export const usePrintModalStore = defineStore('printModal', () => {
       //set selected options to all options
       selectedOptions.value = printOptions.value
     } catch (error) {
-      console.error(error)
+      console.error('Failed to fetch badge PDF:', error?.name || 'Error')
     }
   }
 
@@ -62,7 +62,7 @@ export const usePrintModalStore = defineStore('printModal', () => {
       await getBadgeFields()
       loadingStore.contentLoaded()
     } catch (error) {
-      console.error(error)
+      console.error('Failed to fetch badge PDF:', error?.name || 'Error')
     }
     nextTick(() => {
       showPrintModal.value = true
@@ -95,7 +95,7 @@ export const usePrintModalStore = defineStore('printModal', () => {
         objFra.contentWindow.print()
       }
     } catch (error) {
-      console.error(error)
+      console.error('Failed to fetch badge PDF:', error?.name || 'Error')
     }
   }
 
