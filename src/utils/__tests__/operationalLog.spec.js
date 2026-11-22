@@ -104,20 +104,69 @@ describe('operationalLog', () => {
           headers: { 'Content-Type': 'application/json' }
         })
       )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ status: 'ready' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 42 }), {
+          status: 201,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockRejectedValueOnce(new TypeError('Failed to fetch'))
     vi.stubGlobal('fetch', fetchMock)
 
     const api = useApiStore()
-    await api.get(false, 'events/1')
+    const res200 = await api.get(false, 'events/1')
+    expect(res200).toEqual({ ok: true })
     expect(info).toHaveBeenCalledTimes(1)
     expect(info.mock.calls[0][1]).toContain('outcome=success')
+    expect(info.mock.calls[0][1]).toContain('status=200')
     expect(info.mock.calls[0][1]).toContain('request_id=req_')
+
+    const resReady = await api.get(false, 'events/1/status')
+    expect(resReady).toEqual({ status: 'ready' })
+    expect(info).toHaveBeenCalledTimes(2)
+    expect(info.mock.calls[1][1]).toContain('status=200')
+    expect(info.mock.calls[1][1]).not.toContain('status=ready')
+
+    const res201 = await api.post(false, 'events/1', { a: 1 })
+    expect(res201).toEqual({ id: 42 })
+    expect(info).toHaveBeenCalledTimes(3)
+    expect(info.mock.calls[2][1]).toContain('status=201')
+
+    const res204 = await api.post(false, 'events/1/ack')
+    expect(res204).toBeNull()
+    expect(info).toHaveBeenCalledTimes(4)
+    expect(info.mock.calls[3][1]).toContain('status=204')
 
     await expect(api.post(false, 'events/1', { a: 1 })).rejects.toThrow()
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls[0][1]).toContain('outcome=failure')
     expect(warn.mock.calls[0][1]).toContain('error_code=http_error')
     expect(warn.mock.calls[0][1]).toContain('request_id=req_')
+  })
+
+  it('rejects JWTs, secret-prefixed keys, and long high-entropy token strings in safeValue', () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    logOperational({
+      action: 'connection.request',
+      outcome: 'success',
+      error_code: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0',
+      resource_type: 'sk_live_1234567890abcdef',
+      object_id: 'a'.repeat(45),
+      request_id: 'token_secret_123'
+    })
+    expect(info).toHaveBeenCalledTimes(1)
+    const line = info.mock.calls[0][1]
+    expect(line).not.toContain('error_code=')
+    expect(line).not.toContain('resource_type=')
+    expect(line).not.toContain('object_id=')
+    expect(line).not.toContain('request_id=')
   })
 
   it('supports cancelled outcome without error_code and resource context fields', () => {
@@ -314,6 +363,31 @@ describe('operationalLog', () => {
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls[0][1]).toContain('action=checkin.live_register_offline')
     expect(warn.mock.calls[0][1]).toContain('error_code=offline_persist_failed')
+  })
+
+  it('logs registration_failed when offline live registration fails before persistence starts', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('navigator', { onLine: false })
+
+    const processApi = useEventyayApi()
+    processApi.setApiCred('tok', 'https://example.invalid', 'org')
+    processApi.setEvent('evt', 'Event')
+    processApi.setRole('CheckIn')
+    processApi.setSecurityProfile('eventyay_checkin')
+
+    const offlineSync = useOfflineSyncStore()
+    offlineSync.index = createMemoryIndex(createEmptySnapshot('org', 'evt'))
+
+    const liveReg = useLiveRegistrationStore()
+    liveReg.products = [{ id: 1, name: 'General', has_variations: true, variations: [] }]
+
+    await expect(
+      liveReg.registerAndMarkPaid({ attendee_name: 'Ada', attendee_email: 'ada@example.test' }, 1)
+    ).rejects.toThrow('Selected product requires a variation')
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][1]).toContain('action=checkin.live_register_offline')
+    expect(warn.mock.calls[0][1]).toContain('error_code=registration_failed')
   })
 
   it('logs cancelled badge prints with outcome=cancelled and without error_code', async () => {

@@ -29,25 +29,35 @@ export const useApiStore = defineStore('api', () => {
     }
   }
 
+  async function parseTransportResponse(rawResponse) {
+    if (typeof rawResponse?.json === 'function' && typeof rawResponse?.status === 'number') {
+      const status = rawResponse.status
+      const body = status === 204 ? null : await rawResponse.json().catch(() => null)
+      return { status, body }
+    }
+    return { status: 200, body: rawResponse }
+  }
+
   async function get(requiresAuth, path, payload) {
     newSession(requiresAuth)
     instance.options.headers['Accept'] = 'application/vnd.api+json'
     const started = Date.now()
     const requestId = createOperationalId('req')
     try {
-      let response
+      let rawResponse
       if (payload) {
-        response = await instance.get(path)
+        rawResponse = await instance.get(path, { responseAs: 'response' })
       } else {
-        response = await instance.get(path, payload)
+        rawResponse = await instance.get(path, { ...payload, responseAs: 'response' })
       }
+      const { status, body } = await parseTransportResponse(rawResponse)
       logApiResult({
         outcome: 'success',
-        status: response?.status ?? null,
+        status,
         duration_ms: Date.now() - started,
         request_id: requestId
       })
-      return response
+      return body
     } catch (error) {
       logApiResult({
         outcome: 'failure',
@@ -65,28 +75,29 @@ export const useApiStore = defineStore('api', () => {
     const started = Date.now()
     const requestId = createOperationalId('req')
     try {
-      let response
+      let rawResponse
       if (hasBody) {
         delete defaults.headers['Content-Type']
         const options = instance.options
         options['body'] = payload
-        response = await instance.post(path)
+        rawResponse = await instance.post(path, null, { responseAs: 'response' })
       } else {
         if (payload) {
           instance.options.headers['Accept'] = 'application/vnd.api+json'
           instance.options.headers['Content-Type'] = 'application/vnd.api+json'
-          response = await instance.post(path, payload)
+          rawResponse = await instance.post(path, payload, { responseAs: 'response' })
         } else {
-          response = await instance.post(path)
+          rawResponse = await instance.post(path, null, { responseAs: 'response' })
         }
       }
+      const { status, body } = await parseTransportResponse(rawResponse)
       logApiResult({
         outcome: 'success',
-        status: response?.status ?? null,
+        status,
         duration_ms: Date.now() - started,
         request_id: requestId
       })
-      return response
+      return body
     } catch (error) {
       logApiResult({
         outcome: 'failure',

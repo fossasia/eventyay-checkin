@@ -1,4 +1,6 @@
 const SAFE = /^[A-Za-z0-9._:-]{1,128}$/
+const JWT_LIKE = /^eyJ[A-Za-z0-9_-]+\./
+const SECRET_PREFIX = /^(sk|pk|whsec|rk|bearer|token)[_-]/i
 const SAFE_OUTCOMES = new Set(['success', 'failure', 'cancelled'])
 
 /**
@@ -41,9 +43,15 @@ export const SAFE_REDEEM_ERROR_CODES = new Set([
   'missing'
 ])
 
-function safeValue(value) {
+function isSecretLike(value, { allowOpaqueId = false } = {}) {
+  if (JWT_LIKE.test(value) || SECRET_PREFIX.test(value)) return true
+  if (!allowOpaqueId && value.length > 40 && !value.includes('.')) return true
+  return false
+}
+
+function safeValue(value, options) {
   if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (typeof value === 'string' && SAFE.test(value)) return value
+  if (typeof value === 'string' && SAFE.test(value) && !isSecretLike(value, options)) return value
   return null
 }
 
@@ -95,7 +103,7 @@ export function logOperational({
   object_id
 } = {}) {
   try {
-    if (typeof action !== 'string' || !SAFE.test(action)) return
+    if (typeof action !== 'string' || !SAFE.test(action) || isSecretLike(action)) return
     const safeOutcome = SAFE_OUTCOMES.has(outcome) ? outcome : 'failure'
     const record = {
       datetime: new Date().toISOString(),
@@ -107,8 +115,8 @@ export function logOperational({
     const errorCode = safeValue(error_code)
     const statusCode = safeValue(status)
     const duration = safeValue(duration_ms)
-    const requestId = safeValue(request_id)
-    const correlationId = safeValue(correlation_id)
+    const requestId = safeValue(request_id, { allowOpaqueId: true })
+    const correlationId = safeValue(correlation_id, { allowOpaqueId: true })
     const resourceType = safeValue(resource_type)
     const objectId = safeValue(object_id)
     if (errorCode != null) record.error_code = errorCode

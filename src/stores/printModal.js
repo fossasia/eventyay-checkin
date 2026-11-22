@@ -46,6 +46,10 @@ export const usePrintModalStore = defineStore('printModal', () => {
       printOptions.value = allOptions.value.filter((field) => field.id !== 'QR')
       //set selected options to all options
       selectedOptions.value = printOptions.value
+      logOperational({
+        action: 'badge.fields_fetch',
+        outcome: 'success'
+      })
     } catch (error) {
       console.error('Failed to load badge fields:', error?.name || 'Error')
       logOperational({
@@ -105,11 +109,15 @@ export const usePrintModalStore = defineStore('printModal', () => {
         // Trigger the print function
         objFra.contentWindow.print()
       }
+      logOperational({
+        action: 'badge.pdf_fetch',
+        outcome: 'success'
+      })
     } catch (error) {
       const errorCode = stage === 'print_frame' ? 'print_frame_missing' : 'badge_pdf_failed'
       console.error('Failed to fetch badge PDF:', errorCode, error?.name || 'Error')
       logOperational({
-        action: 'badge.print',
+        action: 'badge.pdf_fetch',
         outcome: 'failure',
         error_code: errorCode
       })

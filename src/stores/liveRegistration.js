@@ -178,6 +178,7 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
       isBrowserOffline() &&
       canUseOfflineSync(processApi.selectedRole, processApi.securityProfile)
     const action = isOffline ? 'checkin.live_register_offline' : 'checkin.live_register'
+    let persistenceStarted = false
 
     try {
       if (isOffline) {
@@ -192,6 +193,7 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
           payload,
           createdAt: new Date().toISOString()
         })
+        persistenceStarted = true
         await persistOfflineIndex(offlineSync.index, { apitoken: processApi.apitoken })
         logOperational({
           action,
@@ -269,7 +271,7 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
           ? 'device_profile_denied'
           : isDeviceAuthFailure(error)
             ? 'device_auth_failed'
-            : isOffline
+            : isOffline && persistenceStarted
               ? 'offline_persist_failed'
               : 'registration_failed'
       })
