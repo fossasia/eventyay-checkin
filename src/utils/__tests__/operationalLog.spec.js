@@ -8,6 +8,7 @@ import { useEventyayApi } from '@/stores/eventyayapi'
 import { useleedauth } from '@/stores/leedauth'
 import { useLiveRegistrationStore } from '@/stores/liveRegistration'
 import { useOfflineSyncStore } from '@/stores/offlineSync'
+import { usePrintModalStore } from '@/stores/printModal'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import * as badgePdf from '@/utils/badgePdf'
 import { DEVICE_PROFILE_DENIED_SERVER_DETAIL } from '@/utils/deviceErrors'
@@ -484,5 +485,74 @@ describe('operationalLog', () => {
     expect(warn.mock.calls[0][1]).toContain('action=auth.exhibitor')
     expect(warn.mock.calls[0][1]).toContain('error_code=device_profile_denied')
     expect(warn.mock.calls[0][1]).not.toContain('invalid_credentials')
+  })
+
+  it('correlates printModal badge operations with api requests and defers pdf_fetch outcome to frame load/error', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ field_identifier: 'name', custom_field: 'Name' }]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ task_url: 'api/tasks/1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        })
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const printFrame = {
+      src: '',
+      onload: null,
+      onerror: null,
+      contentWindow: { print: vi.fn() }
+    }
+    vi.spyOn(document, 'getElementById').mockReturnValue(printFrame)
+
+    const printModal = usePrintModalStore()
+    printModal.ticketId = '10'
+    printModal.attendeeId = '20'
+
+    await printModal.getBadgeFields()
+    expect(info).toHaveBeenCalledTimes(2)
+    const apiFieldsLog = info.mock.calls[0][1]
+    const badgeFieldsLog = info.mock.calls[1][1]
+    const fieldsCorr = apiFieldsLog.match(/correlation_id=([^\s]+)/)?.[1]
+    expect(fieldsCorr).toBeTruthy()
+    expect(badgeFieldsLog).toContain('action=badge.fields_fetch')
+    expect(badgeFieldsLog).toContain(`correlation_id=${fieldsCorr}`)
+
+    info.mockClear()
+    await printModal.getPDF('name')
+    expect(info).toHaveBeenCalledTimes(2)
+    const apiPdfLog = info.mock.calls[0][1]
+    const setupLog = info.mock.calls[1][1]
+    const pdfCorr = apiPdfLog.match(/correlation_id=([^\s]+)/)?.[1]
+    expect(pdfCorr).toBeTruthy()
+    expect(setupLog).toContain('action=badge.pdf_setup')
+    expect(setupLog).toContain('outcome=success')
+    expect(setupLog).toContain(`correlation_id=${pdfCorr}`)
+
+    // Frame load completes -> badge.pdf_fetch success
+    printFrame.onload()
+    expect(info).toHaveBeenCalledTimes(3)
+    expect(info.mock.calls[2][1]).toContain('action=badge.pdf_fetch')
+    expect(info.mock.calls[2][1]).toContain('outcome=success')
+    expect(info.mock.calls[2][1]).toContain(`correlation_id=${pdfCorr}`)
+    expect(printFrame.contentWindow.print).toHaveBeenCalledTimes(1)
+
+    // Frame error -> badge.pdf_fetch failure
+    printFrame.onerror()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][1]).toContain('action=badge.pdf_fetch')
+    expect(warn.mock.calls[0][1]).toContain('outcome=failure')
+    expect(warn.mock.calls[0][1]).toContain('error_code=badge_pdf_load_failed')
+    expect(warn.mock.calls[0][1]).toContain(`correlation_id=${pdfCorr}`)
   })
 })

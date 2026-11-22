@@ -38,24 +38,31 @@ export const useApiStore = defineStore('api', () => {
     return { status: 200, body: rawResponse }
   }
 
-  async function get(requiresAuth, path, payload) {
+  async function get(requiresAuth, path, payload, options = {}) {
     newSession(requiresAuth)
     instance.options.headers['Accept'] = 'application/vnd.api+json'
     const started = Date.now()
     const requestId = createOperationalId('req')
+    const correlationId = options?.correlationId ?? payload?.correlationId ?? null
+    const mandePayload =
+      payload && typeof payload === 'object' && 'correlationId' in payload
+        ? (({ correlationId: _ignored, ...rest }) =>
+            Object.keys(rest).length ? rest : undefined)(payload)
+        : payload
     try {
       let rawResponse
-      if (payload) {
+      if (mandePayload) {
         rawResponse = await instance.get(path, { responseAs: 'response' })
       } else {
-        rawResponse = await instance.get(path, { ...payload, responseAs: 'response' })
+        rawResponse = await instance.get(path, { ...mandePayload, responseAs: 'response' })
       }
       const { status, body } = await parseTransportResponse(rawResponse)
       logApiResult({
         outcome: 'success',
         status,
         duration_ms: Date.now() - started,
-        request_id: requestId
+        request_id: requestId,
+        correlation_id: correlationId
       })
       return body
     } catch (error) {
@@ -64,7 +71,8 @@ export const useApiStore = defineStore('api', () => {
         status: error?.response?.status ?? null,
         duration_ms: Date.now() - started,
         error_code: 'http_error',
-        request_id: requestId
+        request_id: requestId,
+        correlation_id: correlationId
       })
       return Promise.reject(error)
     }
