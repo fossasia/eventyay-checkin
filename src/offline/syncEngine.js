@@ -15,7 +15,7 @@ import {
   wipeAllEncryptedSnapshots
 } from '@/offline/snapshotStore'
 import { computeSyncPercent, pageFraction } from '@/offline/syncProgress'
-import { logApiResult, logOperational } from '@/utils/operationalLog'
+import { createOperationalId, logApiResult, logOperational } from '@/utils/operationalLog'
 import { resolveServerUrl } from '@/utils/serverUrl'
 
 const MAX_PAGES = 50
@@ -53,8 +53,9 @@ function joinUrl(baseUrl, path) {
   return `${base}${path.startsWith('/') ? path : `/${path}`}`
 }
 
-async function fetchJsonPage(baseUrl, apitoken, path) {
+async function fetchJsonPage(baseUrl, apitoken, path, { correlationId = null } = {}) {
   const started = Date.now()
+  const requestId = createOperationalId('fetch')
   let response
   try {
     response = await fetch(joinUrl(baseUrl, path), {
@@ -70,6 +71,8 @@ async function fetchJsonPage(baseUrl, apitoken, path) {
       status: null,
       duration_ms: Date.now() - started,
       error_code: 'request_error',
+      request_id: requestId,
+      correlation_id: correlationId,
       action: 'checkin.fetch'
     })
     throw error
@@ -80,6 +83,8 @@ async function fetchJsonPage(baseUrl, apitoken, path) {
       status: response.status,
       duration_ms: Date.now() - started,
       error_code: 'http_error',
+      request_id: requestId,
+      correlation_id: correlationId,
       action: 'checkin.fetch'
     })
     const detail = await response.text().catch(() => '')
@@ -96,6 +101,8 @@ async function fetchJsonPage(baseUrl, apitoken, path) {
       status: response.status,
       duration_ms: Date.now() - started,
       error_code: 'invalid_payload',
+      request_id: requestId,
+      correlation_id: correlationId,
       action: 'checkin.fetch'
     })
     throw error
@@ -109,6 +116,8 @@ async function fetchJsonPage(baseUrl, apitoken, path) {
       status: response.status,
       duration_ms: Date.now() - started,
       error_code: 'invalid_payload',
+      request_id: requestId,
+      correlation_id: correlationId,
       action: 'checkin.fetch'
     })
     throw new Error('Invalid JSON page payload')
@@ -117,6 +126,8 @@ async function fetchJsonPage(baseUrl, apitoken, path) {
     outcome: 'success',
     status: response.status,
     duration_ms: Date.now() - started,
+    request_id: requestId,
+    correlation_id: correlationId,
     action: 'checkin.fetch'
   })
   return {
@@ -129,7 +140,7 @@ async function fetchAllPages(
   baseUrl,
   apitoken,
   path,
-  { sinceParam, sinceValue, maxPages = MAX_PAGES, onPage } = {}
+  { sinceParam, sinceValue, maxPages = MAX_PAGES, onPage, correlationId = null } = {}
 ) {
   const results = []
   let nextPath = path
@@ -148,7 +159,8 @@ async function fetchAllPages(
     const { body, pageGenerated: headerCursor } = await fetchJsonPage(
       baseUrl,
       apitoken,
-      requestPath
+      requestPath,
+      { correlationId }
     )
     pageGenerated = headerCursor || pageGenerated
     const batch = Array.isArray(body) ? body : body.results || []
@@ -205,12 +217,20 @@ export async function persistOfflineIndex(index, { apitoken }) {
   await saveEncryptedSnapshot(index.organizer, index.eventSlug, envelope)
 }
 
-async function syncOrders(url, apitoken, organizer, eventSlug, snapshot, { onPage } = {}) {
+async function syncOrders(
+  url,
+  apitoken,
+  organizer,
+  eventSlug,
+  snapshot,
+  { onPage, correlationId = null } = {}
+) {
   const base = `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/?ordering=last_modified`
   const withPdf = await safeFetchAllPages(url, apitoken, `${base}&pdf_data=true`, {
     sinceParam: 'modified_since',
     sinceValue: snapshot.cursors.ordersModifiedSince,
-    onPage
+    onPage,
+    correlationId
   })
   if (!withPdf.error) {
     return withPdf
@@ -219,7 +239,8 @@ async function syncOrders(url, apitoken, organizer, eventSlug, snapshot, { onPag
   return safeFetchAllPages(url, apitoken, base, {
     sinceParam: 'modified_since',
     sinceValue: snapshot.cursors.ordersModifiedSince,
-    onPage
+    onPage,
+    correlationId
   })
 }
 
@@ -240,144 +261,176 @@ export async function runOfflineSync({
   }
 
   const syncStarted = Date.now()
-  const index = await loadOfflineIndex({ organizer, eventSlug, apitoken })
-  const snapshot = memoryIndexToSnapshot(index)
-  const warnings = []
-
-  const trackPagedPhase = (phase) => (pageInfo) => {
-    reportPhaseProgress(onProgress, phase, pageFraction(pageInfo), pageInfo)
-  }
-
-  reportPhaseProgress(onProgress, 'layouts', 0)
-  const layoutsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/badgelayouts/`
-  const layoutsResult = await safeFetchAllPages(url, apitoken, layoutsPath, {
-    onPage: trackPagedPhase('layouts')
+  const correlationId = createOperationalId('sync')
+  logOperational({
+    action: 'checkin.sync_start',
+    outcome: 'success',
+    correlation_id: correlationId
   })
-  if (layoutsResult.error) {
-    warnings.push('layouts')
-  } else {
-    mergeLayoutsIntoSnapshot(snapshot, layoutsResult.results)
-  }
-  reportPhaseProgress(onProgress, 'layouts', 1)
 
-  reportPhaseProgress(onProgress, 'products', 0)
-  const productsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/products/`
-  const productsResult = await safeFetchAllPages(url, apitoken, productsPath, {
-    onPage: trackPagedPhase('products')
-  })
-  if (!productsResult.error) {
-    snapshot.products = (productsResult.results || []).filter(
-      (product) => product?.active !== false && product?.admission !== false
+  try {
+    const index = await loadOfflineIndex({ organizer, eventSlug, apitoken })
+    const snapshot = memoryIndexToSnapshot(index)
+    const warnings = []
+
+    const trackPagedPhase = (phase) => (pageInfo) => {
+      reportPhaseProgress(onProgress, phase, pageFraction(pageInfo), pageInfo)
+    }
+
+    reportPhaseProgress(onProgress, 'layouts', 0)
+    const layoutsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/badgelayouts/`
+    const layoutsResult = await safeFetchAllPages(url, apitoken, layoutsPath, {
+      onPage: trackPagedPhase('layouts'),
+      correlationId
+    })
+    if (layoutsResult.error) {
+      warnings.push('layouts')
+    } else {
+      mergeLayoutsIntoSnapshot(snapshot, layoutsResult.results)
+    }
+    reportPhaseProgress(onProgress, 'layouts', 1)
+
+    reportPhaseProgress(onProgress, 'products', 0)
+    const productsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/products/`
+    const productsResult = await safeFetchAllPages(url, apitoken, productsPath, {
+      onPage: trackPagedPhase('products'),
+      correlationId
+    })
+    if (!productsResult.error) {
+      snapshot.products = (productsResult.results || []).filter(
+        (product) => product?.active !== false && product?.admission !== false
+      )
+    } else {
+      warnings.push('products')
+    }
+    reportPhaseProgress(onProgress, 'products', 1)
+
+    reportPhaseProgress(onProgress, 'checkinlists', 0)
+    const listsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/checkinlists/`
+    const listsResult = await safeFetchAllPages(url, apitoken, listsPath, {
+      onPage: trackPagedPhase('checkinlists'),
+      correlationId
+    })
+    if (!listsResult.error) {
+      snapshot.checkInLists = listsResult.results || []
+    } else {
+      warnings.push('checkinlists')
+    }
+    reportPhaseProgress(onProgress, 'checkinlists', 1)
+
+    reportPhaseProgress(onProgress, 'orders', 0)
+    const ordersResult = await syncOrders(url, apitoken, organizer, eventSlug, snapshot, {
+      onPage: trackPagedPhase('orders'),
+      correlationId
+    })
+    if (ordersResult.error) {
+      warnings.push('orders')
+    } else {
+      mergeOrdersIntoSnapshot(snapshot, ordersResult.results)
+      if (ordersResult.pageGenerated) {
+        snapshot.cursors.ordersModifiedSince = ordersResult.pageGenerated
+      }
+    }
+    reportPhaseProgress(onProgress, 'orders', 1)
+
+    reportPhaseProgress(onProgress, 'revoked', 0)
+    const revokedPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/revokedsecrets/`
+    const revokedResult = await safeFetchAllPages(url, apitoken, revokedPath, {
+      sinceParam: 'created_since',
+      sinceValue: snapshot.cursors.revokedCreatedSince,
+      onPage: trackPagedPhase('revoked'),
+      correlationId
+    })
+    if (revokedResult.error) {
+      warnings.push('revoked')
+    } else {
+      mergeRevokedIntoSnapshot(snapshot, revokedResult.results)
+      if (revokedResult.pageGenerated) {
+        snapshot.cursors.revokedCreatedSince = revokedResult.pageGenerated
+      }
+    }
+    reportPhaseProgress(onProgress, 'revoked', 1)
+
+    if (warnings.includes('orders') && Object.keys(snapshot.positionsBySecret).length === 0) {
+      logOperational({
+        action: 'checkin.sync',
+        outcome: 'failure',
+        duration_ms: Date.now() - syncStarted,
+        error_code: 'orders_sync_failed',
+        correlation_id: correlationId
+      })
+      return { ok: false, error: 'orders_sync_failed', warnings }
+    }
+
+    snapshot.lastSyncedAt = new Date().toISOString()
+    let nextIndex = createMemoryIndex(snapshot)
+
+    reportPhaseProgress(onProgress, 'flush', 0)
+    await flushPendingRedeems(nextIndex, { url, apitoken, organizer, correlationId })
+    reportPhaseProgress(onProgress, 'flush', 0.5)
+    await flushPendingRegistrations(nextIndex, {
+      url,
+      apitoken,
+      organizer,
+      eventSlug,
+      correlationId
+    })
+
+    const followUp = await syncOrders(
+      url,
+      apitoken,
+      organizer,
+      eventSlug,
+      memoryIndexToSnapshot(nextIndex),
+      {
+        onPage: trackPagedPhase('flush'),
+        correlationId
+      }
     )
-  } else {
-    warnings.push('products')
-  }
-  reportPhaseProgress(onProgress, 'products', 1)
-
-  reportPhaseProgress(onProgress, 'checkinlists', 0)
-  const listsPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/checkinlists/`
-  const listsResult = await safeFetchAllPages(url, apitoken, listsPath, {
-    onPage: trackPagedPhase('checkinlists')
-  })
-  if (!listsResult.error) {
-    snapshot.checkInLists = listsResult.results || []
-  } else {
-    warnings.push('checkinlists')
-  }
-  reportPhaseProgress(onProgress, 'checkinlists', 1)
-
-  reportPhaseProgress(onProgress, 'orders', 0)
-  const ordersResult = await syncOrders(url, apitoken, organizer, eventSlug, snapshot, {
-    onPage: trackPagedPhase('orders')
-  })
-  if (ordersResult.error) {
-    warnings.push('orders')
-  } else {
-    mergeOrdersIntoSnapshot(snapshot, ordersResult.results)
-    if (ordersResult.pageGenerated) {
-      snapshot.cursors.ordersModifiedSince = ordersResult.pageGenerated
+    if (!followUp.error && followUp.results.length) {
+      const followSnapshot = memoryIndexToSnapshot(nextIndex)
+      mergeOrdersIntoSnapshot(followSnapshot, followUp.results)
+      if (followUp.pageGenerated) {
+        followSnapshot.cursors.ordersModifiedSince = followUp.pageGenerated
+      }
+      followSnapshot.lastSyncedAt = new Date().toISOString()
+      nextIndex = createMemoryIndex(followSnapshot)
     }
-  }
-  reportPhaseProgress(onProgress, 'orders', 1)
+    reportPhaseProgress(onProgress, 'flush', 1)
 
-  reportPhaseProgress(onProgress, 'revoked', 0)
-  const revokedPath = `/api/v1/organizers/${organizer}/events/${eventSlug}/revokedsecrets/`
-  const revokedResult = await safeFetchAllPages(url, apitoken, revokedPath, {
-    sinceParam: 'created_since',
-    sinceValue: snapshot.cursors.revokedCreatedSince,
-    onPage: trackPagedPhase('revoked')
-  })
-  if (revokedResult.error) {
-    warnings.push('revoked')
-  } else {
-    mergeRevokedIntoSnapshot(snapshot, revokedResult.results)
-    if (revokedResult.pageGenerated) {
-      snapshot.cursors.revokedCreatedSince = revokedResult.pageGenerated
+    reportPhaseProgress(onProgress, 'persist', 0.2)
+    await persistOfflineIndex(nextIndex, { apitoken })
+    reportPhaseProgress(onProgress, 'persist', 1)
+
+    logOperational({
+      action: 'checkin.sync',
+      outcome: 'success',
+      duration_ms: Date.now() - syncStarted,
+      correlation_id: correlationId
+    })
+
+    return {
+      ok: true,
+      index: nextIndex,
+      warnings,
+      counts: {
+        orders: ordersResult.results?.length || 0,
+        revoked: revokedResult.results?.length || 0,
+        layouts: layoutsResult.results?.length || 0,
+        products: snapshot.products.length,
+        checkInLists: snapshot.checkInLists.length,
+        positions: nextIndex.positionsBySecret.size
+      }
     }
-  }
-  reportPhaseProgress(onProgress, 'revoked', 1)
-
-  if (warnings.includes('orders') && Object.keys(snapshot.positionsBySecret).length === 0) {
+  } catch (error) {
     logOperational({
       action: 'checkin.sync',
       outcome: 'failure',
       duration_ms: Date.now() - syncStarted,
-      error_code: 'orders_sync_failed'
+      error_code: 'sync_failed',
+      correlation_id: correlationId
     })
-    return { ok: false, error: 'orders_sync_failed', warnings }
-  }
-
-  snapshot.lastSyncedAt = new Date().toISOString()
-  let nextIndex = createMemoryIndex(snapshot)
-
-  reportPhaseProgress(onProgress, 'flush', 0)
-  await flushPendingRedeems(nextIndex, { url, apitoken, organizer })
-  reportPhaseProgress(onProgress, 'flush', 0.5)
-  await flushPendingRegistrations(nextIndex, { url, apitoken, organizer, eventSlug })
-
-  const followUp = await syncOrders(
-    url,
-    apitoken,
-    organizer,
-    eventSlug,
-    memoryIndexToSnapshot(nextIndex),
-    {
-      onPage: trackPagedPhase('flush')
-    }
-  )
-  if (!followUp.error && followUp.results.length) {
-    const followSnapshot = memoryIndexToSnapshot(nextIndex)
-    mergeOrdersIntoSnapshot(followSnapshot, followUp.results)
-    if (followUp.pageGenerated) {
-      followSnapshot.cursors.ordersModifiedSince = followUp.pageGenerated
-    }
-    followSnapshot.lastSyncedAt = new Date().toISOString()
-    nextIndex = createMemoryIndex(followSnapshot)
-  }
-  reportPhaseProgress(onProgress, 'flush', 1)
-
-  reportPhaseProgress(onProgress, 'persist', 0.2)
-  await persistOfflineIndex(nextIndex, { apitoken })
-  reportPhaseProgress(onProgress, 'persist', 1)
-
-  logOperational({
-    action: 'checkin.sync',
-    outcome: 'success',
-    duration_ms: Date.now() - syncStarted
-  })
-
-  return {
-    ok: true,
-    index: nextIndex,
-    warnings,
-    counts: {
-      orders: ordersResult.results?.length || 0,
-      revoked: revokedResult.results?.length || 0,
-      layouts: layoutsResult.results?.length || 0,
-      products: snapshot.products.length,
-      checkInLists: snapshot.checkInLists.length,
-      positions: nextIndex.positionsBySecret.size
-    }
+    throw error
   }
 }
 

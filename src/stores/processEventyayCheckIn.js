@@ -825,25 +825,37 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       return { status: 'error', reason: evaluation.reason }
     }
 
-    logOperational({
-      action: 'checkin.redeem_offline',
-      outcome: 'success'
-    })
-
     const nonce = generateNonce()
     const datetime = new Date().toISOString()
     let position = evaluation.position
     if (!evaluation.alreadyRedeemed) {
-      position = applyLocalCheckin(offlineSync.index, position, { listId, type, datetime })
-      enqueuePendingRedeem(offlineSync.index, {
-        secret: normalizedSecret,
-        lists: [Number(listId)],
-        type,
-        nonce,
-        datetime
-      })
-      await persistOfflineIndex(offlineSync.index, { apitoken })
+      try {
+        position = applyLocalCheckin(offlineSync.index, position, { listId, type, datetime })
+        enqueuePendingRedeem(offlineSync.index, {
+          secret: normalizedSecret,
+          lists: [Number(listId)],
+          type,
+          nonce,
+          datetime
+        })
+        await persistOfflineIndex(offlineSync.index, { apitoken })
+      } catch (error) {
+        logOperational({
+          action: 'checkin.redeem_offline',
+          outcome: 'failure',
+          error_code: 'offline_persist_failed'
+        })
+        const wrapped = new Error('Offline check-in persistence failed')
+        wrapped.code = 'offline_persist_failed'
+        wrapped.cause = error
+        throw wrapped
+      }
     }
+
+    logOperational({
+      action: 'checkin.redeem_offline',
+      outcome: 'success'
+    })
 
     badgeUrl.value = 'local://offline-badge'
 
@@ -1370,7 +1382,12 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       const outcome = await printPdfBlob(badgeResult.blob, { silent: useSilentPrint })
       logOperational({
         action: 'badge.print',
-        outcome: outcome === PRINT_OUTCOME.FAILED ? 'failure' : 'success',
+        outcome:
+          outcome === PRINT_OUTCOME.FAILED
+            ? 'failure'
+            : outcome === PRINT_OUTCOME.CANCELLED
+              ? 'cancelled'
+              : 'success',
         error_code: outcome === PRINT_OUTCOME.FAILED ? 'print_failed' : undefined
       })
       return outcome
@@ -1396,15 +1413,30 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   }
 
   async function checkIn() {
+    let secret
     try {
-      const secret = parseQrPayload(cameraStore.qrCodeValue, 'ticket')
-      return await checkInBySecret(secret)
+      secret = parseQrPayload(cameraStore.qrCodeValue, 'ticket')
     } catch (error) {
       console.error('Invalid QR payload:', error?.name || 'Error')
       logOperational({
         action: 'checkin.redeem',
         outcome: 'failure',
         error_code: 'invalid_qr'
+      })
+      showErrorMsg(buildAttendeeMessage('Check-in Failed!', null))
+      cameraStore.clearLastScan()
+      return null
+    }
+
+    try {
+      return await checkInBySecret(secret)
+    } catch (error) {
+      console.error('Check-in failed:', error?.name || 'Error')
+      logOperational({
+        action: 'checkin.redeem',
+        outcome: 'failure',
+        error_code:
+          error?.code === 'offline_persist_failed' ? 'offline_persist_failed' : 'redeem_failed'
       })
       showErrorMsg(buildAttendeeMessage('Check-in Failed!', null))
       return null

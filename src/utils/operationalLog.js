@@ -1,4 +1,23 @@
 const SAFE = /^[A-Za-z0-9._:-]{1,128}$/
+const SAFE_OUTCOMES = new Set(['success', 'failure', 'cancelled'])
+
+/**
+ * Generate an opaque operational request/correlation identifier safe for logs.
+ *
+ * @param {string} [prefix='op']
+ * @returns {string}
+ */
+export function createOperationalId(prefix = 'op') {
+  const safePrefix = safeValue(prefix) || 'op'
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `${safePrefix}_${crypto.randomUUID().slice(0, 12)}`
+    }
+  } catch {
+    // Fall back to Math.random when crypto.randomUUID is unavailable.
+  }
+  return `${safePrefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+}
 
 /**
  * Known safe operational error codes for check-in redeem responses.
@@ -53,13 +72,15 @@ export function toSafeErrorCode(value, allowedCodes, fallback = 'request_error')
  *
  * @param {object} [params]
  * @param {string} [params.action]
- * @param {'success'|'failure'} [params.outcome]
+ * @param {'success'|'failure'|'cancelled'} [params.outcome]
  * @param {string|null} [params.error_code]
  * @param {string} [params.backend='checkin']
  * @param {number|null} [params.status]
  * @param {number} [params.duration_ms]
  * @param {string|null} [params.request_id]
  * @param {string|null} [params.correlation_id]
+ * @param {string|null} [params.resource_type]
+ * @param {string|null} [params.object_id]
  */
 export function logOperational({
   action,
@@ -69,11 +90,13 @@ export function logOperational({
   status,
   duration_ms,
   request_id,
-  correlation_id
+  correlation_id,
+  resource_type,
+  object_id
 } = {}) {
   try {
     if (typeof action !== 'string' || !SAFE.test(action)) return
-    const safeOutcome = outcome === 'success' ? 'success' : 'failure'
+    const safeOutcome = SAFE_OUTCOMES.has(outcome) ? outcome : 'failure'
     const record = {
       datetime: new Date().toISOString(),
       component: 'plugins',
@@ -86,11 +109,15 @@ export function logOperational({
     const duration = safeValue(duration_ms)
     const requestId = safeValue(request_id)
     const correlationId = safeValue(correlation_id)
+    const resourceType = safeValue(resource_type)
+    const objectId = safeValue(object_id)
     if (errorCode != null) record.error_code = errorCode
     if (statusCode != null) record.status = statusCode
     if (duration != null) record.duration_ms = duration
     if (requestId != null) record.request_id = requestId
     if (correlationId != null) record.correlation_id = correlationId
+    if (resourceType != null) record.resource_type = resourceType
+    if (objectId != null) record.object_id = objectId
     const line = Object.entries(record)
       .map(([key, value]) => `${key}=${value}`)
       .join(' ')
@@ -113,6 +140,8 @@ export function logApiResult({
   error_code,
   request_id,
   correlation_id,
+  resource_type,
+  object_id,
   action = 'connection.request'
 } = {}) {
   logOperational({
@@ -123,6 +152,8 @@ export function logApiResult({
     error_code,
     request_id,
     correlation_id,
+    resource_type,
+    object_id,
     backend: 'checkin'
   })
 }

@@ -1,6 +1,11 @@
 import { lookupBySecret, upsertPosition } from '@/offline/memoryIndex'
 import { normalizePositionFromOrder } from '@/offline/normalize'
-import { logApiResult, SAFE_REDEEM_ERROR_CODES, toSafeErrorCode } from '@/utils/operationalLog'
+import {
+  createOperationalId,
+  logApiResult,
+  SAFE_REDEEM_ERROR_CODES,
+  toSafeErrorCode
+} from '@/utils/operationalLog'
 
 export const MISSING_OFFLINE_DATA_MESSAGE =
   'Please connect to the internet to fetch the latest check-in data, then try again.'
@@ -84,7 +89,10 @@ export function enqueuePendingRegistration(index, entry) {
   index.pendingRegistrations = [...(index.pendingRegistrations || []), entry]
 }
 
-export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
+export async function flushPendingRedeems(
+  index,
+  { url, apitoken, organizer, correlationId = null }
+) {
   const pending = [...(index.pendingRedeems || [])]
   if (!pending.length) {
     return { flushed: 0, remaining: [] }
@@ -95,6 +103,7 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
 
   for (const item of pending) {
     const started = Date.now()
+    const requestId = createOperationalId('redeem')
     try {
       const response = await fetch(
         `${String(url).replace(/\/+$/, '')}/api/v1/organizers/${organizer}/checkin/redeem/`,
@@ -131,28 +140,7 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
       } catch {
         parseFailed = true
       }
-      const shouldFlush =
-        !parseFailed &&
-        ((response.ok && (body.status === 'ok' || body.status === 'redeemed')) ||
-          (body.status === 'error' && body.reason === 'already_redeemed'))
-      const errorCode = shouldFlush
-        ? null
-        : parseFailed
-          ? 'invalid_payload'
-          : toSafeErrorCode(
-              body.reason,
-              SAFE_REDEEM_ERROR_CODES,
-              response.ok ? 'redeem_failed' : 'http_error'
-            )
-      logApiResult({
-        action: 'checkin.redeem',
-        outcome: shouldFlush ? 'success' : 'failure',
-        status: response.status,
-        duration_ms: Date.now() - started,
-        error_code: errorCode
-      })
-      if (response.ok && (body.status === 'ok' || body.status === 'redeemed')) {
-        flushed += 1
+      if (!parseFailed && response.ok && (body.status === 'ok' || body.status === 'redeemed')) {
         if (body.position) {
           const record = normalizePositionFromOrder(
             { code: body.position.order, status: body.position.order__status || 'p' },
@@ -162,12 +150,47 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
             upsertPosition(index, record)
           }
         }
-        continue
-      }
-      if (body.status === 'error' && body.reason === 'already_redeemed') {
+        logApiResult({
+          action: 'checkin.redeem',
+          outcome: 'success',
+          status: response.status,
+          duration_ms: Date.now() - started,
+          error_code: null,
+          request_id: requestId,
+          correlation_id: correlationId
+        })
         flushed += 1
         continue
       }
+      if (!parseFailed && body.status === 'error' && body.reason === 'already_redeemed') {
+        logApiResult({
+          action: 'checkin.redeem',
+          outcome: 'success',
+          status: response.status,
+          duration_ms: Date.now() - started,
+          error_code: null,
+          request_id: requestId,
+          correlation_id: correlationId
+        })
+        flushed += 1
+        continue
+      }
+      const errorCode = parseFailed
+        ? 'invalid_payload'
+        : toSafeErrorCode(
+            body.reason,
+            SAFE_REDEEM_ERROR_CODES,
+            response.ok ? 'redeem_failed' : 'http_error'
+          )
+      logApiResult({
+        action: 'checkin.redeem',
+        outcome: 'failure',
+        status: response.status,
+        duration_ms: Date.now() - started,
+        error_code: errorCode,
+        request_id: requestId,
+        correlation_id: correlationId
+      })
       if (response.status >= 500 || response.status === 0) {
         remaining.push(item)
         continue
@@ -179,7 +202,9 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
         outcome: 'failure',
         status: null,
         duration_ms: Date.now() - started,
-        error_code: 'request_error'
+        error_code: 'request_error',
+        request_id: requestId,
+        correlation_id: correlationId
       })
       remaining.push(item)
     }
@@ -189,7 +214,10 @@ export async function flushPendingRedeems(index, { url, apitoken, organizer }) {
   return { flushed, remaining }
 }
 
-export async function flushPendingRegistrations(index, { url, apitoken, organizer, eventSlug }) {
+export async function flushPendingRegistrations(
+  index,
+  { url, apitoken, organizer, eventSlug, correlationId = null }
+) {
   const pending = [...(index.pendingRegistrations || [])]
   if (!pending.length) {
     return { flushed: 0, remaining: [] }
@@ -201,6 +229,7 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
 
   for (const item of pending) {
     const started = Date.now()
+    const requestId = createOperationalId('reg')
     try {
       const createResp = await fetch(
         `${base}/api/v1/organizers/${organizer}/events/${eventSlug}/orders/`,
@@ -237,7 +266,9 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
             ? 'invalid_payload'
             : createResp.status >= 500
               ? 'http_error'
-              : 'rejected'
+              : 'rejected',
+          request_id: requestId,
+          correlation_id: correlationId
         })
         if (createResp.status >= 500 || createParseFailed) {
           remaining.push(item)
@@ -281,7 +312,9 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
             outcome: 'failure',
             status: paidResp.status,
             duration_ms: Date.now() - started,
-            error_code: paidParseFailed ? 'invalid_payload' : 'mark_paid_failed'
+            error_code: paidParseFailed ? 'invalid_payload' : 'mark_paid_failed',
+            request_id: requestId,
+            correlation_id: correlationId
           })
           remaining.push({ ...item, lastError: 'mark_paid_failed', createdCode: created.code })
           continue
@@ -300,7 +333,9 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
         action: 'checkin.register',
         outcome: 'success',
         status: createResp.status,
-        duration_ms: Date.now() - started
+        duration_ms: Date.now() - started,
+        request_id: requestId,
+        correlation_id: correlationId
       })
     } catch {
       logApiResult({
@@ -308,7 +343,9 @@ export async function flushPendingRegistrations(index, { url, apitoken, organize
         outcome: 'failure',
         status: null,
         duration_ms: Date.now() - started,
-        error_code: 'request_error'
+        error_code: 'request_error',
+        request_id: requestId,
+        correlation_id: correlationId
       })
       remaining.push(item)
     }

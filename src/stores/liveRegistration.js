@@ -5,7 +5,7 @@ import {
   isDeviceProfileDenied,
   raiseIfDeviceApiError
 } from '@/utils/deviceErrors'
-import { logApiResult, logOperational } from '@/utils/operationalLog'
+import { createOperationalId, logApiResult, logOperational } from '@/utils/operationalLog'
 import { ref } from 'vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useOfflineSyncStore } from '@/stores/offlineSync'
@@ -172,13 +172,15 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
   async function registerAndMarkPaid(attendee, productId) {
     isRegistering.value = true
     const started = Date.now()
+    const requestId = createOperationalId('reg')
+    const processApi = useEventyayApi()
+    const isOffline =
+      isBrowserOffline() &&
+      canUseOfflineSync(processApi.selectedRole, processApi.securityProfile)
+    const action = isOffline ? 'checkin.live_register_offline' : 'checkin.live_register'
 
     try {
-      const processApi = useEventyayApi()
-      if (
-        isBrowserOffline() &&
-        canUseOfflineSync(processApi.selectedRole, processApi.securityProfile)
-      ) {
+      if (isOffline) {
         const offlineSync = useOfflineSyncStore()
         if (!offlineSync.index) {
           await offlineSync.hydrate(processApi)
@@ -192,9 +194,10 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
         })
         await persistOfflineIndex(offlineSync.index, { apitoken: processApi.apitoken })
         logOperational({
-          action: 'checkin.live_register_offline',
+          action,
           outcome: 'success',
-          duration_ms: Date.now() - started
+          duration_ms: Date.now() - started,
+          request_id: requestId
         })
         return {
           createdOrder: null,
@@ -239,9 +242,10 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
       } = resolveTicketDownload(orderPosition)
 
       logApiResult({
-        action: 'checkin.live_register',
+        action,
         outcome: 'success',
-        duration_ms: Date.now() - started
+        duration_ms: Date.now() - started,
+        request_id: requestId
       })
 
       return {
@@ -256,15 +260,18 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
       }
     } catch (error) {
       logApiResult({
-        action: 'checkin.live_register',
+        action,
         outcome: 'failure',
         status: error?.response?.status ?? error?.status ?? null,
         duration_ms: Date.now() - started,
+        request_id: requestId,
         error_code: isDeviceProfileDenied(error)
           ? 'device_profile_denied'
           : isDeviceAuthFailure(error)
             ? 'device_auth_failed'
-            : 'registration_failed'
+            : isOffline
+              ? 'offline_persist_failed'
+              : 'registration_failed'
       })
       throw error
     } finally {

@@ -1,5 +1,6 @@
 import { useApiStore } from '@/stores/api'
 import { useLoadingStore } from '@/stores/loading'
+import { logOperational } from '@/utils/operationalLog'
 import { defineStore } from 'pinia'
 import { computed, nextTick, ref } from 'vue'
 
@@ -46,7 +47,12 @@ export const usePrintModalStore = defineStore('printModal', () => {
       //set selected options to all options
       selectedOptions.value = printOptions.value
     } catch (error) {
-      console.error('Failed to fetch badge PDF:', error?.name || 'Error')
+      console.error('Failed to load badge fields:', error?.name || 'Error')
+      logOperational({
+        action: 'badge.fields_fetch',
+        outcome: 'failure',
+        error_code: 'badge_fields_failed'
+      })
     }
   }
 
@@ -62,7 +68,7 @@ export const usePrintModalStore = defineStore('printModal', () => {
       await getBadgeFields()
       loadingStore.contentLoaded()
     } catch (error) {
-      console.error('Failed to fetch badge PDF:', error?.name || 'Error')
+      console.error('Failed to set print details:', error?.name || 'Error')
     }
     nextTick(() => {
       showPrintModal.value = true
@@ -70,6 +76,7 @@ export const usePrintModalStore = defineStore('printModal', () => {
   }
 
   async function getPDF(fields) {
+    let stage = 'pdf_request'
     try {
       const url = await apiStore.get(
         true,
@@ -79,6 +86,10 @@ export const usePrintModalStore = defineStore('printModal', () => {
       //check if state is production
       // need to use URL from same domain to prevent origin error
       let objFra = document.getElementById('printFrame')
+      if (!objFra) {
+        stage = 'print_frame'
+        throw new Error('Missing print frame')
+      }
 
       if (
         typeof import.meta !== 'undefined' && typeof import.meta.env?.DEV === 'boolean'
@@ -95,7 +106,13 @@ export const usePrintModalStore = defineStore('printModal', () => {
         objFra.contentWindow.print()
       }
     } catch (error) {
-      console.error('Failed to fetch badge PDF:', error?.name || 'Error')
+      const errorCode = stage === 'print_frame' ? 'print_frame_missing' : 'badge_pdf_failed'
+      console.error('Failed to fetch badge PDF:', errorCode, error?.name || 'Error')
+      logOperational({
+        action: 'badge.print',
+        outcome: 'failure',
+        error_code: errorCode
+      })
     }
   }
 

@@ -372,7 +372,12 @@ export const useEventyayApi = defineStore(
       try {
         const api = createAuthorizedDeviceApi(url.value, apitoken.value)
         await api.post('/api/v1/device/verify-setup-token', { token: cleanToken })
-        logOperational({ action: 'auth.verify_token', outcome: 'success' })
+        logOperational({
+          action: 'auth.verify_token',
+          outcome: 'success',
+          resource_type: 'device_token',
+          object_id: 'device_setup_token'
+        })
         return { success: true }
       } catch (error) {
         const status = error?.response?.status
@@ -386,7 +391,9 @@ export const useEventyayApi = defineStore(
           action: 'auth.verify_token',
           outcome: 'failure',
           status: status ?? null,
-          error_code: errorCode
+          error_code: errorCode,
+          resource_type: 'device_token',
+          object_id: 'device_setup_token'
         })
         if (body?.token) {
           const tokenError = Array.isArray(body.token) ? body.token[0] : body.token

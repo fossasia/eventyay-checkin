@@ -31,3 +31,8 @@ app.use(i18n)
 app.use(router)
 
 app.mount('#app')
+
+logOperational({
+  action: 'app.start',
+  outcome: 'success'
+})

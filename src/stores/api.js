@@ -1,4 +1,4 @@
-import { logApiResult } from '@/utils/operationalLog'
+import { createOperationalId, logApiResult } from '@/utils/operationalLog'
 import { defaults, mande } from 'mande'
 import { defineStore } from 'pinia'
 
@@ -33,6 +33,7 @@ export const useApiStore = defineStore('api', () => {
     newSession(requiresAuth)
     instance.options.headers['Accept'] = 'application/vnd.api+json'
     const started = Date.now()
+    const requestId = createOperationalId('req')
     try {
       let response
       if (payload) {
@@ -40,14 +41,20 @@ export const useApiStore = defineStore('api', () => {
       } else {
         response = await instance.get(path, payload)
       }
-      logApiResult({ outcome: 'success', duration_ms: Date.now() - started })
+      logApiResult({
+        outcome: 'success',
+        status: response?.status ?? null,
+        duration_ms: Date.now() - started,
+        request_id: requestId
+      })
       return response
     } catch (error) {
       logApiResult({
         outcome: 'failure',
-        status: error?.response?.status,
+        status: error?.response?.status ?? null,
         duration_ms: Date.now() - started,
-        error_code: 'http_error'
+        error_code: 'http_error',
+        request_id: requestId
       })
       return Promise.reject(error)
     }
@@ -56,6 +63,7 @@ export const useApiStore = defineStore('api', () => {
   async function post(requiresAuth, path, payload = false, hasBody = false) {
     newSession(requiresAuth)
     const started = Date.now()
+    const requestId = createOperationalId('req')
     try {
       let response
       if (hasBody) {
@@ -72,14 +80,20 @@ export const useApiStore = defineStore('api', () => {
           response = await instance.post(path)
         }
       }
-      logApiResult({ outcome: 'success', duration_ms: Date.now() - started })
+      logApiResult({
+        outcome: 'success',
+        status: response?.status ?? null,
+        duration_ms: Date.now() - started,
+        request_id: requestId
+      })
       return response
     } catch (error) {
       logApiResult({
         outcome: 'failure',
-        status: error?.response?.status,
+        status: error?.response?.status ?? null,
         duration_ms: Date.now() - started,
-        error_code: 'http_error'
+        error_code: 'http_error',
+        request_id: requestId
       })
       return Promise.reject(error)
     }

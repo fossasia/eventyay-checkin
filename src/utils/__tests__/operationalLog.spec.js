@@ -1,12 +1,18 @@
 import { createMemoryIndex } from '@/offline/memoryIndex'
 import { createEmptySnapshot } from '@/offline/normalize'
 import { flushPendingRedeems } from '@/offline/offlineActions'
+import * as snapshotStore from '@/offline/snapshotStore'
 import { runOfflineSync } from '@/offline/syncEngine'
 import { useApiStore } from '@/stores/api'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useleedauth } from '@/stores/leedauth'
+import { useLiveRegistrationStore } from '@/stores/liveRegistration'
+import { useOfflineSyncStore } from '@/stores/offlineSync'
+import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
+import * as badgePdf from '@/utils/badgePdf'
 import { DEVICE_PROFILE_DENIED_SERVER_DETAIL } from '@/utils/deviceErrors'
 import {
+  createOperationalId,
   logApiResult,
   logOperational,
   SAFE_REDEEM_ERROR_CODES,
@@ -105,11 +111,34 @@ describe('operationalLog', () => {
     await api.get(false, 'events/1')
     expect(info).toHaveBeenCalledTimes(1)
     expect(info.mock.calls[0][1]).toContain('outcome=success')
+    expect(info.mock.calls[0][1]).toContain('request_id=req_')
 
     await expect(api.post(false, 'events/1', { a: 1 })).rejects.toThrow()
     expect(warn).toHaveBeenCalledTimes(1)
     expect(warn.mock.calls[0][1]).toContain('outcome=failure')
     expect(warn.mock.calls[0][1]).toContain('error_code=http_error')
+    expect(warn.mock.calls[0][1]).toContain('request_id=req_')
+  })
+
+  it('supports cancelled outcome without error_code and resource context fields', () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const id = createOperationalId('test')
+    expect(id).toMatch(/^test_[A-Za-z0-9._:-]+$/)
+
+    logOperational({
+      action: 'badge.print',
+      outcome: 'cancelled',
+      resource_type: 'badge',
+      object_id: 'badge_layout'
+    })
+    expect(warn).not.toHaveBeenCalled()
+    expect(info).toHaveBeenCalledTimes(1)
+    expect(info.mock.calls[0][1]).toContain('outcome=cancelled')
+    expect(info.mock.calls[0][1]).toContain('resource_type=badge')
+    expect(info.mock.calls[0][1]).toContain('object_id=badge_layout')
+    expect(info.mock.calls[0][1]).not.toContain('error_code=')
   })
 
   it('logs already_redeemed as success, sanitizes unknown reasons, and logs network/json failures in flushPendingRedeems', async () => {
@@ -195,10 +224,166 @@ describe('operationalLog', () => {
 
     expect(result.ok).toBe(false)
     expect(result.error).toBe('orders_sync_failed')
-    expect(info).not.toHaveBeenCalled()
+    expect(info.mock.calls.some((call) => call[1].includes('action=checkin.sync_start'))).toBe(true)
+    expect(info.mock.calls.some((call) => call[1].includes('action=checkin.fetch'))).toBe(false)
     expect(warn.mock.calls.some((call) => call[1].includes('error_code=invalid_payload'))).toBe(
       true
     )
+  })
+
+  it('logs failure and retains item when flushPendingRedeems receives a malformed position', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const index = createMemoryIndex(createEmptySnapshot('org', 'evt'))
+    index.pendingRedeems = [{ secret: 'sec-bad', lists: [1], nonce: 'n-bad' }]
+
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: 'ok',
+          position: { secret: 'sec-bad', downloads: {} }
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      )
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await flushPendingRedeems(index, {
+      url: 'https://example.invalid',
+      apitoken: 'tok',
+      organizer: 'org'
+    })
+
+    expect(result.flushed).toBe(0)
+    expect(result.remaining).toHaveLength(1)
+    expect(info).not.toHaveBeenCalled()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][1]).toContain('action=checkin.redeem')
+    expect(warn.mock.calls[0][1]).toContain('outcome=failure')
+  })
+
+  it('logs checkin.sync failure with correlation_id when storage load rejects', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.spyOn(snapshotStore, 'loadEncryptedSnapshot').mockRejectedValueOnce(new Error('idb_down'))
+
+    await expect(
+      runOfflineSync({
+        url: 'https://example.invalid',
+        apitoken: 'tok',
+        organizer: 'org',
+        eventSlug: 'evt',
+        selectedRole: 'CheckIn',
+        securityProfile: 'eventyay_checkin'
+      })
+    ).rejects.toThrow('idb_down')
+
+    expect(info).toHaveBeenCalledTimes(1)
+    expect(info.mock.calls[0][1]).toContain('action=checkin.sync_start')
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][1]).toContain('action=checkin.sync')
+    expect(warn.mock.calls[0][1]).toContain('outcome=failure')
+    expect(warn.mock.calls[0][1]).toContain('error_code=sync_failed')
+  })
+
+  it('keeps offline action name when offline live registration persistence fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('navigator', { onLine: false })
+    vi.spyOn(snapshotStore, 'saveEncryptedSnapshot').mockRejectedValueOnce(new Error('disk_full'))
+
+    const processApi = useEventyayApi()
+    processApi.setApiCred('tok', 'https://example.invalid', 'org')
+    processApi.setEvent('evt', 'Event')
+    processApi.setRole('CheckIn')
+    processApi.setSecurityProfile('eventyay_checkin')
+
+    const offlineSync = useOfflineSyncStore()
+    offlineSync.index = createMemoryIndex(createEmptySnapshot('org', 'evt'))
+
+    const liveReg = useLiveRegistrationStore()
+    liveReg.products = [{ id: 1, name: 'General', has_variations: false }]
+
+    await expect(
+      liveReg.registerAndMarkPaid({ attendee_name: 'Ada', attendee_email: 'ada@example.test' }, 1)
+    ).rejects.toThrow('disk_full')
+
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0][1]).toContain('action=checkin.live_register_offline')
+    expect(warn.mock.calls[0][1]).toContain('error_code=offline_persist_failed')
+  })
+
+  it('logs cancelled badge prints with outcome=cancelled and without error_code', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    const processApi = useEventyayApi()
+    processApi.setApiCred('tok', 'https://example.invalid', 'org')
+    processApi.setEvent('evt', 'Event')
+
+    vi.spyOn(badgePdf, 'fetchBadgePdfWithRetry').mockResolvedValueOnce({
+      status: 'ready',
+      blob: new Blob(['pdf'], { type: 'application/pdf' })
+    })
+    vi.spyOn(badgePdf, 'printPdfBlob').mockResolvedValueOnce(badgePdf.PRINT_OUTCOME.CANCELLED)
+
+    const checkInStore = useProcessEventyayCheckInStore()
+    const outcome = await checkInStore.printBadge('/api/v1/badge/1')
+
+    expect(outcome).toBe(badgePdf.PRINT_OUTCOME.CANCELLED)
+    expect(warn).not.toHaveBeenCalled()
+    expect(info).toHaveBeenCalledTimes(1)
+    expect(info.mock.calls[0][1]).toContain('action=badge.print')
+    expect(info.mock.calls[0][1]).toContain('outcome=cancelled')
+    expect(info.mock.calls[0][1]).not.toContain('error_code=')
+  })
+
+  it('logs offline_persist_failed rather than invalid_qr when offline checkIn persistence fails', async () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.stubGlobal('navigator', { onLine: false })
+    vi.spyOn(snapshotStore, 'saveEncryptedSnapshot').mockRejectedValueOnce(new Error('quota'))
+
+    const processApi = useEventyayApi()
+    processApi.setApiCred('tok', 'https://example.invalid', 'org')
+    processApi.setEvent('evt', 'Event')
+    processApi.setRole('CheckIn')
+    processApi.setSecurityProfile('eventyay_checkin')
+    processApi.setSelectedCheckInListId(3)
+
+    const snapshot = createEmptySnapshot('org', 'evt')
+    snapshot.positionsBySecret['sec-1'] = {
+      id: 1,
+      secret: 'sec-1',
+      product: 9,
+      orderStatus: 'p',
+      attendeeName: 'Ada',
+      attendeeEmail: 'ada@example.test',
+      checkins: [],
+      listIds: [3],
+      pdfData: { attendee_name: 'Ada' },
+      searchText: 'ada'
+    }
+    const offlineSync = useOfflineSyncStore()
+    offlineSync.index = createMemoryIndex(snapshot)
+
+    const checkInStore = useProcessEventyayCheckInStore()
+    checkInStore.availableCheckInLists = [{ id: 3, name: 'Main' }]
+
+    const { useCameraStore } = await import('@/stores/camera')
+    const cameraStore = useCameraStore()
+    cameraStore.qrCodeValue = 'sec-1'
+
+    const res = await checkInStore.checkIn()
+    expect(res).toBeNull()
+    expect(info).not.toHaveBeenCalled()
+    expect(
+      warn.mock.calls.some((call) => call[1].includes('error_code=offline_persist_failed'))
+    ).toBe(true)
+    expect(warn.mock.calls.some((call) => call[1].includes('error_code=invalid_qr'))).toBe(false)
   })
 
   it('logs device_profile_denied instead of invalid_credentials on exhibitor 403 profile denial', async () => {

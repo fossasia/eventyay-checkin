@@ -1257,22 +1257,34 @@ onMounted(async () => {
 
     checkInReady.value = true
 
-    const prefetchResults = await Promise.allSettled([
-      eventyayEventStore.events.length ? Promise.resolve() : eventyayEventStore.fetchEvents(),
-      isBadgeStation.value ? Promise.resolve() : liveRegistrationStore.fetchProducts(),
-      processEventyayCheckInStore.prefetchCheckInLists(),
-      isBadgeStation.value ? Promise.resolve() : fetchBadgeLayouts(),
-      ensureEventQuestionsLoaded()
-    ])
-    const prefetchFailed = prefetchResults.some((result) => result.status === 'rejected')
+    const prefetchTasks = [
+      {
+        label: 'events',
+        promise: eventyayEventStore.events.length ? Promise.resolve() : eventyayEventStore.fetchEvents()
+      },
+      {
+        label: 'products',
+        promise: isBadgeStation.value ? Promise.resolve() : liveRegistrationStore.fetchProducts()
+      },
+      { label: 'checkin_lists', promise: processEventyayCheckInStore.prefetchCheckInLists() },
+      {
+        label: 'badge_layouts',
+        promise: isBadgeStation.value ? Promise.resolve() : fetchBadgeLayouts()
+      },
+      { label: 'questions', promise: ensureEventQuestionsLoaded() }
+    ]
+    const prefetchResults = await Promise.allSettled(prefetchTasks.map((task) => task.promise))
+    const failedPrefetchLabels = prefetchResults
+      .map((result, index) => (result.status === 'rejected' ? prefetchTasks[index].label : null))
+      .filter(Boolean)
+    const prefetchFailed = failedPrefetchLabels.length > 0
     if (prefetchFailed && offlineSync.enabled && !navigator.onLine) {
       notificationStore.addNotification(
         ['Offline mode', 'Using synced check-in data. Connect to refresh.'],
         'info'
       )
     } else if (prefetchFailed && navigator.onLine) {
-      const failedCount = prefetchResults.filter((result) => result.status === 'rejected').length
-      console.warn('Some check-in prefetch requests failed:', failedCount)
+      console.warn('Some check-in prefetch requests failed:', failedPrefetchLabels.join(','))
     }
 
     if (!isBadgeStation.value) {
