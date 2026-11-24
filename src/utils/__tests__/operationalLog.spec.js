@@ -281,7 +281,9 @@ describe('operationalLog', () => {
 
     expect(result.ok).toBe(false)
     expect(result.error).toBe('orders_sync_failed')
-    const syncStartCall = info.mock.calls.find((call) => call[1].includes('action=checkin.sync_start'))
+    const syncStartCall = info.mock.calls.find((call) =>
+      call[1].includes('action=checkin.sync_start')
+    )
     expect(syncStartCall).toBeDefined()
     const syncStartCorr = syncStartCall[1].match(/correlation_id=([^\s]+)/)?.[1]
     expect(syncStartCorr).toBeTruthy()
