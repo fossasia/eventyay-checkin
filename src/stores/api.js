@@ -47,7 +47,7 @@ export const useApiStore = defineStore('api', () => {
     const mandePayload =
       payload && typeof payload === 'object' && 'correlationId' in payload
         ? (({ correlationId: _ignored, ...rest }) =>
-            Object.keys(rest).length ? rest : undefined)(payload)
+          Object.keys(rest).length ? rest : undefined)(payload)
         : payload
     try {
       let rawResponse
@@ -78,22 +78,28 @@ export const useApiStore = defineStore('api', () => {
     }
   }
 
-  async function post(requiresAuth, path, payload = false, hasBody = false) {
+  async function post(requiresAuth, path, payload = false, hasBody = false, options = {}) {
     newSession(requiresAuth)
     const started = Date.now()
     const requestId = createOperationalId('req')
+    const correlationId = options?.correlationId ?? payload?.correlationId ?? null
+    const mandePayload =
+      payload && typeof payload === 'object' && 'correlationId' in payload
+        ? (({ correlationId: _ignored, ...rest }) =>
+          Object.keys(rest).length ? rest : undefined)(payload)
+        : payload
     try {
       let rawResponse
       if (hasBody) {
         delete defaults.headers['Content-Type']
-        const options = instance.options
-        options['body'] = payload
+        const opt = instance.options
+        opt['body'] = mandePayload
         rawResponse = await instance.post(path, null, { responseAs: 'response' })
       } else {
-        if (payload) {
+        if (mandePayload) {
           instance.options.headers['Accept'] = 'application/vnd.api+json'
           instance.options.headers['Content-Type'] = 'application/vnd.api+json'
-          rawResponse = await instance.post(path, payload, { responseAs: 'response' })
+          rawResponse = await instance.post(path, mandePayload, { responseAs: 'response' })
         } else {
           rawResponse = await instance.post(path, null, { responseAs: 'response' })
         }
@@ -103,7 +109,8 @@ export const useApiStore = defineStore('api', () => {
         outcome: 'success',
         status,
         duration_ms: Date.now() - started,
-        request_id: requestId
+        request_id: requestId,
+        correlation_id: correlationId
       })
       return body
     } catch (error) {
@@ -112,7 +119,8 @@ export const useApiStore = defineStore('api', () => {
         status: error?.response?.status ?? null,
         duration_ms: Date.now() - started,
         error_code: 'http_error',
-        request_id: requestId
+        request_id: requestId,
+        correlation_id: correlationId
       })
       return Promise.reject(error)
     }

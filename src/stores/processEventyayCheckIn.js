@@ -925,6 +925,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
 
     const started = Date.now()
+    const requestId = createOperationalId('red')
     try {
       const checkInLists = await getCheckInLists({ force: true })
 
@@ -967,7 +968,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         logApiResult({
           action: 'checkin.redeem',
           outcome: 'success',
-          duration_ms: Date.now() - started
+          duration_ms: Date.now() - started,
+          request_id: requestId
         })
         if (type === 'exit') {
           if (!suppressSuccess) {
@@ -1027,6 +1029,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           action: 'checkin.redeem',
           outcome: 'failure',
           duration_ms: Date.now() - started,
+          request_id: requestId,
           error_code: safeReason
         })
         handleRedeemErrorResponse(response, normalizedSecret, hints)
@@ -1035,6 +1038,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           action: 'checkin.redeem',
           outcome: 'failure',
           duration_ms: Date.now() - started,
+          request_id: requestId,
           error_code: 'redeem_failed'
         })
         showErrorMsg(
@@ -1065,6 +1069,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         outcome: 'failure',
         status: errorStatus,
         duration_ms: Date.now() - started,
+        request_id: requestId,
         error_code: errorCode
       })
       if (

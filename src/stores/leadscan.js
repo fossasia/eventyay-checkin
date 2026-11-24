@@ -8,7 +8,7 @@ import {
   isDeviceAuthFailure,
   isDeviceProfileDenied
 } from '@/utils/deviceErrors'
-import { logApiResult } from '@/utils/operationalLog'
+import { createOperationalId, logApiResult } from '@/utils/operationalLog'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
@@ -134,6 +134,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
     }
 
     const started = Date.now()
+    const requestId = createOperationalId('lead')
     try {
       const api = createAuthorizedExhibitorApi(url, apitoken, exikey)
       await fetchCachedLeads(api, organizer, eventSlug)
@@ -143,7 +144,8 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         logApiResult({
           action: 'lead.scan',
           outcome: 'success',
-          duration_ms: Date.now() - started
+          duration_ms: Date.now() - started,
+          request_id: requestId
         })
         showExistingLead(leadValue, existingLead.attendee || null)
         return
@@ -154,7 +156,8 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         logApiResult({
           action: 'lead.scan',
           outcome: 'success',
-          duration_ms: Date.now() - started
+          duration_ms: Date.now() - started,
+          request_id: requestId
         })
         rememberLead(leadValue, response.attendee)
         showSuccessMsg({
@@ -169,6 +172,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         action: 'lead.scan',
         outcome: 'failure',
         duration_ms: Date.now() - started,
+        request_id: requestId,
         error_code: 'scan_failed'
       })
       showErrorMsg(
@@ -183,7 +187,8 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
           action: 'lead.scan',
           outcome: 'success',
           status,
-          duration_ms: Date.now() - started
+          duration_ms: Date.now() - started,
+          request_id: requestId
         })
         rememberLead(leadValue, body?.attendee || null)
         showExistingLead(leadValue, body?.attendee || null)
@@ -195,6 +200,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         outcome: 'failure',
         status: status || null,
         duration_ms: Date.now() - started,
+        request_id: requestId,
         error_code: isDeviceProfileDenied(err)
           ? 'device_profile_denied'
           : isDeviceAuthFailure(err) || status === 401
@@ -299,6 +305,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
     }
 
     const started = Date.now()
+    const requestId = createOperationalId('lead')
     try {
       const api = createAuthorizedExhibitorApi(url, apitoken, exikey)
       const response = await api.get(exhibitorApiPath(organizer, eventSlug, 'lead/retrieve'))
@@ -309,13 +316,15 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         logApiResult({
           action: 'lead.export',
           outcome: 'success',
-          duration_ms: Date.now() - started
+          duration_ms: Date.now() - started,
+          request_id: requestId
         })
       } else {
         logApiResult({
           action: 'lead.export',
           outcome: 'failure',
           duration_ms: Date.now() - started,
+          request_id: requestId,
           error_code: 'export_failed'
         })
       }
@@ -327,6 +336,7 @@ export const useLeadScanStore = defineStore('processLeadScan', () => {
         outcome: 'failure',
         status,
         duration_ms: Date.now() - started,
+        request_id: requestId,
         error_code: isDeviceProfileDenied(error)
           ? 'device_profile_denied'
           : isDeviceAuthFailure(error) || status === 401

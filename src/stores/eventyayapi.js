@@ -1,5 +1,5 @@
 import { redirectToUserAuth } from '@/utils/authRedirect'
-import { logOperational } from '@/utils/operationalLog'
+import { createOperationalId, logOperational } from '@/utils/operationalLog'
 import { createAuthorizedDeviceApi, deviceApi, resolveServerUrl } from '@/utils/serverUrl'
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
@@ -206,12 +206,16 @@ export const useEventyayApi = defineStore(
     }
 
     async function initializeDevice(serverUrl, token) {
+      const started = Date.now()
+      const requestId = createOperationalId('dev')
       const cleanUrl = resolveServerUrl(serverUrl)
       const cleanToken = String(token || '').trim()
       if (!cleanUrl || !cleanToken) {
         logOperational({
           action: 'checkin.register',
           outcome: 'failure',
+          duration_ms: Date.now() - started,
+          request_id: requestId,
           error_code: 'invalid_qr'
         })
         return { success: false, error: 'invalid_qr' }
@@ -223,6 +227,8 @@ export const useEventyayApi = defineStore(
         logOperational({
           action: 'checkin.register',
           outcome: 'failure',
+          duration_ms: Date.now() - started,
+          request_id: requestId,
           error_code: 'invalid_url'
         })
         return { success: false, error: 'invalid_url' }
@@ -242,12 +248,19 @@ export const useEventyayApi = defineStore(
         setLimitCheckInLists(response.limit_checkin_lists || [])
         setDeviceInfo({ name: response.name, gate: response.gate })
         setSecurityProfile(response.security_profile)
-        logOperational({ action: 'checkin.register', outcome: 'success' })
+        logOperational({
+          action: 'checkin.register',
+          outcome: 'success',
+          duration_ms: Date.now() - started,
+          request_id: requestId
+        })
         return { success: true }
       }
       logOperational({
         action: 'checkin.register',
         outcome: 'failure',
+        duration_ms: Date.now() - started,
+        request_id: requestId,
         error_code: 'registration_failed'
       })
       return { success: false, error: 'registration_failed' }
@@ -259,6 +272,7 @@ export const useEventyayApi = defineStore(
       }
 
       isRegistering.value = true
+      const requestId = createOperationalId('reg')
       try {
         let qrData
         try {
@@ -268,6 +282,7 @@ export const useEventyayApi = defineStore(
           logOperational({
             action: 'checkin.register',
             outcome: 'failure',
+            request_id: requestId,
             error_code: 'invalid_qr'
           })
           return { success: false, error: 'invalid_qr' }
@@ -278,6 +293,7 @@ export const useEventyayApi = defineStore(
           logOperational({
             action: 'checkin.register',
             outcome: 'failure',
+            request_id: requestId,
             error_code: 'invalid_qr'
           })
           return { success: false, error: 'invalid_qr' }
@@ -287,6 +303,7 @@ export const useEventyayApi = defineStore(
           logOperational({
             action: 'checkin.register',
             outcome: 'failure',
+            request_id: requestId,
             error_code: 'unsupported_handshake'
           })
           return { success: false, error: 'unsupported_handshake' }
@@ -299,6 +316,7 @@ export const useEventyayApi = defineStore(
         logOperational({
           action: 'checkin.register',
           outcome: 'failure',
+          request_id: requestId,
           error_code: 'registration_failed',
           status: error?.response?.status
         })

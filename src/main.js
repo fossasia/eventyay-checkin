@@ -13,8 +13,10 @@ import { logOperational } from '@/utils/operationalLog'
 
 const app = createApp(App)
 
+const SAFE_APP_ERRORS = new Set(['TypeError', 'RangeError', 'ReferenceError', 'SyntaxError', 'URIError'])
+
 app.config.errorHandler = (err) => {
-  const errorCode = err?.name || 'unhandled_error'
+  const errorCode = err?.name && SAFE_APP_ERRORS.has(err.name) ? err.name : 'unhandled_error'
   console.error('Unhandled application error:', errorCode)
   logOperational({
     action: 'app.error',

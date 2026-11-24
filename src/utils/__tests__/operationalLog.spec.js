@@ -57,6 +57,12 @@ describe('operationalLog', () => {
     expect(line).not.toContain('example.invalid')
   })
 
+  it('emits checkin-app as the default component', () => {
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    logOperational({ action: 'app.start', outcome: 'success' })
+    expect(info.mock.calls[0][1]).toContain('component=checkin-app')
+  })
+
   it('drops unsafe request_id and correlation_id values', () => {
     const info = vi.spyOn(console, 'info').mockImplementation(() => {})
     logOperational({
@@ -135,10 +141,11 @@ describe('operationalLog', () => {
     expect(info.mock.calls[1][1]).toContain('status=200')
     expect(info.mock.calls[1][1]).not.toContain('status=ready')
 
-    const res201 = await api.post(false, 'events/1', { a: 1 })
+    const res201 = await api.post(false, 'events/1', { a: 1, correlationId: 'corr_test_post' })
     expect(res201).toEqual({ id: 42 })
     expect(info).toHaveBeenCalledTimes(3)
     expect(info.mock.calls[2][1]).toContain('status=201')
+    expect(info.mock.calls[2][1]).toContain('correlation_id=corr_test_post')
 
     const res204 = await api.post(false, 'events/1/ack')
     expect(res204).toBeNull()
@@ -274,11 +281,16 @@ describe('operationalLog', () => {
 
     expect(result.ok).toBe(false)
     expect(result.error).toBe('orders_sync_failed')
-    expect(info.mock.calls.some((call) => call[1].includes('action=checkin.sync_start'))).toBe(true)
+    const syncStartCall = info.mock.calls.find((call) => call[1].includes('action=checkin.sync_start'))
+    expect(syncStartCall).toBeDefined()
+    const syncStartCorr = syncStartCall[1].match(/correlation_id=([^\s]+)/)?.[1]
+    expect(syncStartCorr).toBeTruthy()
+
     expect(info.mock.calls.some((call) => call[1].includes('action=checkin.fetch'))).toBe(false)
-    expect(warn.mock.calls.some((call) => call[1].includes('error_code=invalid_payload'))).toBe(
-      true
-    )
+    const fetchWarn = warn.mock.calls.find((call) => call[1].includes('action=checkin.fetch'))
+    expect(fetchWarn).toBeDefined()
+    expect(fetchWarn[1]).toContain('error_code=invalid_payload')
+    expect(fetchWarn[1]).toContain(`correlation_id=${syncStartCorr}`)
   })
 
   it('logs failure and retains item when flushPendingRedeems receives a malformed position', async () => {
@@ -333,11 +345,19 @@ describe('operationalLog', () => {
     ).rejects.toThrow('idb_down')
 
     expect(info).toHaveBeenCalledTimes(1)
-    expect(info.mock.calls[0][1]).toContain('action=checkin.sync_start')
+    const startLine = info.mock.calls[0][1]
+    expect(startLine).toContain('action=checkin.sync_start')
     expect(warn).toHaveBeenCalledTimes(1)
-    expect(warn.mock.calls[0][1]).toContain('action=checkin.sync')
-    expect(warn.mock.calls[0][1]).toContain('outcome=failure')
-    expect(warn.mock.calls[0][1]).toContain('error_code=sync_failed')
+    const failLine = warn.mock.calls[0][1]
+    expect(failLine).toContain('action=checkin.sync')
+    expect(failLine).toContain('outcome=failure')
+    expect(failLine).toContain('error_code=sync_failed')
+
+    expect(startLine).toMatch(/correlation_id=sync_[a-z0-9]+/)
+    expect(failLine).toMatch(/correlation_id=sync_[a-z0-9]+/)
+    const startCorr = startLine.match(/correlation_id=([^\s]+)/)[1]
+    const failCorr = failLine.match(/correlation_id=([^\s]+)/)[1]
+    expect(startCorr).toBe(failCorr)
   })
 
   it('keeps offline action name when offline live registration persistence fails', async () => {

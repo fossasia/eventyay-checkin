@@ -122,14 +122,6 @@ async function fetchJsonPage(baseUrl, apitoken, path, { correlationId = null } =
     })
     throw new Error('Invalid JSON page payload')
   }
-  logApiResult({
-    outcome: 'success',
-    status: response.status,
-    duration_ms: Date.now() - started,
-    request_id: requestId,
-    correlation_id: correlationId,
-    action: 'checkin.fetch'
-  })
   return {
     body,
     pageGenerated: response.headers.get('X-Page-Generated')

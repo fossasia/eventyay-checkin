@@ -95,6 +95,7 @@ export function logOperational({
   outcome,
   error_code,
   backend = 'checkin',
+  component = 'checkin-app',
   status,
   duration_ms,
   request_id,
@@ -107,7 +108,7 @@ export function logOperational({
     const safeOutcome = SAFE_OUTCOMES.has(outcome) ? outcome : 'failure'
     const record = {
       datetime: new Date().toISOString(),
-      component: 'plugins',
+      component: safeValue(component) || 'checkin-app',
       action,
       outcome: safeOutcome,
       backend: safeValue(backend) || 'checkin'
