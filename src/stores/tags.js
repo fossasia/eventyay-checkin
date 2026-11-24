@@ -29,7 +29,7 @@ export const useTagStore = defineStore('tags', () => {
         availableTags.value = response.tags
       }
     } catch (error) {
-      console.error('Failed to fetch tags:', error)
+      console.error('Failed to fetch tags:', error?.name || 'Error')
     }
   }
 

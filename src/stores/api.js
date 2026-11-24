@@ -1,11 +1,12 @@
+import { createOperationalId, logApiResult } from '@/utils/operationalLog'
 import { defaults, mande } from 'mande'
 import { defineStore } from 'pinia'
 
 export const useApiStore = defineStore('api', () => {
   const apiUrl =
     import.meta.env.MODE === 'production'
-      ? (import.meta.env.VITE_PROD_API_URL || '')
-      : (import.meta.env.VITE_TEST_API_URL || '')
+      ? import.meta.env.VITE_PROD_API_URL || ''
+      : import.meta.env.VITE_TEST_API_URL || ''
 
   let instance = mande(apiUrl)
 
@@ -28,41 +29,99 @@ export const useApiStore = defineStore('api', () => {
     }
   }
 
-  async function get(requiresAuth, path, payload) {
+  async function parseTransportResponse(rawResponse) {
+    if (typeof rawResponse?.json === 'function' && typeof rawResponse?.status === 'number') {
+      const status = rawResponse.status
+      const body = status === 204 ? null : await rawResponse.json().catch(() => null)
+      return { status, body }
+    }
+    return { status: 200, body: rawResponse }
+  }
+
+  async function get(requiresAuth, path, payload, options = {}) {
     newSession(requiresAuth)
     instance.options.headers['Accept'] = 'application/vnd.api+json'
+    const started = Date.now()
+    const requestId = createOperationalId('req')
+    const correlationId = options?.correlationId ?? payload?.correlationId ?? null
+    const mandePayload =
+      payload && typeof payload === 'object' && 'correlationId' in payload
+        ? (({ correlationId: _ignored, ...rest }) =>
+          Object.keys(rest).length ? rest : undefined)(payload)
+        : payload
     try {
-      if (payload) {
-        return await instance.get(path)
+      let rawResponse
+      if (mandePayload) {
+        rawResponse = await instance.get(path, { responseAs: 'response' })
       } else {
-        return await instance.get(path, payload)
+        rawResponse = await instance.get(path, { ...mandePayload, responseAs: 'response' })
       }
+      const { status, body } = await parseTransportResponse(rawResponse)
+      logApiResult({
+        outcome: 'success',
+        status,
+        duration_ms: Date.now() - started,
+        request_id: requestId,
+        correlation_id: correlationId
+      })
+      return body
     } catch (error) {
+      logApiResult({
+        outcome: 'failure',
+        status: error?.response?.status ?? null,
+        duration_ms: Date.now() - started,
+        error_code: 'http_error',
+        request_id: requestId,
+        correlation_id: correlationId
+      })
       return Promise.reject(error)
     }
   }
 
-  async function post(requiresAuth, path, payload = false, hasBody = false) {
+  async function post(requiresAuth, path, payload = false, hasBody = false, options = {}) {
     newSession(requiresAuth)
+    const started = Date.now()
+    const requestId = createOperationalId('req')
+    const correlationId = options?.correlationId ?? payload?.correlationId ?? null
+    const mandePayload =
+      payload && typeof payload === 'object' && 'correlationId' in payload
+        ? (({ correlationId: _ignored, ...rest }) =>
+          Object.keys(rest).length ? rest : undefined)(payload)
+        : payload
     try {
+      let rawResponse
       if (hasBody) {
         delete defaults.headers['Content-Type']
-        const options = instance.options
-        options['body'] = payload
-        const response = await instance.post(path)
-        return response
+        const opt = instance.options
+        opt['body'] = mandePayload
+        rawResponse = await instance.post(path, null, { responseAs: 'response' })
       } else {
-        if (payload) {
+        if (mandePayload) {
           instance.options.headers['Accept'] = 'application/vnd.api+json'
           instance.options.headers['Content-Type'] = 'application/vnd.api+json'
-          const response = await instance.post(path, payload)
-          return response
+          rawResponse = await instance.post(path, mandePayload, { responseAs: 'response' })
         } else {
-          const response = await instance.post(path)
-          return response
+          rawResponse = await instance.post(path, null, { responseAs: 'response' })
         }
       }
+      const { status, body } = await parseTransportResponse(rawResponse)
+      logApiResult({
+        outcome: 'success',
+        status,
+        duration_ms: Date.now() - started,
+        request_id: requestId,
+        correlation_id: correlationId
+      })
+      return body
     } catch (error) {
+      logApiResult({
+        outcome: 'failure',
+        status: error?.response?.status ?? null,
+        duration_ms: Date.now() - started,
+        error_code: 'http_error',
+        request_id: requestId,
+        correlation_id: correlationId
+      })
       return Promise.reject(error)
     }
   }

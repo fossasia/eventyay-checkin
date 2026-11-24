@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import { createAuthorizedDeviceApi } from '@/utils/serverUrl'
-import { raiseIfDeviceApiError } from '@/utils/deviceErrors'
+import {
+  isDeviceAuthFailure,
+  isDeviceProfileDenied,
+  raiseIfDeviceApiError
+} from '@/utils/deviceErrors'
+import { createOperationalId, logApiResult, logOperational } from '@/utils/operationalLog'
 import { ref } from 'vue'
 import { useEventyayApi } from '@/stores/eventyayapi'
 import { useOfflineSyncStore } from '@/stores/offlineSync'
@@ -24,12 +29,13 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
   const isRegistering = ref(false)
   const productsLoaded = ref(false)
 
-  function createApiClient() {
+  function createApiClient(extraHeaders = {}) {
     const processApi = useEventyayApi()
     processApi.refreshServerUrl()
     return createAuthorizedDeviceApi(processApi.url, processApi.apitoken, {
       Accept: 'application/json',
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      ...extraHeaders
     })
   }
 
@@ -120,9 +126,10 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
     }
   }
 
-  async function createOrder(attendee, productId) {
+  async function createOrder(attendee, productId, { correlationId = null } = {}) {
     const { organizer, eventSlug } = getApiContext()
-    const api = createApiClient()
+    const extraHeaders = correlationId ? { 'X-Correlation-Id': correlationId } : {}
+    const api = createApiClient(extraHeaders)
     try {
       return await api.post(
         `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/`,
@@ -134,9 +141,10 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
     }
   }
 
-  async function markOrderPaid(orderCode) {
+  async function markOrderPaid(orderCode, { correlationId = null } = {}) {
     const { organizer, eventSlug } = getApiContext()
-    const api = createApiClient()
+    const extraHeaders = correlationId ? { 'X-Correlation-Id': correlationId } : {}
+    const api = createApiClient(extraHeaders)
     try {
       return await api.post(
         `/api/v1/organizers/${organizer}/events/${eventSlug}/orders/${orderCode}/mark_paid/`,
@@ -166,13 +174,17 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
 
   async function registerAndMarkPaid(attendee, productId) {
     isRegistering.value = true
+    const started = Date.now()
+    const requestId = createOperationalId('reg')
+    const processApi = useEventyayApi()
+    const isOffline =
+      isBrowserOffline() &&
+      canUseOfflineSync(processApi.selectedRole, processApi.securityProfile)
+    const action = isOffline ? 'checkin.live_register_offline' : 'checkin.live_register'
+    let persistenceStarted = false
 
     try {
-      const processApi = useEventyayApi()
-      if (
-        isBrowserOffline() &&
-        canUseOfflineSync(processApi.selectedRole, processApi.securityProfile)
-      ) {
+      if (isOffline) {
         const offlineSync = useOfflineSyncStore()
         if (!offlineSync.index) {
           await offlineSync.hydrate(processApi)
@@ -184,7 +196,14 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
           payload,
           createdAt: new Date().toISOString()
         })
+        persistenceStarted = true
         await persistOfflineIndex(offlineSync.index, { apitoken: processApi.apitoken })
+        logOperational({
+          action,
+          outcome: 'success',
+          duration_ms: Date.now() - started,
+          request_id: requestId
+        })
         return {
           createdOrder: null,
           paidOrder: null,
@@ -199,7 +218,7 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
         }
       }
 
-      const createdOrder = await createOrder(attendee, productId)
+      const createdOrder = await createOrder(attendee, productId, { correlationId: requestId })
       const orderCode = createdOrder?.code
       if (!orderCode) {
         throw new Error('Order was created without a valid code.')
@@ -208,7 +227,7 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
       const paidOrder =
         createdOrder?.status === 'p'
           ? createdOrder
-          : await markOrderPaid(orderCode)
+          : await markOrderPaid(orderCode, { correlationId: requestId })
       if (!paidOrder || paidOrder.code !== orderCode || paidOrder.status !== 'p') {
         throw new Error('Order was created, but mark paid did not complete successfully.')
       }
@@ -227,6 +246,14 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
         ticketDownloadAvailable
       } = resolveTicketDownload(orderPosition)
 
+      logApiResult({
+        action,
+        outcome: 'success',
+        duration_ms: Date.now() - started,
+        request_id: requestId,
+        correlation_id: requestId
+      })
+
       return {
         createdOrder,
         paidOrder,
@@ -237,6 +264,23 @@ export const useLiveRegistrationStore = defineStore('liveRegistration', () => {
         ticketDownloadUrl,
         ticketDownloadAvailable
       }
+    } catch (error) {
+      logApiResult({
+        action,
+        outcome: 'failure',
+        status: error?.response?.status ?? error?.status ?? null,
+        duration_ms: Date.now() - started,
+        request_id: requestId,
+        correlation_id: requestId,
+        error_code: isDeviceProfileDenied(error)
+          ? 'device_profile_denied'
+          : isDeviceAuthFailure(error)
+            ? 'device_auth_failed'
+            : isOffline && persistenceStarted
+              ? 'offline_persist_failed'
+              : 'registration_failed'
+      })
+      throw error
     } finally {
       isRegistering.value = false
     }

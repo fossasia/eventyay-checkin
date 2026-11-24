@@ -109,7 +109,7 @@ async function submitManualLead() {
     await leadScanStore.scanLeadByCode(code)
     manualCode.value = ''
   } catch (error) {
-    console.error('Failed to submit manual lead:', error)
+    console.error('Failed to submit manual lead:', error?.name || 'Error')
   } finally {
     loadingStore.contentLoaded()
   }

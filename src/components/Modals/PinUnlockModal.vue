@@ -197,7 +197,7 @@ async function submitPin() {
       pin.value = ''
     }
   } catch (err) {
-    console.error('PIN verification error:', err)
+    console.error('PIN verification error:', err?.name || 'Error')
     error.value = t('stationLock.failed_verify_pin')
     pin.value = ''
   } finally {
@@ -228,7 +228,7 @@ async function submitTokenFallback() {
       tokenError.value = result.message || t('configure.error_verify_failed')
     }
   } catch (err) {
-    console.error('Setup token verification error:', err)
+    console.error('Setup token verification error:', err?.name || 'Error')
     tokenError.value = t('configure.error_verify_failed')
   } finally {
     isVerifyingToken.value = false

@@ -42,7 +42,7 @@ export const useTicketsStore = defineStore('tickets', () => {
         })
       })
     } catch (error) {
-      console.error(error)
+      console.error('Failed to fetch badge form fields:', error?.name || 'Error')
     }
   }
 

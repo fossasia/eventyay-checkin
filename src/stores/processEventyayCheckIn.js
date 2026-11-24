@@ -9,7 +9,19 @@ import {
   shouldRetryCheckInWithFreshLists
 } from '@/utils/checkInListCache'
 import { createAuthorizedDeviceApi, normalizeApiResourcePath } from '@/utils/serverUrl'
-import { DEVICE_PROFILE_DENIED_MESSAGE, getDeviceErrorMessage, handleDeviceApiError } from '@/utils/deviceErrors'
+import {
+  DEVICE_PROFILE_DENIED_MESSAGE,
+  getDeviceErrorMessage,
+  handleDeviceApiError,
+  isDeviceAuthFailure,
+  isDeviceProfileDenied
+} from '@/utils/deviceErrors'
+import {
+  logApiResult,
+  logOperational,
+  SAFE_REDEEM_ERROR_CODES,
+  toSafeErrorCode
+} from '@/utils/operationalLog'
 import { fetchBadgePdfWithRetry, printPdfBlob, PRINT_OUTCOME, withBadgeLayoutParam } from '@/utils/badgePdf'
 import {
   BADGE_ONLINE_ONLY_MESSAGE,
@@ -133,6 +145,16 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     try {
       return await fetchAndStoreCheckInLists(effectiveCacheKey, fetchSlug)
     } catch (err) {
+      logApiResult({
+        action: 'checkin.lists_fetch',
+        outcome: 'failure',
+        status: err?.response?.status ?? err?.status ?? null,
+        error_code: isDeviceProfileDenied(err)
+          ? 'device_profile_denied'
+          : isDeviceAuthFailure(err)
+            ? 'device_auth_failed'
+            : 'http_error'
+      })
       handleDeviceApiError(err, processApi)
       throw err
     }
@@ -146,7 +168,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     }
 
     getCheckInLists({ force: true }).catch((error) => {
-      console.error('Background check-in list refresh failed:', error)
+      console.error('Background check-in list refresh failed:', error?.name || 'Error')
     })
   }
 
@@ -154,7 +176,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     try {
       await getCheckInLists()
     } catch (error) {
-      console.error('Failed to prefetch check-in lists:', error)
+      console.error('Failed to prefetch check-in lists:', error?.name || 'Error')
     }
   }
 
@@ -212,13 +234,13 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           if (badgeResult?.requiresOnline) {
             showAutoPrintFeedback('error', badgeResult.detail || BADGE_ONLINE_ONLY_MESSAGE, AUTO_PRINT_ERROR_MS)
           } else {
-            console.warn('Badge print skipped:', badgeResult?.detail)
+            console.warn('Badge print skipped: unavailable')
           }
           return
         }
         void printPdfBlob(badgeResult.blob, { silent: shouldUseSilentPrint() })
       } catch (error) {
-        console.warn('Background badge print failed:', error)
+        console.warn('Background badge print failed:', error?.name || 'Error')
       }
     })()
   }
@@ -690,7 +712,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         .sort((a, b) => Number(b.default) - Number(a.default) || String(a.name).localeCompare(String(b.name)))
       return badgeLayouts.value
     } catch (error) {
-      console.warn('Unable to load badge layouts:', error)
+      console.warn('Unable to load badge layouts:', error?.name || 'Error')
       return badgeLayouts.value
     }
   }
@@ -792,6 +814,11 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
     const evaluation = evaluateLocalRedeem(offlineSync.index, normalizedSecret, { listId, type })
     if (!evaluation.ok) {
+      logOperational({
+        action: 'checkin.redeem_offline',
+        outcome: 'failure',
+        error_code: toSafeErrorCode(evaluation.reason, SAFE_REDEEM_ERROR_CODES, 'redeem_failed')
+      })
       showErrorMsg(
         buildAttendeeMessage(evaluation.message, evaluation.position || null, normalizedSecret, hints)
       )
@@ -802,16 +829,33 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
     const datetime = new Date().toISOString()
     let position = evaluation.position
     if (!evaluation.alreadyRedeemed) {
-      position = applyLocalCheckin(offlineSync.index, position, { listId, type, datetime })
-      enqueuePendingRedeem(offlineSync.index, {
-        secret: normalizedSecret,
-        lists: [Number(listId)],
-        type,
-        nonce,
-        datetime
-      })
-      await persistOfflineIndex(offlineSync.index, { apitoken })
+      try {
+        position = applyLocalCheckin(offlineSync.index, position, { listId, type, datetime })
+        enqueuePendingRedeem(offlineSync.index, {
+          secret: normalizedSecret,
+          lists: [Number(listId)],
+          type,
+          nonce,
+          datetime
+        })
+        await persistOfflineIndex(offlineSync.index, { apitoken })
+      } catch (error) {
+        logOperational({
+          action: 'checkin.redeem_offline',
+          outcome: 'failure',
+          error_code: 'offline_persist_failed'
+        })
+        const wrapped = new Error('Offline check-in persistence failed')
+        wrapped.code = 'offline_persist_failed'
+        wrapped.cause = error
+        throw wrapped
+      }
     }
+
+    logOperational({
+      action: 'checkin.redeem_offline',
+      outcome: 'success'
+    })
 
     badgeUrl.value = 'local://offline-badge'
 
@@ -880,6 +924,8 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       })
     }
 
+    const started = Date.now()
+    const requestId = createOperationalId('red')
     try {
       const checkInLists = await getCheckInLists({ force: true })
 
@@ -919,6 +965,12 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       })
 
       if (response && (response.status === 'ok' || response.status === 'redeemed')) {
+        logApiResult({
+          action: 'checkin.redeem',
+          outcome: 'success',
+          duration_ms: Date.now() - started,
+          request_id: requestId
+        })
         if (type === 'exit') {
           if (!suppressSuccess) {
             showSuccessMsg(
@@ -968,8 +1020,27 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           buildAttendeeMessage(resultMessage, response.position, normalizedSecret, resultHints)
         )
       } else if (response?.status === 'error') {
+        const safeReason = toSafeErrorCode(
+          getRedeemErrorReason(response),
+          SAFE_REDEEM_ERROR_CODES,
+          'redeem_failed'
+        )
+        logApiResult({
+          action: 'checkin.redeem',
+          outcome: 'failure',
+          duration_ms: Date.now() - started,
+          request_id: requestId,
+          error_code: safeReason
+        })
         handleRedeemErrorResponse(response, normalizedSecret, hints)
       } else {
+        logApiResult({
+          action: 'checkin.redeem',
+          outcome: 'failure',
+          duration_ms: Date.now() - started,
+          request_id: requestId,
+          error_code: 'redeem_failed'
+        })
         showErrorMsg(
           buildAttendeeMessage('Check-in failed!', response?.position, normalizedSecret, hints)
         )
@@ -977,7 +1048,30 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
 
       return response
     } catch (error) {
-      console.error('Fetch error:', error)
+      const errorStatus = error?.response?.status ?? error?.status ?? null
+      const redeemError = getRedeemErrorResponse(error)
+      const errorCode = isDeviceProfileDenied(error)
+        ? 'device_profile_denied'
+        : isDeviceAuthFailure(error)
+          ? 'device_auth_failed'
+          : isRedeemNetworkError(error)
+            ? 'request_error'
+            : redeemError
+              ? toSafeErrorCode(
+                  getRedeemErrorReason(redeemError),
+                  SAFE_REDEEM_ERROR_CODES,
+                  'redeem_failed'
+                )
+              : 'http_error'
+      console.error('Fetch error:', errorCode)
+      logApiResult({
+        action: 'checkin.redeem',
+        outcome: 'failure',
+        status: errorStatus,
+        duration_ms: Date.now() - started,
+        request_id: requestId,
+        error_code: errorCode
+      })
       if (
         handleDeviceApiError(error, processApi, {
           onProfileDenied: (msg) =>
@@ -992,7 +1086,6 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         return redeemBySecret(normalizedSecret, { type, isRetry: true, attendeeHints: hints })
       }
 
-      const redeemError = getRedeemErrorResponse(error)
       if (redeemError) {
         handleRedeemErrorResponse(redeemError, normalizedSecret, hints)
         return redeemError
@@ -1104,7 +1197,7 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
           return { blob: localBlob, local: true }
         }
       } catch (error) {
-        console.warn('Local badge render failed', error)
+        console.warn('Local badge render failed:', error?.name || 'Error')
       }
     }
 
@@ -1267,10 +1360,20 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
         positionHint: position || message.value
       })
       if (badgeResult?.profileDenied) {
+        logOperational({
+          action: 'badge.print',
+          outcome: 'failure',
+          error_code: 'device_profile_denied'
+        })
         showErrorMsg(buildAttendeeMessage(badgeResult.detail, null))
         return PRINT_OUTCOME.FAILED
       }
       if (!badgeResult?.blob) {
+        logOperational({
+          action: 'badge.print',
+          outcome: 'failure',
+          error_code: 'badge_unavailable'
+        })
         showErrorMsg(
           buildAttendeeMessage(
             badgeResult?.detail || 'Could not load the badge PDF.',
@@ -1281,9 +1384,25 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
       }
 
       const useSilentPrint = silent && shouldUseSilentPrint()
-      return await printPdfBlob(badgeResult.blob, { silent: useSilentPrint })
+      const outcome = await printPdfBlob(badgeResult.blob, { silent: useSilentPrint })
+      logOperational({
+        action: 'badge.print',
+        outcome:
+          outcome === PRINT_OUTCOME.FAILED
+            ? 'failure'
+            : outcome === PRINT_OUTCOME.CANCELLED
+              ? 'cancelled'
+              : 'success',
+        error_code: outcome === PRINT_OUTCOME.FAILED ? 'print_failed' : undefined
+      })
+      return outcome
     } catch (error) {
-      console.error('Error printing badge:', error)
+      console.error('Error printing badge:', error?.name || 'Error')
+      logOperational({
+        action: 'badge.print',
+        outcome: 'failure',
+        error_code: 'print_failed'
+      })
       return PRINT_OUTCOME.FAILED
     } finally {
       isGeneratingBadge.value = false
@@ -1299,11 +1418,31 @@ export const useProcessEventyayCheckInStore = defineStore('processEventyayCheckI
   }
 
   async function checkIn() {
+    let secret
     try {
-      const secret = parseQrPayload(cameraStore.qrCodeValue, 'ticket')
+      secret = parseQrPayload(cameraStore.qrCodeValue, 'ticket')
+    } catch (error) {
+      console.error('Invalid QR payload:', error?.name || 'Error')
+      logOperational({
+        action: 'checkin.redeem',
+        outcome: 'failure',
+        error_code: 'invalid_qr'
+      })
+      showErrorMsg(buildAttendeeMessage('Check-in Failed!', null))
+      cameraStore.clearLastScan()
+      return null
+    }
+
+    try {
       return await checkInBySecret(secret)
     } catch (error) {
-      console.error('Invalid QR payload:', error)
+      console.error('Check-in failed:', error?.name || 'Error')
+      logOperational({
+        action: 'checkin.redeem',
+        outcome: 'failure',
+        error_code:
+          error?.code === 'offline_persist_failed' ? 'offline_persist_failed' : 'redeem_failed'
+      })
       showErrorMsg(buildAttendeeMessage('Check-in Failed!', null))
       return null
     } finally {

@@ -38,7 +38,7 @@ async function checkPassword() {
       clearFields()
     }
   } catch (error) {
-    console.log(error)
+    console.error('Password verification failed:', error?.name || 'Error')
     clearFields()
   }
 }

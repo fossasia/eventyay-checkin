@@ -8,6 +8,7 @@ import StandardButton from '@/components/Common/StandardButton.vue'
 import { useProcessEventyayCheckInStore } from '@/stores/processEventyayCheckIn'
 import { printPdfBlob, cancelActivePrint } from '@/utils/badgePdf'
 import { isKioskEnvironment } from '@/utils/kioskLauncher'
+import { logOperational } from '@/utils/operationalLog'
 
 const { t } = useI18n()
 const route = useRoute()
@@ -88,13 +89,27 @@ const fetchPDF = async () => {
       printError.value = true
       loadError.value =
         result?.detail || 'Could not load the badge PDF. Check your connection and try Print again.'
+      logOperational({
+        action: 'badge.preview',
+        outcome: 'failure',
+        error_code: result?.profileDenied ? 'device_profile_denied' : 'badge_unavailable'
+      })
       return
     }
 
     pdfBlob.value = result.blob
     pdfUrl.value = URL.createObjectURL(result.blob)
+    logOperational({
+      action: 'badge.preview',
+      outcome: 'success'
+    })
   } catch (error) {
-    console.error('Error fetching PDF:', error)
+    console.error('Error fetching PDF:', error?.name || 'Error')
+    logOperational({
+      action: 'badge.preview',
+      outcome: 'failure',
+      error_code: 'preview_failed'
+    })
     printError.value = true
     loadError.value = 'Could not load the badge PDF. Check your connection and try Print again.'
   } finally {

@@ -83,7 +83,7 @@ async function savePinSettings() {
     emit('saved')
     emit('close')
   } catch (err) {
-    console.error('Failed to save PIN:', err)
+    console.error('Failed to save PIN:', err?.name || 'Error')
     error.value = err.message || t('configure.error_save_failed')
   } finally {
     isSaving.value = false

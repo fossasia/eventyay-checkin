@@ -50,7 +50,7 @@ watch(selectedEvent, async (newVal) => {
       selectedCheckInListId.value = availableCheckInLists.value[0].id
     }
   } catch (error) {
-    console.error('Error fetching check-in lists:', error)
+    console.error('Error fetching check-in lists:', error?.name || 'Error')
   } finally {
     loadingLists.value = false
   }
